@@ -1,0 +1,31 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+web/dist/
+*.tsbuildinfo
+
+# 不要把 web/src 下误生成的 .js 编译产物提交进仓库（前端走 vite，源码只用 .ts/.tsx）
+web/src/**/*.js
+web/src/**/*.d.ts
+web/src/**/*.js.map
+
+# data
+server/data/sessions.json
+server/data/*.log
+
+# env
+.env
+.env.local
+
+# editor / os
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# tooling artifacts (playwright snapshots, etc.)
+.playwright-mcp/
+.zcode/
