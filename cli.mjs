@@ -11,6 +11,8 @@ for (let i = 0; i < args.length; i++) {
   claude-web-ui  v${process.env.npm_package_version || "0.1.0"}
 
   Usage:  npx github:YorrickBao/claude-web-ui [options]
+          pnpm dlx github:YorrickBao/claude-web-ui [options]
+          yarn dlx github:YorrickBao/claude-web-ui [options]
 
   Options:
     --host, -h    Bind address (default: 127.0.0.1)

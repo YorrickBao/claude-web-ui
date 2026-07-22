@@ -14,6 +14,10 @@
 
 ```bash
 npx github:YorrickBao/claude-web-ui
+
+# 或使用 pnpm / yarn
+pnpm dlx github:YorrickBao/claude-web-ui
+yarn dlx github:YorrickBao/claude-web-ui
 ```
 
 浏览器会自动打开。首次运行 SDK 会下载约 250MB 的 `claude` 二进制到 `~/.claude/`，后续秒开。
@@ -61,6 +65,7 @@ pnpm start
 
 ```bash
 npx github:YorrickBao/claude-web-ui
+# 也可用 pnpm dlx / yarn dlx
 ```
 
 浏览器自动打开 `http://127.0.0.1:23456`。左侧是会话列表，右侧是对话区。
