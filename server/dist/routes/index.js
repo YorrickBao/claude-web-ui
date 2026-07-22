@@ -565,7 +565,8 @@ export async function apiRoutes(app) {
             });
             return reply.send({ path: target, entries: filtered });
         }
-        catch {
+        catch (err) {
+            app.log.warn({ err }, `browse failed for ${target}`);
             return reply.code(404).send({ error: "cannot read directory" });
         }
     });

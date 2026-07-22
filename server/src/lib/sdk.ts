@@ -150,7 +150,7 @@ export async function* runQuery(
             matcher: "*",
             hooks: [
               async (input) => {
-                try { registerStart(input as SubagentStartHookInput); } catch { /* noop */ }
+                try { registerStart(input as SubagentStartHookInput); } catch (err) { console.warn("[sdk] registerStart failed:", err instanceof Error ? err.message : err); }
                 return { continue: true };
               },
             ],
@@ -161,7 +161,7 @@ export async function* runQuery(
             matcher: "*",
             hooks: [
               async (input) => {
-                try { await registerStop(input as SubagentStopHookInput); } catch { /* noop */ }
+                try { await registerStop(input as SubagentStopHookInput); } catch (err) { console.warn("[sdk] registerStop failed:", err instanceof Error ? err.message : err); }
                 return { continue: true };
               },
             ],

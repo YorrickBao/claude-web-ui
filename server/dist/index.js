@@ -87,7 +87,8 @@ async function main() {
         savedFeishuConfig = JSON.parse(content);
         app.log.info("[feishu] loaded saved config");
     }
-    catch {
+    catch (err) {
+        app.log.warn(`[feishu] failed to load saved config: ${err instanceof Error ? err.message : err}`);
         savedFeishuConfig = null;
     }
     const feishuConfig = {

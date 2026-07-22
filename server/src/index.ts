@@ -94,7 +94,8 @@ async function main(): Promise<void> {
     const content = await fsp.readFile(FEISHU_CONFIG_FILE, "utf-8");
     savedFeishuConfig = JSON.parse(content);
     app.log.info("[feishu] loaded saved config");
-  } catch {
+  } catch (err) {
+    app.log.warn(`[feishu] failed to load saved config: ${err instanceof Error ? err.message : err}`);
     savedFeishuConfig = null;
   }
 

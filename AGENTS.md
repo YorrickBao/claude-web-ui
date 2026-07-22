@@ -34,6 +34,7 @@ npx claude-web-ui
 - 会话与 CLI 共享同一份 `~/.claude/` 转录存储，WebUI 和终端 CLI 的会话完全互通
 - 工程只存会话"名片"（元信息），不维护自己的消息数据库
 - 仅本地使用，无认证，不要暴露到公网
+- **后端代码严禁静默 catch 错误**：所有 `catch` 块必须用 `console.warn`/`console.error` 打印可读的错误信息（`err.message`），必要时附加上下文（如 sessionId），确保出现问题时能从终端日志快速定位
 
 ## UI 组件库
 

@@ -98,7 +98,9 @@ export async function* runQuery(params) {
                                 try {
                                     registerStart(input);
                                 }
-                                catch { /* noop */ }
+                                catch (err) {
+                                    console.warn("[sdk] registerStart failed:", err instanceof Error ? err.message : err);
+                                }
                                 return { continue: true };
                             },
                         ],
@@ -112,7 +114,9 @@ export async function* runQuery(params) {
                                 try {
                                     await registerStop(input);
                                 }
-                                catch { /* noop */ }
+                                catch (err) {
+                                    console.warn("[sdk] registerStop failed:", err instanceof Error ? err.message : err);
+                                }
                                 return { continue: true };
                             },
                         ],
