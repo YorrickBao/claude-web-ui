@@ -107,22 +107,22 @@ function Header({
   onProfileChange: (id: string | null) => void;
 }) {
   return (
-    <div className="flex shrink-0 flex-col gap-1 border-b border-neutral-800 px-4 py-2">
+    <div className="flex shrink-0 flex-col gap-1 border-b border-border px-4 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-neutral-100">
+          <div className="truncate text-sm font-medium text-foreground">
             {title ?? "新会话"}
           </div>
           {subtitle && (
             <div
-              className="truncate text-xs text-neutral-500"
+              className="truncate text-xs text-muted-foreground"
               title={subtitle}
             >
               {subtitle}
             </div>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-neutral-500">
+        <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {stats && (
             <>
@@ -135,7 +135,7 @@ function Header({
       </div>
       {canEditSessionEnv && (
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-600">
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
             profile
           </span>
           <ProfileSelect

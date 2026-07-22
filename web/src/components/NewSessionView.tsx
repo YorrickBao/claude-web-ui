@@ -62,15 +62,15 @@ export function NewSessionView() {
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col px-4 py-8">
-      <h1 className="mb-1 text-2xl font-semibold text-neutral-100">
+      <h1 className="mb-1 text-2xl font-semibold text-foreground">
         新建会话
       </h1>
-      <p className="mb-6 text-sm text-neutral-500">
+      <p className="mb-6 text-sm text-muted-foreground">
         选择一个工作目录，Claude 将在该目录下运行工具。
       </p>
 
       {/* 当前路径 + 手动输入 */}
-      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         工作目录
       </Label>
       <div className="mb-2 flex gap-2">
@@ -92,13 +92,13 @@ export function NewSessionView() {
       </div>
 
       {/* 目录列表 */}
-      <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
+      <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
         <span>{browseError ?? "点击进入子目录"}</span>
         <Button variant="ghost" size="sm" onClick={goUp} className="text-xs">
           ↑ 上级
         </Button>
       </div>
-      <div className="mb-6 max-h-72 flex-1 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-900/50">
+      <div className="mb-6 max-h-72 flex-1 overflow-y-auto rounded-lg border border-border bg-card/50">
         {entries === null ? (
           <div className="flex flex-col gap-1.5 p-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -106,7 +106,7 @@ export function NewSessionView() {
             ))}
           </div>
         ) : entries.length === 0 ? (
-          <div className="p-3 text-sm text-neutral-500">（空目录）</div>
+          <div className="p-3 text-sm text-muted-foreground">（空目录）</div>
         ) : (
           entries.map((e) => (
             <Button
@@ -120,12 +120,12 @@ export function NewSessionView() {
                 className={
                   e.isDir
                     ? "h-4 w-4 text-accent"
-                    : "h-4 w-4 text-neutral-600"
+                    : "h-4 w-4 text-muted-foreground"
                 }
               />
               <span
                 className={
-                  e.isDir ? "text-neutral-200" : "text-neutral-500"
+                  e.isDir ? "text-foreground" : "text-muted-foreground"
                 }
               >
                 {e.name}
@@ -136,7 +136,7 @@ export function NewSessionView() {
       </div>
 
       {/* 环境变量 profile */}
-      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         环境变量配置（profile）
       </Label>
       <div className="mb-6">
@@ -144,7 +144,7 @@ export function NewSessionView() {
       </div>
 
       {/* 首条消息（可选） */}
-      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         首条消息（可选，留空则进入会话再发）
       </Label>
       <Textarea

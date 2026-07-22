@@ -73,7 +73,7 @@ export function EditSessionTitleDialog({
             </Alert>
           )}
 
-          <div className="text-xs text-neutral-600">
+          <div className="text-xs text-muted-foreground">
             当前标题：{currentTitle || "（未设置）"}
           </div>
         </div>

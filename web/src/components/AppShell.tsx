@@ -138,7 +138,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={cn(
-        "flex h-screen w-screen overflow-hidden bg-neutral-950",
+        "flex h-screen w-screen overflow-hidden bg-background",
         isDragging && "select-none"
       )}
     >
@@ -163,7 +163,7 @@ function Shell({ children }: { children: React.ReactNode }) {
               "absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 transition-colors",
               isDragging
                 ? "bg-accent"
-                : "bg-neutral-700 group-hover:bg-accent/60"
+                : "bg-secondary group-hover:bg-accent/60"
             )}
           />
         </div>

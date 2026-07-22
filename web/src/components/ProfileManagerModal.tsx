@@ -129,7 +129,7 @@ export function ProfileManagerModal({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl">
+        <DialogContent className="max-h-[90vh] sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>环境变量配置</DialogTitle>
         </DialogHeader>

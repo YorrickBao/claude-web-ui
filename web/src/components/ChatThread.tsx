@@ -24,7 +24,7 @@ export function ChatThread() {
     <ThreadPrimitive.Root className="flex h-full flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <ThreadPrimitive.Empty>
-          <div className="flex h-full items-center justify-center p-8 text-center text-sm text-neutral-500">
+          <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
             开始新的对话
           </div>
         </ThreadPrimitive.Empty>
@@ -39,12 +39,12 @@ export function ChatThread() {
         </div>
       </ThreadPrimitive.Viewport>
 
-      <ComposerPrimitive.Root className="sticky bottom-0 border-t border-neutral-800 bg-neutral-950/80 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 focus-within:border-accent">
+      <ComposerPrimitive.Root className="sticky bottom-0 border-t border-border bg-background/80 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-input bg-card px-3 py-2 focus-within:border-accent">
           <ComposerPrimitive.Input
             placeholder="输入消息…  (Enter 发送 / Shift+Enter 换行)"
             submitMode="enter"
-            className="max-h-60 flex-1 resize-none bg-transparent text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
+            className="max-h-60 flex-1 resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <ComposerPrimitive.Send
             render={
@@ -92,7 +92,7 @@ function AssistantMessage() {
     <MessagePrimitive.Root className="mb-6 flex gap-3">
       <AvatarUI role="assistant" />
       <div className="min-w-0 flex-1">
-        <div className="inline-block max-w-full rounded-2xl bg-neutral-900 px-4 py-3 text-neutral-100">
+        <div className="inline-block max-w-full rounded-2xl bg-card px-4 py-3 text-foreground">
           <MessagePrimitive.Parts
             components={{
               Text: ({ text }) =>
@@ -117,7 +117,7 @@ function AssistantMessage() {
 
 function RunningCursor() {
   return (
-    <span className="inline-block h-4 w-2 animate-pulse bg-neutral-500 align-middle" />
+    <span className="inline-block h-4 w-2 animate-pulse bg-muted-foreground align-middle" />
   );
 }
 
@@ -127,7 +127,7 @@ function AvatarUI({ role }: { role: "user" | "assistant" }) {
       <AvatarFallback
         className={
           role === "user"
-            ? "bg-neutral-700 text-xs text-neutral-200"
+            ? "bg-secondary text-xs text-foreground"
             : "bg-primary text-xs text-primary-foreground"
         }
       >

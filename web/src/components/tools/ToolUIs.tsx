@@ -40,15 +40,15 @@ export function ToolCardShell({
   const isRunning = status.type === "running";
 
   return (
-    <div className="my-2 rounded-lg border border-neutral-800 bg-neutral-900/60">
+    <div className="my-2 rounded-lg border border-border bg-card/60">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-800/50"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50"
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         )}
         <span
           className={cn(
@@ -63,7 +63,7 @@ export function ToolCardShell({
           {name}
         </span>
         {summary && (
-          <span className="truncate text-neutral-400">{summary}</span>
+          <span className="truncate text-muted-foreground">{summary}</span>
         )}
         {isRunning && (
           <Badge variant="outline" className="ml-auto animate-pulse text-amber-400">
@@ -75,7 +75,7 @@ export function ToolCardShell({
         )}
       </button>
       {open && children && (
-        <div className="space-y-2 border-t border-neutral-800 px-3 py-2">
+        <div className="space-y-2 border-t border-border px-3 py-2">
           {children}
         </div>
       )}
@@ -92,7 +92,7 @@ function Section({
 }) {
   return (
     <div>
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </div>
       <div className="overflow-auto">{children}</div>
@@ -109,7 +109,7 @@ function JsonView({ value }: { value: unknown }) {
     text = String(value);
   }
   return (
-    <pre className="max-h-80 overflow-auto rounded bg-black/40 p-2 text-xs text-neutral-300">
+    <pre className="max-h-80 overflow-auto rounded bg-black/40 p-2 text-xs text-muted-foreground">
       {text}
     </pre>
   );
@@ -146,13 +146,13 @@ export function BashToolUI(props: ToolUIProps) {
       isError={props.isError}
     >
       <Section title="命令">
-        <pre className="overflow-auto rounded bg-black/40 p-2 text-xs text-neutral-300 whitespace-pre-wrap">
+        <pre className="overflow-auto rounded bg-black/40 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
           {command}
         </pre>
       </Section>
       {props.result !== undefined && (
         <Section title="输出">
-          <pre className="max-h-80 overflow-auto rounded bg-black/40 p-2 text-xs text-neutral-300 whitespace-pre-wrap">
+          <pre className="max-h-80 overflow-auto rounded bg-black/40 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
             {typeof props.result === "string"
               ? props.result
               : JSON.stringify(props.result, null, 2)}
@@ -178,8 +178,8 @@ export function EditToolUI(props: ToolUIProps) {
       isError={props.isError}
     >
       <div className="text-xs">
-        <div className="mb-1 text-neutral-500">文件</div>
-        <code className="text-neutral-300">{a?.file_path}</code>
+        <div className="mb-1 text-muted-foreground">文件</div>
+        <code className="text-muted-foreground">{a?.file_path}</code>
       </div>
       <div>
         <div className="mb-1 text-xs text-red-400">- 旧</div>

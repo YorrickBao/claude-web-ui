@@ -187,7 +187,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-neutral-800 bg-background",
+        "flex flex-col border-r border-border bg-background",
         width === undefined &&
           "transition-all duration-300",
         width === undefined && (isCollapsed ? "w-16" : "w-64")
@@ -197,7 +197,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       <div className="flex items-center justify-between px-3 py-3">
         <span
           className={cn(
-            "text-sm font-semibold text-neutral-200 transition-opacity",
+            "text-sm font-semibold text-foreground transition-opacity",
             isCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
           )}
         >
@@ -256,7 +256,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           "mb-1 flex items-center justify-between px-2",
           isCollapsed && "hidden"
         )}>
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             历史
           </span>
           <Button
@@ -279,7 +279,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           <div className="px-2 py-2 text-sm text-red-400">⚠ {error}</div>
         )}
         {!loading && sessions.length === 0 && (
-          <div className="px-2 py-2 text-sm text-neutral-600">暂无会话</div>
+          <div className="px-2 py-2 text-sm text-muted-foreground">暂无会话</div>
         )}
         {isCollapsed ? (
           /* 收起状态：平铺，只显示图标 */
@@ -292,12 +292,12 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     cn(
                       "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm",
                       isActive
-                        ? "bg-neutral-800 text-neutral-100"
-                        : "text-neutral-300 hover:bg-card"
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-card"
                     )
                   }
                 >
-                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </NavLink>
               </li>
             ))}
@@ -312,24 +312,24 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                   <div className="flex items-center gap-1.5 px-2">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-neutral-500 hover:text-neutral-300"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-muted-foreground hover:text-muted-foreground"
                       title={group.cwd}
                     >
                       <FolderOpen
                         className={cn(
-                          "h-3 w-3 shrink-0 text-neutral-500",
+                          "h-3 w-3 shrink-0 text-muted-foreground",
                           isCollapsedGroup && "hidden"
                         )}
                       />
                       <Folder
                         className={cn(
-                          "h-3 w-3 shrink-0 text-neutral-500",
+                          "h-3 w-3 shrink-0 text-muted-foreground",
                           !isCollapsedGroup && "hidden"
                         )}
                       />
                       <span className="truncate">{getDirName(group.cwd)}</span>
                     </button>
-                    <span className="shrink-0 text-[10px] tabular-nums text-neutral-600">
+                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                       {group.sessions.length}
                     </span>
                     <Button
@@ -352,12 +352,12 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                               cn(
                                 "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm",
                                 isActive
-                                  ? "bg-neutral-800 text-neutral-100"
-                                  : "text-neutral-300 hover:bg-card"
+                                  ? "bg-muted text-foreground"
+                                  : "text-muted-foreground hover:bg-card"
                               )
                             }
                           >
-                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
                               <div className="truncate">{s.title}</div>
                             </div>
@@ -394,7 +394,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       </div>
 
       <div className={cn(
-        "border-t border-neutral-800 px-2 py-2",
+        "border-t border-border px-2 py-2",
         isCollapsed && "px-1"
       )}>
         <div className="flex items-center gap-1">
@@ -423,7 +423,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           </Button>
         </div>
         {!isCollapsed && (
-          <div className="mt-1 px-2 text-[10px] text-neutral-600">
+          <div className="mt-1 px-2 text-[10px] text-muted-foreground">
             bypassPermissions 模式 · 仅本地
           </div>
         )}
