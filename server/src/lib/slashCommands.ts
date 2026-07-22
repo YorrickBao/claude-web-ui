@@ -54,6 +54,21 @@ async function readCommandsDir(dirPath: string): Promise<SlashCommand[]> {
 }
 
 /**
+ * 逐行提取 YAML frontmatter（`---` 之间的内容）。
+ * 不依赖字符数截断，支持任意长度的 frontmatter。
+ */
+function extractFrontmatter(raw: string): string | null {
+  const lines = raw.split("\n");
+  if (lines[0]?.trim() !== "---") return null;
+  const fmLines: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") break;
+    fmLines.push(lines[i]);
+  }
+  return fmLines.length > 0 ? fmLines.join("\n") : null;
+}
+
+/**
  * 从 YAML frontmatter 中提取单行或多行字段值。
  * 支持 `key: value`、`key: >-`（folded block scalar）和 `key: |`（literal block）。
  */
@@ -66,8 +81,12 @@ function parseFmField(frontmatter: string, field: string): string {
   // 单行值: "key: value"
   const inlineMatch = first.match(/^[^:]+:\s*(.+)$/);
   if (inlineMatch) {
-    const val = inlineMatch[1].trim();
-    // 如果值是 YAML 块指示符（>- / |），继续读缩进行
+    let val = inlineMatch[1].trim();
+    // 去掉 YAML 双引号包裹
+    if (val.startsWith('"') && val.endsWith('"')) {
+      val = val.slice(1, -1);
+    }
+    // 如果值是 YAML 块指示符（>- / | / >），继续读缩进行
     if (val === ">-" || val === "|" || val === ">") {
       const parts: string[] = [];
       i++;
@@ -110,11 +129,10 @@ async function readSkillsDir(dirPath: string): Promise<SlashCommand[]> {
       const skillFile = path.join(dirPath, e.name, "SKILL.md");
       try {
         const raw = await fsp.readFile(skillFile, "utf-8");
-        const content = raw.slice(0, 2048);
-        const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-        if (fmMatch) {
-          const cmdName = "/" + (parseFmField(fmMatch[1], "name") || e.name);
-          const description = parseFmField(fmMatch[1], "description") || e.name;
+        const fm = extractFrontmatter(raw);
+        if (fm) {
+          const cmdName = "/" + (parseFmField(fm, "name") || e.name);
+          const description = parseFmField(fm, "description") || e.name;
           skills.push({ name: cmdName, description });
         } else {
           skills.push({ name: "/" + e.name, description: e.name });
@@ -122,6 +140,31 @@ async function readSkillsDir(dirPath: string): Promise<SlashCommand[]> {
       } catch {
         skills.push({ name: "/" + e.name, description: e.name });
       }
+    }
+    return skills;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 从 installed_plugins.json 读取已安装插件，扫描每个插件的 skills/ 目录。
+ * 插件目录结构：<installPath>/skills/<skill-name>/SKILL.md
+ */
+async function readPluginSkills(): Promise<SlashCommand[]> {
+  const pluginsJson = path.join(HOME, ".claude", "plugins", "installed_plugins.json");
+  try {
+    const raw = await fsp.readFile(pluginsJson, "utf-8");
+    const data = JSON.parse(raw) as {
+      plugins: Record<string, Array<{ installPath: string }>>;
+    };
+    const skills: SlashCommand[] = [];
+    for (const entries of Object.values(data.plugins)) {
+      const entry = entries[0];
+      if (!entry?.installPath) continue;
+      const skillsDir = path.join(entry.installPath, "skills");
+      const pluginSkills = await readSkillsDir(skillsDir);
+      skills.push(...pluginSkills);
     }
     return skills;
   } catch {
@@ -144,20 +187,18 @@ export async function resolveSlashCommands(cwd: string): Promise<SlashCommand[]>
     return cached.commands;
   }
 
-  // 并行扫描四个目录
-  const [projectCommands, projectSkills, userCommands, userSkills] =
+  // 并行扫描五个来源
+  const [projectCommands, projectSkills, userCommands, userSkills, pluginSkills] =
     await Promise.all([
       readCommandsDir(path.join(cwd, ".claude", "commands")),
       readSkillsDir(path.join(cwd, ".claude", "skills")),
       readCommandsDir(path.join(HOME, ".claude", "commands")),
       readSkillsDir(path.join(HOME, ".claude", "skills")),
+      readPluginSkills(),
     ]);
 
-  // 自定义命令和 skill 的名称集合（用于去重）
   const customNames = new Set<string>();
   const result: SlashCommand[] = [];
-
-  // 优先级：内置 > 项目命令 > 项目 skill > 用户命令 > 用户 skill
   const addIfNew = (cmd: SlashCommand) => {
     if (!customNames.has(cmd.name)) {
       customNames.add(cmd.name);
@@ -165,19 +206,16 @@ export async function resolveSlashCommands(cwd: string): Promise<SlashCommand[]>
     }
   };
 
-  // 内置命令优先
+  // 优先级：内置 > 项目命令 > 项目 skill > 用户命令 > 用户 skill > 插件 skill
   for (const [name, info] of Object.entries(BUILTIN)) {
     result.push({ name, ...info });
     customNames.add(name);
   }
-
-  // 项目级命令和 skill
   for (const cmd of projectCommands) addIfNew(cmd);
   for (const cmd of projectSkills) addIfNew(cmd);
-
-  // 用户级命令和 skill
   for (const cmd of userCommands) addIfNew(cmd);
   for (const cmd of userSkills) addIfNew(cmd);
+  for (const cmd of pluginSkills) addIfNew(cmd);
 
   cache.set(cwd, { commands: result, ts: Date.now() });
 
