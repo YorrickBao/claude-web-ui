@@ -78,6 +78,8 @@ export function useChatSSE({
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  /** 用户是否主动点击了停止按钮：用于抑制后续所有 error 事件 */
+  const stoppedByUserRef = useRef(false);
   const sessionIdRef = useRef<string | null>(sessionId);
   const onCreatedRef = useRef(onSessionCreated);
   onCreatedRef.current = onSessionCreated;
@@ -98,6 +100,7 @@ export function useChatSSE({
   );
 
   const stop = useCallback(() => {
+    stoppedByUserRef.current = true;
     abortRef.current?.abort();
   }, []);
 
@@ -178,8 +181,8 @@ export function useChatSSE({
         );
         break;
       case "error":
-        // 用户主动中止（"aborted"）不是错误，不显示
-        if (evt.message === "aborted") break;
+        // 用户主动中止后的所有 error 事件都不显示
+        if (stoppedByUserRef.current) break;
         setError(evt.message);
         setMessages((prev) =>
           appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
@@ -262,6 +265,7 @@ export function useChatSSE({
       if (!text.trim()) return;
 
       setError(null);
+      stoppedByUserRef.current = false;
       setStats(null);
       setIsRunning(true);
       // 通知侧栏：当前会话进入 inflight 状态
@@ -321,6 +325,7 @@ export function useChatSSE({
       }
     },
     onCancel: async () => {
+      stoppedByUserRef.current = true;
       abortRef.current?.abort();
     },
   });
