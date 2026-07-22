@@ -89,7 +89,7 @@ export function ChatThread({
         <div className="mx-auto max-w-3xl">
           <div className="flex items-end gap-1.5 rounded-2xl border border-border/60 bg-card px-2 py-1 shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-accent/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-accent/20 md:gap-2 md:px-3 md:py-1.5">
             <ComposerPrimitive.Input
-              placeholder="输入消息…"
+              placeholder="输入消息… (Enter 发送 · Shift+Enter 换行)"
               submitMode="enter"
               className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
             />
@@ -174,10 +174,6 @@ export function ChatThread({
               </SelectContent>
             </Select>
           </div>
-          <p className="mt-2 text-center text-[0.7rem] text-muted-foreground/35">
-            <span className="hidden md:inline">Enter 发送  ·  Shift + Enter 换行</span>
-            <span className="inline md:hidden">轻触发送</span>
-          </p>
         </div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.Root>
