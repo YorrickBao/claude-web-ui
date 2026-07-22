@@ -120,6 +120,23 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     }
   }
 
+  async function handleBatchDelete(sessions: SessionView[], groupDir: string) {
+    if (!confirm(`确定删除目录「${getDirName(groupDir)}」下的所有会话（共 ${sessions.length} 个）？\n\n此操作会同时删除 SDK 历史记录，不可恢复。`)) {
+      return;
+    }
+    for (const s of sessions) {
+      try {
+        await deleteSessionApi(s.sessionId);
+        if (location.pathname === `/c/${s.sessionId}`) {
+          navigate("/new");
+        }
+      } catch (err) {
+        console.error(`删除会话 ${s.sessionId} 失败：`, err);
+      }
+    }
+    await refresh();
+  }
+
   async function handleEditTitle(s: SessionView, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -275,29 +292,38 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             {groupByCwd(sessions).map((group) => {
               const isCollapsedGroup = collapsedGroups.has(group.cwd);
               return (
-                <div key={group.cwd}>
-                  <button
-                    onClick={() => toggleGroup(group.cwd)}
-                    className="flex w-full items-center gap-1.5 truncate rounded px-2 text-xs font-medium text-neutral-500 hover:text-neutral-300"
-                    title={group.cwd}
-                  >
-                    <FolderOpen
-                      className={clsx(
-                        "h-3 w-3 shrink-0 text-neutral-500",
-                        isCollapsedGroup && "hidden"
-                      )}
-                    />
-                    <Folder
-                      className={clsx(
-                        "h-3 w-3 shrink-0 text-neutral-500",
-                        !isCollapsedGroup && "hidden"
-                      )}
-                    />
-                    <span className="truncate">{getDirName(group.cwd)}</span>
-                    <span className="ml-auto shrink-0 text-[10px] tabular-nums text-neutral-600">
+                <div key={group.cwd} className="group">
+                  <div className="flex items-center gap-1.5 px-2">
+                    <button
+                      onClick={() => toggleGroup(group.cwd)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-neutral-500 hover:text-neutral-300"
+                      title={group.cwd}
+                    >
+                      <FolderOpen
+                        className={clsx(
+                          "h-3 w-3 shrink-0 text-neutral-500",
+                          isCollapsedGroup && "hidden"
+                        )}
+                      />
+                      <Folder
+                        className={clsx(
+                          "h-3 w-3 shrink-0 text-neutral-500",
+                          !isCollapsedGroup && "hidden"
+                        )}
+                      />
+                      <span className="truncate">{getDirName(group.cwd)}</span>
+                    </button>
+                    <span className="shrink-0 text-[10px] tabular-nums text-neutral-600">
                       {group.sessions.length}
                     </span>
-                  </button>
+                    <button
+                      onClick={() => handleBatchDelete(group.sessions, group.cwd)}
+                      className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-red-400 group-hover:opacity-100"
+                      title="批量删除"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
                   {!isCollapsedGroup && (
                     <ul className="mt-0.5 space-y-0.5 pl-5">
                       {group.sessions.map((s) => (
