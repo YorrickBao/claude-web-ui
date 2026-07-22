@@ -86,6 +86,18 @@ export async function touchSession(
   await writeSessions(data);
 }
 
+/** 删除会话记录（sessions.json）。返回被删的记录（找不到返回 undefined）。 */
+export async function deleteSessionRecord(
+  sessionId: string,
+): Promise<SessionRecord | undefined> {
+  const data = await readAllSessions();
+  const idx = data.sessions.findIndex((s) => s.sessionId === sessionId);
+  if (idx < 0) return undefined;
+  const [removed] = data.sessions.splice(idx, 1);
+  await writeSessions(data);
+  return removed;
+}
+
 // ─────────────────────────────────────────────────────────────
 // profiles.json
 // ─────────────────────────────────────────────────────────────

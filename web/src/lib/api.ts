@@ -24,6 +24,16 @@ export async function abortSession(id: string): Promise<void> {
   });
 }
 
+/** 删除会话（记录 + SDK transcript + 中止进行中的） */
+export async function deleteSessionApi(id: string): Promise<void> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`deleteSession: ${res.status}`);
+  }
+}
+
 /** 列目录 */
 export async function browse(path: string): Promise<BrowseResult> {
   const res = await fetch(

@@ -6,6 +6,7 @@ import {
   listSessions,
   upsertSession,
   touchSession,
+  deleteSessionRecord,
   listProfiles,
   createProfile,
   updateProfile,
@@ -15,6 +16,7 @@ import {
   setSessionProfile,
 } from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
+import { deleteSession as sdkDeleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
   setInflight,
@@ -236,6 +238,35 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "no inflight query" });
       }
       ctrl.abort();
+      return reply.send({ ok: true });
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
+  // DELETE /api/sessions/:id —— 删除会话
+  // 清理：① sessions.json 记录 ② SDK transcript 文件 ③ 中止进行中的 query
+  // ───────────────────────────────────────────────────────────
+  app.delete<{ Params: { id: string } }>(
+    "/api/sessions/:id",
+    async (req, reply) => {
+      const sessionId = req.params.id;
+      // 先中止进行中的（如果有）
+      const ctrl = getInflight(sessionId);
+      if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+      clearInflight(sessionId);
+
+      const removed = await deleteSessionRecord(sessionId);
+      if (!removed) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+
+      // 删 SDK transcript（失败不致命 —— 记录已删，前端列表会刷新）
+      try {
+        await sdkDeleteSession(sessionId, { dir: removed.cwd });
+      } catch (err) {
+        app.log.warn({ err }, `sdkDeleteSession failed for ${sessionId}`);
+      }
+
       return reply.send({ ok: true });
     },
   );

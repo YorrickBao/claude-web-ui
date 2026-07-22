@@ -1,6 +1,8 @@
 # deps
 node_modules/
 .pnpm-store/
+# 我们是 pnpm 项目，npm 的 lock 不该进仓库
+package-lock.json
 
 # build
 dist/
