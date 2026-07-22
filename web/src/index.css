@@ -35,9 +35,9 @@ a, button, input, select, textarea, [role="button"] {
   touch-action: manipulation;
 }
 
-/* 移动端安全区域：底部 composer 需要避开 Home Indicator */
+/* 移动端安全区域：底部 composer 需要避开 Home Indicator，桌面端 fallback 到 1rem */
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
 }
 
 /* 滚动条 */
