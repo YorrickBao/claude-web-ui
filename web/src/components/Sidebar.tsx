@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
   MessageSquare,
-  RefreshCw,
   Settings,
   Trash2,
   Menu,
@@ -204,14 +203,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           Claude WebUI
         </span>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={refresh}
-            title="刷新"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
           <Button
             variant="ghost"
             size="icon"

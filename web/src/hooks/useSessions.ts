@@ -30,5 +30,14 @@ export function useSessions() {
     return () => window.removeEventListener("session-list-changed", handler);
   }, [refresh]);
 
+  // 页面重新获得焦点时自动刷新，同步 CLI 侧可能的新增/删除
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refresh]);
+
   return { sessions, loading, error, refresh };
 }
