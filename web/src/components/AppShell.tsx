@@ -1,9 +1,10 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
 import { ChatView } from "@/components/ChatView";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
-import { useEffect, useState } from "react";
+import type { SessionView } from "@/lib/types";
 
 /**
  * 整个应用的布局壳：左 Sidebar + 右主内容区。
@@ -85,23 +86,29 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     let cancelled = false;
     setMeta(null);
     setErr(null);
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
+
+    async function load() {
+      try {
+        const res = await fetch(
+          `/api/sessions/${encodeURIComponent(sessionId)}`,
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as SessionView & {
+          messages: ThreadMessageLike[];
+        };
         if (cancelled) return;
         setMeta({
           title: data.title ?? sessionId,
           cwd: data.cwd ?? "",
-          messages: (data.messages ?? []) as ThreadMessageLike[],
+          messages: data.messages ?? [],
           profileId: data.profileId ?? null,
         });
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!cancelled) setErr((e as Error).message);
-      });
+      }
+    }
+
+    void load();
     return () => {
       cancelled = true;
     };

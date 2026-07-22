@@ -8,13 +8,21 @@ export async function listSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
+/** 扫描 .claude/sessions 目录，返回历史会话列表 */
+export async function scanClaudeSessions(): Promise<SessionView[]> {
+  const res = await fetch("/api/sessions/scan-claude");
+  if (!res.ok) throw new Error(`scanClaudeSessions: ${res.status}`);
+  const data = (await res.json()) as { sessions: SessionView[] };
+  return data.sessions;
+}
+
 /** 单个会话详情（含元信息） */
 export async function getSession(
   id: string,
 ): Promise<SessionView & { messages: unknown[] }> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`getSession: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<SessionView & { messages: unknown[] }>;
 }
 
 /** 中止进行中的会话 */
@@ -40,7 +48,7 @@ export async function browse(path: string): Promise<BrowseResult> {
     `/api/browse?path=${encodeURIComponent(path)}`,
   );
   if (!res.ok) throw new Error(`browse: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<BrowseResult>;
 }
 
 /**

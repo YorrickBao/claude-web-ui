@@ -19,7 +19,6 @@ export function NewSessionView() {
   // 初次加载：尝试 home 目录
   useEffect(() => {
     void doBrowse("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function doBrowse(path: string) {

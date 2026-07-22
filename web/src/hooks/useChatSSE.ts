@@ -3,7 +3,6 @@ import {
   useExternalStoreRuntime,
   type AppendMessage,
   type ThreadMessageLike,
-  type AssistantRuntime,
 } from "@assistant-ui/react";
 import { createSession, sendMessage } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
@@ -173,7 +172,7 @@ export function useChatSSE({
   });
 
   return {
-    runtime: runtime as AssistantRuntime,
+    runtime: runtime,
     messages,
     isRunning,
     error,

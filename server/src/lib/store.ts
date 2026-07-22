@@ -1,5 +1,7 @@
 import fsp from "node:fs/promises";
-import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
+import path from "node:path";
+import type { Dirent } from "node:fs";
+import { DATA_DIR, HOME_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 
@@ -25,7 +27,7 @@ async function ensureFile(p: string, defaultContent: string): Promise<void> {
 
 /** 原子写 */
 async function writeFile_atomic(p: string, content: string): Promise<void> {
-  const tmp = p + ".tmp";
+  const tmp: string = p + ".tmp";
   await fsp.writeFile(tmp, content, "utf8");
   await fsp.rename(tmp, p);
 }
@@ -37,7 +39,7 @@ async function writeFile_atomic(p: string, content: string): Promise<void> {
 async function readAllSessions(): Promise<SessionsFile> {
   await ensureFiles();
   try {
-    const raw = await fsp.readFile(SESSIONS_FILE, "utf8");
+    const raw: string = await fsp.readFile(SESSIONS_FILE, "utf8");
     return JSON.parse(raw) as SessionsFile;
   } catch {
     return EMPTY_SESSIONS;
@@ -105,7 +107,7 @@ export async function deleteSessionRecord(
 async function readAllProfiles(): Promise<{ profiles: EnvProfile[] }> {
   await ensureFiles();
   try {
-    const raw = await fsp.readFile(PROFILES_FILE, "utf8");
+    const raw: string = await fsp.readFile(PROFILES_FILE, "utf8");
     return JSON.parse(raw) as { profiles: EnvProfile[] };
   } catch {
     return EMPTY_PROFILES;
@@ -192,6 +194,107 @@ export async function setSessionProfile(
   profileId: string | null,
 ): Promise<void> {
   await touchSession(sessionId, { profileId });
+}
+
+// ─────────────────────────────────────────────────────────────
+// 从 .claude/sessions 目录读取历史会话
+// ─────────────────────────────────────────────────────────────
+
+/** .claude/sessions 下的会话元信息 */
+interface ClaudeSessionInfo {
+  pid?: number;
+  sessionId: string;
+  cwd: string;
+  startedAt: number;
+  procStart?: string;
+  version?: string;
+  peerProtocol?: number;
+  kind?: string;
+  entrypoint?: string;
+  name?: string;
+  nameSource?: string;
+  status?: string;
+  updatedAt?: number;
+  statusUpdatedAt?: number;
+}
+
+/**
+ * 从 .claude/sessions 目录扫描所有会话文件，返回会话记录列表。
+ * 与本地的 sessions.json 合并，优先使用本地记录的更新信息。
+ */
+export async function scanClaudeSessions(): Promise<SessionRecord[]> {
+  const claudeSessionsDir: string = path.join(HOME_DIR, ".claude", "sessions");
+
+  const claudeSessions: SessionRecord[] = [];
+  const localSessions = await readAllSessions();
+
+  // 读取本地会话记录（避免重复扫描）
+  const localMap = new Map(
+    localSessions.sessions.map((s) => [s.sessionId, s]),
+  );
+
+  try {
+    const entries = await fsp.readdir(claudeSessionsDir, {
+      withFileTypes: true,
+    });
+
+    for (const entry of entries) {
+      const e: Dirent = entry;
+      if (!e.isFile() || !e.name.endsWith(".json")) continue;
+
+      try {
+        const filePath: string = path.join(claudeSessionsDir, e.name);
+        const content: string = await fsp.readFile(filePath, "utf8");
+        const info: ClaudeSessionInfo = JSON.parse(content) as ClaudeSessionInfo;
+
+        // 提取 sessionId（从文件名或 JSON 中）
+        const sessionId = info.sessionId || e.name.replace(".json", "");
+
+        // 转换为 SessionRecord
+        const record: SessionRecord = {
+          sessionId,
+          cwd: info.cwd || "",
+          title: null, // 暂时为 null，后续可以从历史消息中提取
+          firstPrompt: null,
+          createdAt: info.startedAt || Date.now(),
+          lastModified: info.updatedAt || info.startedAt || Date.now(),
+          profileId: null, // 暂时为 null
+        };
+
+        // 如果本地有记录，合并更新
+        const local = localMap.get(sessionId);
+        if (local) {
+          record.title = local.title;
+          record.firstPrompt = local.firstPrompt;
+          record.profileId = local.profileId;
+          record.lastModified = Math.max(
+            local.lastModified,
+            record.lastModified,
+          );
+        }
+
+        claudeSessions.push(record);
+        localMap.delete(sessionId); // 标记为已处理
+      } catch (err) {
+        const e = err as Error;
+        console.error(`Failed to parse ${e.name}:`, e);
+      }
+    }
+  } catch (err) {
+    // .claude/sessions 目录不存在或无法访问，返回空数组
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("Failed to scan .claude/sessions:", err);
+    }
+  }
+
+  // 补充本地会话记录（未被 .claude 扫描到的）
+  for (const session of localSessions.sessions) {
+    if (localMap.has(session.sessionId)) {
+      claudeSessions.push(session);
+    }
+  }
+
+  return claudeSessions;
 }
 
 /**

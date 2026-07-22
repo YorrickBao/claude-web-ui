@@ -57,7 +57,7 @@ function parseEventBlock(block: string): SSEEvent | null {
   const dataStr = dataLines.join("\n");
 
   try {
-    const data = JSON.parse(dataStr);
+    const data: unknown = JSON.parse(dataStr);
     // 后端约定：event 名 == data.type；以 data 为准
     return data as SSEEvent;
   } catch {

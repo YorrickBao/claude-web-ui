@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -11,6 +12,9 @@ export const SERVER_DIR = path.resolve(__dirname, "..");
 
 /** 数据目录（存 sessions.json 等） */
 export const DATA_DIR = path.join(SERVER_DIR, "data");
+
+/** 用户主目录（~） */
+export const HOME_DIR = os.homedir();
 
 /** sessions.json 路径 */
 export const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");

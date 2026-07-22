@@ -14,6 +14,7 @@ import {
   resolveSessionEnv,
   resolveProfileEnv,
   setSessionProfile,
+  scanClaudeSessions,
 } from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
 import { deleteSession as sdkDeleteSession } from "@anthropic-ai/claude-agent-sdk";
@@ -41,7 +42,7 @@ async function resolveTitle(
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // ───────────────────────────────────────────────────────────
-  // GET /api/sessions —— 列出会话
+  // GET /api/sessions —— 列出所有会话
   // ───────────────────────────────────────────────────────────
   app.get("/api/sessions", async (_req, reply) => {
     const records = await listSessions();
@@ -55,6 +56,27 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       profileId: r.profileId ?? null,
     }));
     return reply.send({ sessions: views });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // GET /api/sessions/scan-claude —— 扫描 .claude/sessions 目录
+  // ───────────────────────────────────────────────────────────
+  app.get("/api/sessions/scan-claude", async (_req, reply) => {
+    try {
+      const records = await scanClaudeSessions();
+      const views: SessionView[] = records.map((r) => ({
+        sessionId: r.sessionId,
+        cwd: r.cwd,
+        title: r.title ?? r.firstPrompt ?? "（无标题）",
+        firstPrompt: r.firstPrompt,
+        createdAt: r.createdAt,
+        lastModified: r.lastModified,
+        profileId: r.profileId ?? null,
+      }));
+      return reply.send({ sessions: views });
+    } catch (err) {
+      return reply.code(500).send({ error: "Failed to scan .claude/sessions" });
+    }
   });
 
   // ───────────────────────────────────────────────────────────

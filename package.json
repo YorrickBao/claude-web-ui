@@ -9,7 +9,15 @@
     "dev:web": "pnpm --filter ./web dev",
     "build": "pnpm --filter ./web build && pnpm --filter ./server build",
     "start": "pnpm --filter ./server start",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
-  "packageManager": "pnpm@10.31.0"
+  "packageManager": "pnpm@10.31.0",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript-eslint": "^8.65.0"
+  }
 }
