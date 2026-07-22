@@ -299,7 +299,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     </span>
                   </button>
                   {!isCollapsedGroup && (
-                    <ul className="mt-0.5 space-y-0.5">
+                    <ul className="mt-0.5 space-y-0.5 pl-5">
                       {group.sessions.map((s) => (
                         <li key={s.sessionId}>
                           <NavLink
