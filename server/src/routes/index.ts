@@ -15,7 +15,7 @@ import {
   resolveProfileEnv,
   setSessionProfile,
 } from "../lib/store.js";
-import { runQuery } from "../lib/sdk.js";
+import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
@@ -35,39 +35,40 @@ import type {
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
 
-async function resolveTitle(
-  title: string | undefined,
-  message: string,
-): Promise<{ title: string | null; firstPrompt: string }> {
-  const firstPrompt = message.trim().slice(0, 200);
-  const t = title?.trim();
-  return { title: t && t.length > 0 ? t : null, firstPrompt };
+/** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
+function resolveSdkTitle(sdk: { customTitle?: string; summary?: string }): string {
+  return sdk.customTitle || sdk.summary || "（无标题）";
 }
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // ───────────────────────────────────────────────────────────
-  // GET /api/sessions —— 列出所有会话（实时同步 CLI 磁盘）
+  // GET /api/sessions —— 列出所有会话（实时同步 CLI 磁盘，标题来自 SDK）
   // ───────────────────────────────────────────────────────────
   app.get("/api/sessions", async (_req, reply) => {
     const records = await syncAndListSessions();
-    const views: SessionView[] = records.map((r) => ({
-      sessionId: r.sessionId,
-      cwd: r.cwd,
-      title: r.title ?? r.firstPrompt ?? "（无标题）",
-      firstPrompt: r.firstPrompt,
-      createdAt: r.createdAt,
-      lastModified: r.lastModified,
-      profileId: r.profileId ?? null,
-      runningStatus: getInflightStatus(r.sessionId) ?? "idle",
-      permissionMode: r.permissionMode ?? "bypassPermissions",
-      effortLevel: r.effortLevel ?? "high",
-    }));
+    // 取 SDK 标题映射（一次 SDK 调用，O(1) 查询）
+    const sdkAll = await sdkListSessions();
+    const sdkMap = new Map(sdkAll.map((s) => [s.sessionId, s]));
+
+    const views: SessionView[] = records.map((r) => {
+      const sdk = sdkMap.get(r.sessionId);
+      return {
+        sessionId: r.sessionId,
+        cwd: r.cwd,
+        title: sdk ? resolveSdkTitle(sdk) : "（无标题）",
+        createdAt: r.createdAt,
+        lastModified: r.lastModified,
+        profileId: r.profileId ?? null,
+        runningStatus: getInflightStatus(r.sessionId) ?? "idle",
+        permissionMode: r.permissionMode ?? "bypassPermissions",
+        effortLevel: r.effortLevel ?? "high",
+      };
+    });
     return reply.send({ sessions: views });
   });
 
   // ───────────────────────────────────────────────────────────
-  // GET /api/sessions/:id —— 单会话历史（暂返回 store 元信息；
-  // 历史消息的回放等 Phase 3 再接 SDK getSessionMessages）
+  // GET /api/sessions/:id —— 单会话详情（标题来自 SDK）
   // ───────────────────────────────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/sessions/:id",
@@ -76,6 +77,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (!rec) {
         return reply.code(404).send({ error: "session not found" });
       }
+      // SDK 标题
+      const sdkInfo = await getSessionInfo(rec.sessionId, { dir: rec.cwd });
+      const title = sdkInfo ? resolveSdkTitle(sdkInfo) : "（无标题）";
       // 拉历史消息（SDK 转录）。失败不致命 —— 返回空数组，前端照常能用
       let history: Awaited<ReturnType<typeof replaySession>> = [];
       try {
@@ -89,8 +93,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         sessionId: rec.sessionId,
         cwd: rec.cwd,
-        title: rec.title ?? rec.firstPrompt ?? "（无标题）",
-        firstPrompt: rec.firstPrompt,
+        title,
         createdAt: rec.createdAt,
         lastModified: rec.lastModified,
         profileId: rec.profileId ?? null,
@@ -151,21 +154,26 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       const register = async (id: string) => {
         sessionId = id;
         setInflight(id, ctrl);
-        const { title, firstPrompt } = await resolveTitle(
-          body.title,
-          body.message,
-        );
+        // 标题：用户指定的优先，其次用首条消息截断
+        const initialTitle =
+          body.title?.trim() || body.message.trim().slice(0, 200) || null;
         await upsertSession({
           sessionId: id,
           cwd: body.cwd,
-          title,
-          firstPrompt,
           createdAt: Date.now(),
           lastModified: Date.now(),
           profileId,
           permissionMode,
           effortLevel,
         });
+        // 通过 SDK 设置标题（写入 jsonl 转录，CLI 也能看到）
+        if (initialTitle) {
+          try {
+            await renameSession(id, initialTitle);
+          } catch (err) {
+            app.log.warn({ err }, `renameSession failed for new session ${id}`);
+          }
+        }
         registered = true;
       };
 
@@ -318,7 +326,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ───────────────────────────────────────────────────────────
-  // PUT /api/sessions/:id/title —— 更新会话标题
+  // PUT /api/sessions/:id/title —— 更新会话标题（通过 SDK renameSession）
   // ───────────────────────────────────────────────────────────
   app.put<{
     Params: { id: string };
@@ -334,12 +342,16 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "session not found" });
       }
 
-      await upsertSession({
-        ...session,
-        title: title === "" ? null : title || null,
-      });
+      const newTitle = title?.trim() || null;
+      try {
+        // SDK 写入 customTitle 到转录文件，CLI 也能看到
+        await renameSession(id, newTitle ?? "");
+      } catch (err) {
+        app.log.warn({ err }, `renameSession failed for ${id}`);
+        // renameSession 失败不阻塞，标题下次列表刷新会回退到 summary
+      }
 
-      return reply.send({ ok: true, title });
+      return reply.send({ ok: true, title: newTitle });
     },
   );
 

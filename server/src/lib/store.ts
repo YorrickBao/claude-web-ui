@@ -1,9 +1,9 @@
 import fsp from "node:fs/promises";
-import path from "node:path";
-import { DATA_DIR, HOME_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
+import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 import { getInflight } from "./inflight.js";
+import { listSessions as sdkListSessions } from "./sdk.js";
 
 const EMPTY_SESSIONS: SessionsFile = { sessions: [] };
 const EMPTY_PROFILES: { profiles: EnvProfile[] } = { profiles: [] };
@@ -197,345 +197,64 @@ export async function setSessionProfile(
 }
 
 // ─────────────────────────────────────────────────────────────
-// CLI 磁盘遍历（唯一入口，所有 CLI 扫描逻辑只写一遍）
-// ─────────────────────────────────────────────────────────────
-
-/** walkCliSessions 对每个磁盘会话产出的原始条目 */
-interface RawCliEntry {
-  sessionId: string;
-  /** jsonl 文件的绝对路径 */
-  jsonlPath: string;
-  /** sessions-index.json 中的原始条目（存在时优先用其元数据） */
-  indexEntry?: Record<string, unknown>;
-}
-
-/**
- * 遍历 CLI 磁盘上的所有会话（~/.claude/projects/ + ~/.claude/transcripts/）。
- *
- * 每个 session 只产出一次：
- *  - 优先用 sessions-index.json 中的条目（元数据更丰富）
- *  - 回退到直接扫 *.jsonl 文件
- *
- * 不解析 jsonl 内容，只收集文件路径和 index 元数据。
- */
-async function* walkCliSessions(): AsyncGenerator<RawCliEntry> {
-  const projectsDir = path.join(HOME_DIR, ".claude", "projects");
-  const transcriptsDir = path.join(HOME_DIR, ".claude", "transcripts");
-  const seen = new Set<string>();
-
-  // ── 1. projects/ 目录 ──
-  try {
-    const dirs = await fsp.readdir(projectsDir, { withFileTypes: true });
-    for (const d of dirs) {
-      if (!d.isDirectory()) continue;
-      const dp = path.join(projectsDir, d.name);
-
-      // 先读 sessions-index.json，建立 id → 条目 映射
-      const indexMap = new Map<string, Record<string, unknown>>();
-      try {
-        const raw = await fsp.readFile(
-          path.join(dp, "sessions-index.json"),
-          "utf8",
-        );
-        const idx = JSON.parse(raw);
-        if (Array.isArray(idx.entries)) {
-          for (const e of idx.entries) {
-            if (e.sessionId) indexMap.set(e.sessionId, e);
-          }
-        }
-      } catch { /* 无 index */ }
-
-      // 扫 *.jsonl，优先匹配 index 条目
-      try {
-        const files = await fsp.readdir(dp);
-        for (const f of files) {
-          if (!f.endsWith(".jsonl")) continue;
-          const sid = f.replace(".jsonl", "");
-          if (seen.has(sid)) continue;
-          seen.add(sid);
-          yield {
-            sessionId: sid,
-            jsonlPath: path.join(dp, f),
-            indexEntry: indexMap.get(sid),
-          };
-        }
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          console.error(`Failed to read project directory ${dp}:`, err);
-        }
-      }
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Failed to scan .claude/projects:", err);
-    }
-  }
-
-  // ── 2. transcripts/ 目录（兼容旧格式） ──
-  try {
-    const files = await fsp.readdir(transcriptsDir);
-    for (const f of files) {
-      if (!f.endsWith(".jsonl")) continue;
-      const sid = f.replace(".jsonl", "").replace(/^ses_/, "");
-      if (seen.has(sid)) continue;
-      seen.add(sid);
-      yield { sessionId: sid, jsonlPath: path.join(transcriptsDir, f) };
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Failed to scan .claude/transcripts:", err);
-    }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// 扫描 CLI 会话（完整版：解析 jsonl，合并本地元数据）
+// 会话列表（用 SDK listSessions 替代手动扫盘）
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 尝试从 jsonl 转录文件中提取第一条用户消息。
- */
-async function extractFirstPromptFromTranscript(
-  fullPath: string,
-): Promise<string | null> {
-  try {
-    const content = await fsp.readFile(fullPath, "utf8");
-    const lines = content.split("\n").filter((line) => line.trim());
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === "user" && entry.message?.content) {
-          const msgContent = entry.message.content;
-          if (typeof msgContent === "string") {
-            const trimmed = msgContent.trim().slice(0, 200);
-            if (trimmed) return trimmed;
-          } else if (Array.isArray(msgContent) && msgContent.length > 0) {
-            const firstText = msgContent.find(
-              (c: unknown) => typeof c === "string" && (c as string).trim(),
-            );
-            if (firstText) return (firstText as string).trim().slice(0, 200);
-          }
-        }
-      } catch { /* skip malformed line */ }
-    }
-  } catch { /* file not found or unreadable */ }
-  return null;
-}
-
-/** .claude 下的会话元信息（同时支持新旧两种存储格式） */
-export async function scanClaudeSessions(): Promise<SessionRecord[]> {
-  const localSessions = await readAllSessions();
-  const localMap = new Map(localSessions.sessions.map((s) => [s.sessionId, s]));
-  const claudeSessions: SessionRecord[] = [];
-
-  for await (const raw of walkCliSessions()) {
-    let cwd = "";
-    let title: string | null = null;
-    let firstPrompt: string | null = null;
-    let createdAt = Date.now();
-    let lastModified = Date.now();
-
-    if (raw.indexEntry) {
-      // ── 有 index：直接取结构化元数据 ──
-      const e = raw.indexEntry as Record<string, unknown>;
-      cwd = (e.projectPath as string) || "";
-      title = (e.summary as string) || null;
-      firstPrompt =
-        e.firstPrompt && e.firstPrompt !== "No prompt"
-          ? (e.firstPrompt as string)
-          : null;
-      createdAt = e.created
-        ? new Date(e.created as string).getTime()
-        : Date.now();
-      lastModified = e.modified
-        ? new Date(e.modified as string).getTime()
-        : Date.now();
-
-      // 优先从 jsonl 实时提取 firstPrompt（比 index 里的更准确）
-      const transcriptPrompt = await extractFirstPromptFromTranscript(
-        raw.jsonlPath,
-      );
-      if (transcriptPrompt) firstPrompt = transcriptPrompt;
-    } else {
-      // ── 无 index：从 jsonl 解析全部元数据 ──
-      try {
-        const st = await fsp.stat(raw.jsonlPath);
-        lastModified = st.mtimeMs;
-        if (st.birthtimeMs) createdAt = st.birthtimeMs;
-      } catch { /* stat 失败 */ }
-
-      try {
-        const content = await fsp.readFile(raw.jsonlPath, "utf8");
-        const lines = content.split("\n").filter((l) => l.trim());
-        let firstTimestamp = Date.now();
-        let lastTimestamp = 0;
-
-        for (const line of lines) {
-          try {
-            const entry = JSON.parse(line);
-            if (entry.cwd && !cwd) cwd = entry.cwd;
-            if (entry.timestamp) {
-              const ts = new Date(entry.timestamp).getTime();
-              if (ts && ts < firstTimestamp) firstTimestamp = ts;
-              if (ts && ts > lastTimestamp) lastTimestamp = ts;
-            }
-            if (!firstPrompt && entry.type === "user" && entry.message?.content) {
-              const mc = entry.message.content;
-              if (typeof mc === "string") {
-                firstPrompt = mc.trim().slice(0, 200);
-              } else if (Array.isArray(mc) && mc.length > 0) {
-                const ft = mc.find(
-                  (c: unknown) => typeof c === "string" && (c as string).trim(),
-                );
-                if (ft) firstPrompt = (ft as string).trim().slice(0, 200);
-              }
-            }
-          } catch { /* skip malformed line */ }
-        }
-
-        if (firstTimestamp < createdAt) createdAt = firstTimestamp;
-        if (lastTimestamp > lastModified) lastModified = lastTimestamp;
-      } catch (err) {
-        console.error(`Failed to parse ${raw.jsonlPath}:`, err);
-      }
-    }
-
-    const record: SessionRecord = {
-      sessionId: raw.sessionId,
-      cwd,
-      title,
-      firstPrompt,
-      createdAt,
-      lastModified,
-      profileId: null,
-      permissionMode: "bypassPermissions",
-      effortLevel: "high",
-    };
-
-    // 合并本地元数据（title / profileId / firstPrompt / permissionMode / effortLevel）
-    const local = localMap.get(raw.sessionId);
-    if (local) {
-      record.title = local.title || record.title;
-      record.firstPrompt = local.firstPrompt || record.firstPrompt;
-      record.profileId = local.profileId;
-      record.permissionMode = local.permissionMode || record.permissionMode;
-      record.effortLevel = local.effortLevel || record.effortLevel;
-      record.lastModified = Math.max(local.lastModified, record.lastModified);
-    }
-
-    claudeSessions.push(record);
-    localMap.delete(raw.sessionId);
-  }
-
-  // 补充本地会话记录（未被 CLI 扫描到的，如手动导入的旧数据）
-  for (const session of localSessions.sessions) {
-    if (localMap.has(session.sessionId)) {
-      claudeSessions.push(session);
-    }
-  }
-
-  return claudeSessions;
-}
-
-// ─────────────────────────────────────────────────────────────
-// 实时同步：sessions.json 作为 CLI 磁盘状态的镜像缓存
-// ─────────────────────────────────────────────────────────────
-
-/**
- * 快速收集 CLI 磁盘上的所有会话 id（不解析 jsonl 内容，轻量）。
- * 用于 syncAndListSessions 的"哪些会话在 CLI 磁盘上"判断。
- */
-async function collectCliSessionIds(): Promise<
-  Map<string, { cwd: string; lastModified: number }>
-> {
-  const result = new Map<string, { cwd: string; lastModified: number }>();
-  for await (const raw of walkCliSessions()) {
-    let cwd = "";
-    let lastModified = Date.now();
-
-    if (raw.indexEntry) {
-      const e = raw.indexEntry as Record<string, unknown>;
-      cwd = (e.projectPath as string) || "";
-      lastModified = e.modified
-        ? new Date(e.modified as string).getTime()
-        : Date.now();
-    } else {
-      try {
-        const st = await fsp.stat(raw.jsonlPath);
-        lastModified = st.mtimeMs;
-      } catch { /* stat 失败用当前时间 */ }
-    }
-
-    result.set(raw.sessionId, { cwd, lastModified });
-  }
-  return result;
-}
-
-/**
- * 列出所有会话——先与 CLI 磁盘同步再返回。
+ * 与 CLI 磁盘同步并返回所有会话。
  *
  * 同步规则：
- *  ① CLI 磁盘上有但 sessions.json 里没有 → 自动导入
- *  ② sessions.json 里有但 CLI 磁盘上已不存在 → 移除（被 CLI 端删掉了）
- *  ③ 两边都有 → 保留 sessions.json 的 title/profileId，时间戳取最新
- *
- * 这是个写操作：同步后的结果会原子写回 sessions.json。
+ *  ① SDK 扫到的会话 → 自动导入到 sessions.json（补默认 profileId/permissionMode/effortLevel）
+ *  ② sessions.json 有但 SDK 磁盘上已不存在 → 移除（除非 inflight 中）
+ *  ③ 两边都有 → 保留 sessions.json 的 profileId/permissionMode/effortLevel，时间戳取最新
  */
 export async function syncAndListSessions(): Promise<SessionRecord[]> {
   const local = await readAllSessions();
-  const cliMap = await collectCliSessionIds();
-  const cliIds = new Set(cliMap.keys());
+  const localMap = new Map(local.sessions.map((s) => [s.sessionId, s]));
+
+  // SDK 扫描所有项目的会话转录
+  const sdkSessions = await sdkListSessions();
 
   let changed = false;
-  const kept: SessionRecord[] = [];
+  const merged: SessionRecord[] = [];
 
-  // ① + ③：遍历 sessions.json，保留 CLI 磁盘上仍存在的
-  for (const s of local.sessions) {
-    if (cliIds.has(s.sessionId)) {
-      const cliInfo = cliMap.get(s.sessionId)!;
-      if (cliInfo.lastModified > s.lastModified) {
-        s.lastModified = cliInfo.lastModified;
-        changed = true;
-      }
-      kept.push(s);
-    } else if (getInflight(s.sessionId)) {
-      // 正在创建中（SDK 可能尚未落盘 JSONL），保留不删
-      kept.push(s);
-    } else {
-      changed = true; // 被 CLI 端删除 → 移除
+  for (const sdk of sdkSessions) {
+    const localRec = localMap.get(sdk.sessionId);
+
+    const record: SessionRecord = {
+      sessionId: sdk.sessionId,
+      cwd: sdk.cwd ?? "",
+      createdAt: sdk.createdAt ?? sdk.lastModified ?? Date.now(),
+      lastModified: sdk.lastModified,
+      profileId: localRec?.profileId ?? null,
+      permissionMode: localRec?.permissionMode ?? "bypassPermissions",
+      effortLevel: localRec?.effortLevel ?? "high",
+    };
+
+    if (!localRec) {
+      changed = true; // 新导入
+    } else if (sdk.lastModified > localRec.lastModified) {
+      changed = true; // 磁盘上有更新
     }
+
+    merged.push(record);
+    localMap.delete(sdk.sessionId);
   }
 
-  // ②：CLI 磁盘上有但 sessions.json 里没有 → 自动导入
-  const keptIds = new Set(kept.map((s) => s.sessionId));
-  const newIds = [...cliIds].filter((id) => !keptIds.has(id));
-
-  if (newIds.length > 0) {
-    // 新会话需要 firstPrompt（作兜底标题），调用完整扫描获取元数据
-    const fullScan = await scanClaudeSessions();
-    for (const cs of fullScan) {
-      if (newIds.includes(cs.sessionId)) {
-        kept.push({
-          sessionId: cs.sessionId,
-          cwd: cs.cwd,
-          title: cs.title,
-          firstPrompt: cs.firstPrompt,
-          createdAt: cs.createdAt,
-          lastModified: cs.lastModified,
-          profileId: null,
-          permissionMode: "bypassPermissions",
-          effortLevel: "high",
-        });
-        changed = true;
-      }
+  // 保留 sessions.json 中有但 SDK 没扫到的（仅在 inflight 中的新会话）
+  for (const [id, rec] of localMap) {
+    if (getInflight(id)) {
+      merged.push(rec);
+    } else {
+      changed = true; // 被 CLI 删除 → 移除
     }
   }
 
   if (changed) {
-    await writeSessions({ sessions: kept });
+    await writeSessions({ sessions: merged });
   }
 
-  return [...kept].sort((a, b) => b.lastModified - a.lastModified);
+  return [...merged].sort((a, b) => b.lastModified - a.lastModified);
 }
 
 /**

@@ -1,5 +1,14 @@
-import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  listSessions,
+  getSessionInfo,
+  renameSession,
+  type SDKMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { SSEEvent, PermissionMode, EffortLevel } from "./types.js";
+
+// 重新导出 SDK 会话管理函数供 store 和 routes 使用
+export { listSessions, getSessionInfo, renameSession };
 
 /**
  * 运行一次 Claude Agent SDK 的 query()，把 SDKMessage 流翻译成 SSEEvent 流。

@@ -22,16 +22,13 @@ export interface EnvProfile {
   updatedAt: number;
 }
 
-/** 我们自己存的会话元信息（sessions.json 里的一条记录） */
+/** 我们自己存的会话元信息（sessions.json 里的一条记录）。
+ *  标题由 SDK 的 customTitle/summary 管理，这里只存 SDK 不覆盖的字段。 */
 export interface SessionRecord {
   /** SDK 的 session_id，同时也是前端 URL id */
   sessionId: string;
   /** 工作目录（绝对路径） */
   cwd: string;
-  /** 自定义标题（用户没设则用 firstPrompt 兜底） */
-  title: string | null;
-  /** 第一条用户消息（兜底标题用） */
-  firstPrompt: string | null;
   /** 创建时间（ms） */
   createdAt: number;
   /** 最后活跃时间（ms） */
@@ -44,12 +41,11 @@ export interface SessionRecord {
   effortLevel: EffortLevel;
 }
 
-/** 返回给前端的会话（合并 SDK 元信息后） */
+/** 返回给前端的会话（合并 SDK 元信息后）。标题来自 SDK customTitle / summary。 */
 export interface SessionView {
   sessionId: string;
   cwd: string;
   title: string;
-  firstPrompt: string | null;
   createdAt: number;
   lastModified: number;
   /** 当前绑定的 profile id（null = 纯 CLI 默认） */

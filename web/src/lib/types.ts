@@ -24,7 +24,6 @@ export interface SessionView {
   sessionId: string;
   cwd: string;
   title: string;
-  firstPrompt: string | null;
   createdAt: number;
   lastModified: number;
   profileId: string | null;
