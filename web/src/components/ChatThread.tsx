@@ -96,7 +96,7 @@ export function ChatThread({
           </div>
         </ThreadPrimitive.Empty>
 
-        <div className="mx-auto max-w-3xl px-2 py-4 md:px-4 md:py-6">
+        <div className="mx-auto max-w-3xl px-3 py-4 md:px-4 md:py-6">
           <ThreadPrimitive.Messages
             components={{
               UserMessage: UserMessage,
@@ -106,7 +106,7 @@ export function ChatThread({
         </div>
       </ThreadPrimitive.Viewport>
 
-      <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-2 pb-4 pt-8 md:px-4 pb-safe">
+      <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pb-4 pt-8 md:px-4 pb-safe">
         <div className="mx-auto max-w-3xl">
           <div className="flex items-end gap-1.5 rounded-2xl border border-border/60 bg-card px-2 py-1 shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-accent/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-accent/20 md:gap-2 md:px-3 md:py-1.5">
             <ComposerPrimitive.Input
