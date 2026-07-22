@@ -249,24 +249,17 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
               const isCollapsedGroup = collapsedGroups.has(group.cwd);
               return (
                   <div key={group.cwd} className="group/grp">
-                  <div className="flex items-center gap-1.5 border-l-2 border-l-border/40 px-2 pl-1.5">
+                  <div className="flex items-center gap-1.5 px-2">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-muted-foreground hover:text-muted-foreground"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-muted-foreground"
                       title={group.cwd}
                     >
-                      <FolderOpen
-                        className={cn(
-                          "h-3 w-3 shrink-0 text-muted-foreground",
-                          isCollapsedGroup && "hidden"
-                        )}
-                      />
-                      <Folder
-                        className={cn(
-                          "h-3 w-3 shrink-0 text-muted-foreground",
-                          !isCollapsedGroup && "hidden"
-                        )}
-                      />
+                      {isCollapsedGroup ? (
+                        <Folder className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      )}
                       <span className="truncate">{getDirName(group.cwd)}</span>
                     </button>
                     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
@@ -299,10 +292,10 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             to={`/c/${s.sessionId}`}
                             className={({ isActive }) =>
                               cn(
-                                "group/item flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
+                                "group/item flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
                                 isActive
-                                  ? "border-l-accent bg-accent/10 text-foreground"
-                                  : "border-l-transparent text-foreground hover:bg-card"
+                                  ? "bg-accent/10 text-foreground"
+                                  : "text-foreground hover:bg-card"
                               )
                             }
                           >
