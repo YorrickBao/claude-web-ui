@@ -1,5 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 /**
  * 内置斜杠命令的描述映射表。
  * SDK 的 system/init 只返回命令名字符串，这里补全描述和参数提示。
@@ -21,27 +22,23 @@ const BUILTIN = {
     "/ide": { description: "管理 IDE 集成" },
     "/agents": { description: "管理子代理" },
 };
+/** 用户主目录路径 */
+const HOME = os.homedir();
 /**
- * 尝试从 .claude/commands/*.md 目录解析自定义命令的描述。
- * 每个 .md 文件就是一个命令，文件名就是命令名，第一行 # 标题作为描述。
+ * 从 .claude/commands/*.md 目录解析自定义命令。
+ * 文件名就是命令名（去掉 .md），第一行 # 标题作为描述。
  */
-async function readCustomCommands(cwd) {
-    const commandsDir = path.join(cwd, ".claude", "commands");
+async function readCommandsDir(dirPath) {
     try {
-        const entries = await fsp.readdir(commandsDir, { withFileTypes: true });
+        const entries = await fsp.readdir(dirPath, { withFileTypes: true });
         const commands = [];
         for (const e of entries) {
             if (!e.isFile() || !e.name.endsWith(".md"))
                 continue;
             const name = "/" + e.name.replace(/\.md$/, "");
             try {
-                // 读前 200 字节提取第一行标题作为描述
-                const fd = await fsp.open(path.join(commandsDir, e.name), "r");
-                const buf = Buffer.alloc(200);
-                await fd.read(buf, 0, 200, 0);
-                await fd.close();
-                const content = buf.toString("utf-8");
-                const titleMatch = content.match(/^#\s+(.+)$/m);
+                const raw = await fsp.readFile(path.join(dirPath, e.name), "utf-8");
+                const titleMatch = raw.match(/^#\s+(.+)$/m);
                 commands.push({ name, description: titleMatch?.[1] ?? name });
             }
             catch {
@@ -54,12 +51,91 @@ async function readCustomCommands(cwd) {
         return [];
     }
 }
+/**
+ * 从 YAML frontmatter 中提取单行或多行字段值。
+ * 支持 `key: value`、`key: >-`（folded block scalar）和 `key: |`（literal block）。
+ */
+function parseFmField(frontmatter, field) {
+    const lines = frontmatter.split("\n");
+    let i = lines.findIndex((l) => l.startsWith(field + ":"));
+    if (i < 0)
+        return "";
+    const first = lines[i];
+    // 单行值: "key: value"
+    const inlineMatch = first.match(/^[^:]+:\s*(.+)$/);
+    if (inlineMatch) {
+        const val = inlineMatch[1].trim();
+        // 如果值是 YAML 块指示符（>- / |），继续读缩进行
+        if (val === ">-" || val === "|" || val === ">") {
+            const parts = [];
+            i++;
+            while (i < lines.length) {
+                const line = lines[i];
+                if (!line.startsWith("  ") && !line.startsWith("\t"))
+                    break;
+                const trimmed = line.trimStart();
+                if (trimmed === "") {
+                    parts.push("");
+                }
+                else {
+                    parts.push(trimmed);
+                }
+                i++;
+            }
+            return parts.join(" ").replace(/\s+/g, " ").trim();
+        }
+        return val;
+    }
+    // 仅 key:（值在下一行缩进）
+    i++;
+    if (i < lines.length && lines[i].startsWith("  ")) {
+        return lines[i].trim();
+    }
+    return "";
+}
+/**
+ * 从 .claude/skills/<name>/SKILL.md 目录解析 skill。
+ * 每个 skill 是一个子目录，内含 SKILL.md，YAML frontmatter 中
+ * `name` 为命令名、`description` 为描述。
+ */
+async function readSkillsDir(dirPath) {
+    try {
+        const entries = await fsp.readdir(dirPath, { withFileTypes: true });
+        const skills = [];
+        for (const e of entries) {
+            // 跳过普通文件和符号链接（符号链接指向外部 skill，暂不追踪）
+            if (!e.isDirectory())
+                continue;
+            const skillFile = path.join(dirPath, e.name, "SKILL.md");
+            try {
+                const raw = await fsp.readFile(skillFile, "utf-8");
+                const content = raw.slice(0, 2048);
+                const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+                if (fmMatch) {
+                    const cmdName = "/" + (parseFmField(fmMatch[1], "name") || e.name);
+                    const description = parseFmField(fmMatch[1], "description") || e.name;
+                    skills.push({ name: cmdName, description });
+                }
+                else {
+                    skills.push({ name: "/" + e.name, description: e.name });
+                }
+            }
+            catch {
+                skills.push({ name: "/" + e.name, description: e.name });
+            }
+        }
+        return skills;
+    }
+    catch {
+        return [];
+    }
+}
 /** cwd → commands 的内存缓存 */
 const cache = new Map();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
-const MAX_CACHE_SIZE = 50; // 防止无限增长
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_SIZE = 50;
 /**
- * 合并内置命令和项目的自定义命令，返回完整的命令列表。
+ * 合并内置命令 + 项目级 + 用户级的自定义命令和 skills，返回完整命令列表。
  * 按 cwd 缓存 5 分钟。
  */
 export async function resolveSlashCommands(cwd) {
@@ -67,19 +143,39 @@ export async function resolveSlashCommands(cwd) {
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
         return cached.commands;
     }
-    const custom = await readCustomCommands(cwd);
-    const customNames = new Set(custom.map((c) => c.name));
+    // 并行扫描四个目录
+    const [projectCommands, projectSkills, userCommands, userSkills] = await Promise.all([
+        readCommandsDir(path.join(cwd, ".claude", "commands")),
+        readSkillsDir(path.join(cwd, ".claude", "skills")),
+        readCommandsDir(path.join(HOME, ".claude", "commands")),
+        readSkillsDir(path.join(HOME, ".claude", "skills")),
+    ]);
+    // 自定义命令和 skill 的名称集合（用于去重）
+    const customNames = new Set();
     const result = [];
-    // 内置命令：优先，排除被自定义同名的
-    for (const [name, info] of Object.entries(BUILTIN)) {
-        if (!customNames.has(name)) {
-            result.push({ name, ...info });
+    // 优先级：内置 > 项目命令 > 项目 skill > 用户命令 > 用户 skill
+    const addIfNew = (cmd) => {
+        if (!customNames.has(cmd.name)) {
+            customNames.add(cmd.name);
+            result.push(cmd);
         }
+    };
+    // 内置命令优先
+    for (const [name, info] of Object.entries(BUILTIN)) {
+        result.push({ name, ...info });
+        customNames.add(name);
     }
-    // 自定义命令在后
-    result.push(...custom);
+    // 项目级命令和 skill
+    for (const cmd of projectCommands)
+        addIfNew(cmd);
+    for (const cmd of projectSkills)
+        addIfNew(cmd);
+    // 用户级命令和 skill
+    for (const cmd of userCommands)
+        addIfNew(cmd);
+    for (const cmd of userSkills)
+        addIfNew(cmd);
     cache.set(cwd, { commands: result, ts: Date.now() });
-    // 缓存项数超过上限时淘汰最旧的
     if (cache.size > MAX_CACHE_SIZE) {
         let oldestKey = "";
         let oldestTs = Infinity;
