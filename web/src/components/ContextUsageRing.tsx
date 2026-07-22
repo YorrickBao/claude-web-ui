@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * 上下文占用比例环形指示器。
@@ -33,8 +33,39 @@ export function ContextUsageRing({
 }: ContextUsageRingProps) {
   const [open, setOpen] = useState(false);
   const ratio = Math.min(used / max, 1);
-  const dash = CIRCUMFERENCE * ratio;
-  const gap = CIRCUMFERENCE - dash;
+
+  // 动画状态：stroke-dasharray 始终从 0 → target，保证顺时针增长
+  const [animDash, setAnimDash] = useState(0);
+  const [animGap, setAnimGap] = useState(CIRCUMFERENCE);
+  const [animating, setAnimating] = useState(false);
+  const prevUsedRef = useRef(used);
+  const prevMaxRef = useRef(max);
+
+  useEffect(() => {
+    const targetDash = CIRCUMFERENCE * Math.min(used / max, 1);
+    const targetGap = CIRCUMFERENCE - targetDash;
+
+    // 值没变则跳过
+    if (prevUsedRef.current === used && prevMaxRef.current === max) return;
+    prevUsedRef.current = used;
+    prevMaxRef.current = max;
+
+    // Phase 1：瞬间重置到 0（关闭过渡动画）
+    setAnimating(false);
+    setAnimDash(0);
+    setAnimGap(CIRCUMFERENCE);
+
+    // Phase 2：等待浏览器提交 Phase 1 的帧后，再开过渡动画增长到目标值
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        setAnimating(true);
+        setAnimDash(targetDash);
+        setAnimGap(targetGap);
+      });
+      return () => cancelAnimationFrame(raf2);
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, [used, max]);
 
   let strokeColor: string;
   if (ratio < 0.4) {
@@ -84,10 +115,12 @@ export function ContextUsageRing({
             stroke={strokeColor}
             strokeWidth={STROKE}
             strokeLinecap="round"
-            strokeDasharray={`${dash} ${gap}`}
+            strokeDasharray={`${animDash} ${animGap}`}
             transform={`rotate(-90 ${CX} ${CY})`}
             style={{
-              transition: "stroke-dasharray 0.6s ease, stroke 0.6s ease",
+              transition: animating
+                ? "stroke-dasharray 0.6s ease, stroke 0.6s ease"
+                : "stroke 0.6s ease",
             }}
           />
         )}
