@@ -77,6 +77,29 @@ a, button, input, select, textarea, [role="button"] {
   }
 }
 
+/* ── ConfirmDialog 警告图标：打开时单次呼吸脉冲 ── */
+@keyframes confirm-icon-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--destructive);
+  }
+  30% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 6px transparent;
+  }
+  60% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.animate-confirm-icon-pulse {
+  animation: confirm-icon-pulse 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 /* highlight.js 基础深色（rehype-highlight 需要） */
 .hljs {
   background: transparent !important;

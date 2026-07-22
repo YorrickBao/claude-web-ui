@@ -20,6 +20,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { listProfiles } from "@/lib/api";
 import { deleteSessionApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ export function Sidebar({
   const location = useLocation();
   const [envOpen, setEnvOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const confirm = useConfirm();
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -167,7 +169,14 @@ export function Sidebar({
   async function handleDelete(s: SessionView, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`确定删除会话「${s.title}」？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`)) {
+    if (
+      !(await confirm({
+        title: "删除会话",
+        description: `确定删除会话「${s.title}」？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`,
+        variant: "destructive",
+        confirmLabel: "删除",
+      }))
+    ) {
       return;
     }
     setDeletingId(s.sessionId);
@@ -185,7 +194,14 @@ export function Sidebar({
   }
 
   async function handleBatchDelete(sessions: SessionView[], groupDir: string) {
-    if (!confirm(`确定删除目录「${getDirName(groupDir)}」下的所有会话（共 ${sessions.length} 个）？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`)) {
+    if (
+      !(await confirm({
+        title: "批量删除会话",
+        description: `确定删除目录「${getDirName(groupDir)}」下的所有会话（共 ${sessions.length} 个）？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`,
+        variant: "destructive",
+        confirmLabel: "全部删除",
+      }))
+    ) {
       return;
     }
     for (const s of sessions) {

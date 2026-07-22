@@ -21,6 +21,7 @@ import {
   deleteProfile,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,6 +74,7 @@ export function ProfileManagerModal({
   }>({ name: "", env: {} });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const [feishuStatus, setFeishuStatus] = useState<FeishuStatus>({ connected: false });
   const [feishuBinding, setFeishuBinding] = useState(false);
@@ -247,7 +249,15 @@ export function ProfileManagerModal({
   }
 
   async function remove(p: EnvProfile) {
-    if (!confirm(`确定删除配置「${p.name}」？`)) return;
+    if (
+      !(await confirm({
+        title: "删除配置",
+        description: `确定删除配置「${p.name}」？`,
+        variant: "destructive",
+        confirmLabel: "删除",
+      }))
+    )
+      return;
     try {
       await deleteProfile(p.id);
       await refresh();
