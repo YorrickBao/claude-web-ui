@@ -17,7 +17,7 @@ import {
   scanClaudeSessions,
 } from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
-import { deleteSession as sdkDeleteSession } from "@anthropic-ai/claude-agent-sdk";
+import { sessionStore } from "../lib/sessionStore.js";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
   setInflight,
@@ -302,7 +302,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // DELETE /api/sessions/:id —— 删除会话
-  // 清理：① sessions.json 记录 ② SDK transcript 文件 ③ 中止进行中的 query
+  // 清理：① sessions.json 记录 ② ~/.claude-webui transcript 备份 ③ 中止进行中的 query
+  // 注意：不删 Claude CLI 的 ~/.claude/projects/ 目录
   // ───────────────────────────────────────────────────────────
   app.delete<{ Params: { id: string } }>(
     "/api/sessions/:id",
@@ -318,11 +319,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "session not found" });
       }
 
-      // 删 SDK transcript（失败不致命 —— 记录已删，前端列表会刷新）
+      // 删 ~/.claude-webui 下的 transcript 备份（失败不致命）
       try {
-        await sdkDeleteSession(sessionId, { dir: removed.cwd });
+        await sessionStore.delete({ sessionId, projectKey: removed.cwd });
       } catch (err) {
-        app.log.warn({ err }, `sdkDeleteSession failed for ${sessionId}`);
+        app.log.warn({ err }, `sessionStore.delete failed for ${sessionId}`);
       }
 
       return reply.send({ ok: true });
