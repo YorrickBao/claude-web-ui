@@ -9,13 +9,39 @@ import {
   Menu,
   X,
   Import,
+  ChevronDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { ImportClaudeSessionsDialog } from "@/components/ImportClaudeSessionsDialog";
-import { deleteSessionApi, scanClaudeSessions } from "@/lib/api";
+import { deleteSessionApi, scanClaudeSessions, importClaudeSessions } from "@/lib/api";
 import type { SessionView } from "@/lib/types";
+
+/** 取路径的最后一个组件（目录名） */
+function getDirName(path: string): string {
+  return path.replace(/\/$/, "").split("/").pop() || path;
+}
+
+/** 按 cwd 分组，每组内按 lastModified 降序，组间按最新会话排序 */
+function groupByCwd(sessions: SessionView[]): { cwd: string; sessions: SessionView[] }[] {
+  const groups = new Map<string, SessionView[]>();
+  for (const s of sessions) {
+    const list = groups.get(s.cwd);
+    if (list) {
+      list.push(s);
+    } else {
+      groups.set(s.cwd, [s]);
+    }
+  }
+  return Array.from(groups.entries())
+    .map(([cwd, sessions]) => ({ cwd, sessions }))
+    .sort((a, b) => {
+      const aLatest = Math.max(...a.sessions.map((s) => s.lastModified));
+      const bLatest = Math.max(...b.sessions.map((s) => s.lastModified));
+      return bLatest - aLatest;
+    });
+}
 
 export function Sidebar() {
   const { sessions, loading, error, refresh } = useSessions();
@@ -27,6 +53,19 @@ export function Sidebar() {
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  function toggleGroup(cwd: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(cwd)) {
+        next.delete(cwd);
+      } else {
+        next.add(cwd);
+      }
+      return next;
+    });
+  }
 
   // 移动端：默认收起，桌面端：默认展开
   useEffect(() => {
@@ -60,14 +99,20 @@ export function Sidebar() {
     setImporting(true);
     setImportError(null);
     try {
-      const imported = await scanClaudeSessions();
-      if (imported.length === 0) {
+      const sessions = await scanClaudeSessions();
+      if (sessions.length === 0) {
         alert("未找到历史会话");
-      } else {
-        alert(`成功导入 ${imported.length} 个会话`);
-        setImportOpen(false);
-        await refresh();
+        return;
       }
+
+      if (!confirm(`确定导入 ${sessions.length} 个会话吗？`)) {
+        return;
+      }
+
+      await importClaudeSessions(sessions);
+      alert(`成功导入 ${sessions.length} 个会话`);
+      setImportOpen(false);
+      await refresh();
     } catch (err) {
       setImportError((err as Error).message);
       alert(`导入失败：${(err as Error).message}`);
@@ -149,52 +194,87 @@ export function Sidebar() {
         {!loading && sessions.length === 0 && (
           <div className="px-2 py-2 text-sm text-neutral-600">暂无会话</div>
         )}
-        <ul className="space-y-0.5">
-          {sessions.map((s) => (
-            <li key={s.sessionId}>
-              <NavLink
-                to={`/c/${s.sessionId}`}
-                className={({ isActive }) =>
-                  clsx(
-                    "group flex items-start gap-2 rounded-lg px-2 py-2 text-sm",
-                    isActive
-                      ? "bg-neutral-800 text-neutral-100"
-                      : "text-neutral-300 hover:bg-neutral-900",
-                    isCollapsed && "justify-center px-2"
-                  )
-                }
-              >
-                <MessageSquare className={clsx(
-                  "mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500",
-                  isCollapsed && "hidden"
-                )} />
-                <div className={clsx(
-                  "min-w-0 flex-1",
-                  isCollapsed && "hidden"
-                )}>
-                  <div className="truncate">{s.title}</div>
-                  <div
-                    className="truncate text-xs text-neutral-600"
-                    title={s.cwd}
-                  >
-                    {s.cwd}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => void handleDelete(s, e)}
-                  disabled={deletingId === s.sessionId}
-                  title="删除会话"
-                  className={clsx(
-                    "shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-red-400 group-hover:opacity-100 disabled:opacity-50",
-                    isCollapsed && "hidden"
-                  )}
+        {isCollapsed ? (
+          /* 收起状态：平铺，只显示图标 */
+          <ul className="space-y-0.5">
+            {sessions.map((s) => (
+              <li key={s.sessionId}>
+                <NavLink
+                  to={`/c/${s.sessionId}`}
+                  className={({ isActive }) =>
+                    clsx(
+                      "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm",
+                      isActive
+                        ? "bg-neutral-800 text-neutral-100"
+                        : "text-neutral-300 hover:bg-neutral-900"
+                    )
+                  }
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          /* 展开状态：按 cwd 分组 */
+          <div className="space-y-3">
+            {groupByCwd(sessions).map((group) => {
+              const isCollapsedGroup = collapsedGroups.has(group.cwd);
+              return (
+                <div key={group.cwd}>
+                  <button
+                    onClick={() => toggleGroup(group.cwd)}
+                    className="flex w-full items-center gap-1.5 truncate rounded px-2 text-xs font-medium text-neutral-500 hover:text-neutral-300"
+                    title={group.cwd}
+                  >
+                    <ChevronDown
+                      className={clsx(
+                        "h-3 w-3 shrink-0 transition-transform",
+                        isCollapsedGroup && "-rotate-90"
+                      )}
+                    />
+                    <span className="truncate">{getDirName(group.cwd)}</span>
+                    <span className="ml-auto shrink-0 text-[10px] tabular-nums text-neutral-600">
+                      {group.sessions.length}
+                    </span>
+                  </button>
+                  {!isCollapsedGroup && (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {group.sessions.map((s) => (
+                        <li key={s.sessionId}>
+                          <NavLink
+                            to={`/c/${s.sessionId}`}
+                            className={({ isActive }) =>
+                              clsx(
+                                "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm",
+                                isActive
+                                  ? "bg-neutral-800 text-neutral-100"
+                                  : "text-neutral-300 hover:bg-neutral-900"
+                              )
+                            }
+                          >
+                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate">{s.title}</div>
+                            </div>
+                            <button
+                              onClick={(e) => void handleDelete(s, e)}
+                              disabled={deletingId === s.sessionId}
+                              title="删除会话"
+                              className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-red-400 group-hover:opacity-100 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className={clsx(
