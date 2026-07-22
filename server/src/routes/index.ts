@@ -33,6 +33,7 @@ import type {
   SessionView,
   PermissionMode,
   EffortLevel,
+  SSEEvent,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
@@ -116,12 +117,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // ───────────────────────────────────────────────────────────
   // GET /api/sessions/:id/stream —— 订阅会话实时 SSE 流
   //
-  // 先 replay 全部历史消息（history 事件），如果会话正在运行则
-  // 通过 EventBus 订阅后续实时事件，实现"切回正在运行的会话时续流"。
+  // 先 replay 全部历史消息，然后通过 EventBus 订阅后续实时事件。
   //
-  // 关键：必须在 replay 之前订阅 bus，否则 replay 期间的
-  // 新事件会丢失。订阅后用 historySent 标记过滤掉早于
-  // history 的事件（它们已包含在 history 里）。
+  // 为避免 replay 期间的事件丢失，订阅后先将事件暂存到缓冲区，
+  // replay 完成后对缓冲区事件去重（工具事件按 ID，文本增量按累
+  // 计长度），再切换到实时转发模式。
   // ───────────────────────────────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/sessions/:id/stream",
@@ -145,14 +145,18 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         try { endSSE(reply); } catch { /* 可能已经 close */ }
       }, TIMEOUT_MS);
 
-      // 订阅 bus（在 replay 之前！），用标记过滤早期事件
-      let historySent = false;
-      const unsubEvent = onSessionEvent(sessionId, (evt) => {
-        if (historySent) {
+      // 阶段1：订阅 bus，暂存所有事件到缓冲区（不丢弃）
+      const buffer: SSEEvent[] = [];
+      let buffering = true;
+
+      const onEvent = (evt: SSEEvent) => {
+        if (buffering) {
+          buffer.push(evt);
+        } else {
           sendSSE(reply, evt);
         }
-        // historySent === false 时的事件已在 history 中包含，跳过
-      });
+      };
+      const unsubEvent = onSessionEvent(sessionId, onEvent);
 
       let unsubEnd: () => void;
       const cleanup = () => {
@@ -169,23 +173,66 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       // 客户端正常断开时清理（仅注册一次）
       req.raw.on("close", cleanup);
 
-      // 发送当前全部历史消息
+      // 阶段2：回放历史，收集去重依据
       try {
         const history = await replaySession(sessionId, rec.cwd);
-        // 如果在 replay 期间已超时关闭，不再发后续事件
         if (timedOut) return;
+
+        // 从 history 提取：工具 ID 集合 + 最后一条 assistant 消息文本长度
+        const historyToolIds = new Set<string>();
+        let lastTextLen = 0;
+        for (let i = history.length - 1; i >= 0; i--) {
+          if (history[i].role === "assistant") {
+            for (const part of history[i].content) {
+              if (part.type === "tool-call") {
+                historyToolIds.add(part.toolCallId);
+              } else if (part.type === "text") {
+                lastTextLen += part.text.length;
+              }
+            }
+            break;
+          }
+        }
+
         sendSSE(reply, { type: "history", messages: history });
-        historySent = true;
+
+        // 阶段3：去重转发缓冲区事件，然后切到实时模式
+        buffering = false;
+        let textAccum = 0;
+        for (const evt of buffer) {
+          // 工具事件：按 ID 去重
+          if (
+            (evt.type === "tool_use" || evt.type === "tool_result") &&
+            historyToolIds.has(evt.id)
+          ) {
+            continue;
+          }
+          // 文本增量：累计长度 ≤ lastTextLen 说明已包含在 history 中
+          if (evt.type === "text") {
+            textAccum += evt.text.length;
+            if (textAccum <= lastTextLen) continue;
+            // 跨边界 delta：截掉已在 history 中的前缀部分
+            if (textAccum - evt.text.length < lastTextLen) {
+              const overlap = lastTextLen - (textAccum - evt.text.length);
+              const newPart = evt.text.slice(overlap);
+              if (newPart) sendSSE(reply, { type: "text", text: newPart });
+              continue;
+            }
+          }
+          sendSSE(reply, evt);
+        }
+
+        // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
+        if (!getInflight(sessionId)) {
+          cleanup();
+          try { endSSE(reply); } catch { /* 可能已经 close */ }
+          return;
+        }
       } catch (err) {
         app.log.warn({ err }, `replaySession failed in stream for ${sessionId}`);
-        if (!timedOut) sendSSE(reply, { type: "error", message: `replay failed: ${err}` });
-        cleanup();
-        try { endSSE(reply); } catch { /* 可能已经 close */ }
-        return;
-      }
-
-      // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
-      if (!getInflight(sessionId)) {
+        if (!timedOut) {
+          sendSSE(reply, { type: "error", message: `replay failed: ${err}` });
+        }
         cleanup();
         try { endSSE(reply); } catch { /* 可能已经 close */ }
         return;
