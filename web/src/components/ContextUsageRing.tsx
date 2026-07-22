@@ -85,7 +85,6 @@ export function ContextUsageRing({
             strokeWidth={STROKE}
             strokeLinecap="round"
             strokeDasharray={`${dash} ${gap}`}
-            strokeDashoffset={CIRCUMFERENCE * 0.25}
             transform={`rotate(-90 ${CX} ${CY})`}
             style={{
               transition: "stroke-dasharray 0.6s ease, stroke 0.6s ease",
