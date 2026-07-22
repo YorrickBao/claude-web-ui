@@ -1,11 +1,12 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, resolveSessionEnv, resolveProfileEnv, setSessionProfile, } from "../lib/store.js";
+import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, resolveSessionEnv, resolveProfileEnv, setSessionProfile, accumulateTokens, } from "../lib/store.js";
 import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import { setInflight, setInflightWaiting, setInflightRunning, clearInflight, getInflight, getInflightStatus, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
+import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk) {
     return sdk.customTitle || sdk.summary || "（无标题）";
@@ -31,6 +32,8 @@ export async function apiRoutes(app) {
                 runningStatus: getInflightStatus(r.sessionId) ?? "idle",
                 permissionMode: r.permissionMode ?? "bypassPermissions",
                 effortLevel: r.effortLevel ?? "high",
+                inputTokens: r.inputTokens ?? 0,
+                outputTokens: r.outputTokens ?? 0,
             };
         });
         return reply.send({ sessions: views });
@@ -63,8 +66,94 @@ export async function apiRoutes(app) {
             profileId: rec.profileId ?? null,
             permissionMode: rec.permissionMode ?? "bypassPermissions",
             effortLevel: rec.effortLevel ?? "high",
+            runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
+            inputTokens: rec.inputTokens ?? 0,
+            outputTokens: rec.outputTokens ?? 0,
             messages: history,
         });
+    });
+    // ───────────────────────────────────────────────────────────
+    // GET /api/sessions/:id/stream —— 订阅会话实时 SSE 流
+    //
+    // 先 replay 全部历史消息（history 事件），如果会话正在运行则
+    // 通过 EventBus 订阅后续实时事件，实现"切回正在运行的会话时续流"。
+    //
+    // 关键：必须在 replay 之前订阅 bus，否则 replay 期间的
+    // 新事件会丢失。订阅后用 historySent 标记过滤掉早于
+    // history 的事件（它们已包含在 history 里）。
+    // ───────────────────────────────────────────────────────────
+    app.get("/api/sessions/:id/stream", async (req, reply) => {
+        const sessionId = req.params.id;
+        const rec = await getSession(sessionId);
+        if (!rec) {
+            return reply.code(404).send({ error: "session not found" });
+        }
+        initSSE(reply);
+        // 安全超时：防止 TCP 异常断开（无 FIN）导致监听器永不清理。
+        // 10 分钟足够覆盖绝大多数 SDK 查询，超时后强制关闭。
+        const TIMEOUT_MS = 10 * 60 * 1000;
+        let timedOut = false;
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            app.log.warn(`stream timeout for session ${sessionId}, forcing close`);
+            cleanup();
+            try {
+                endSSE(reply);
+            }
+            catch { /* 可能已经 close */ }
+        }, TIMEOUT_MS);
+        // 订阅 bus（在 replay 之前！），用标记过滤早期事件
+        let historySent = false;
+        const unsubEvent = onSessionEvent(sessionId, (evt) => {
+            if (historySent) {
+                sendSSE(reply, evt);
+            }
+            // historySent === false 时的事件已在 history 中包含，跳过
+        });
+        let unsubEnd;
+        const cleanup = () => {
+            clearTimeout(timeout);
+            unsubEvent();
+            unsubEnd();
+        };
+        unsubEnd = onSessionEnd(sessionId, () => {
+            cleanup();
+            try {
+                endSSE(reply);
+            }
+            catch { /* 可能已经 close */ }
+        });
+        // 客户端正常断开时清理（仅注册一次）
+        req.raw.on("close", cleanup);
+        // 发送当前全部历史消息
+        try {
+            const history = await replaySession(sessionId, rec.cwd);
+            // 如果在 replay 期间已超时关闭，不再发后续事件
+            if (timedOut)
+                return;
+            sendSSE(reply, { type: "history", messages: history });
+            historySent = true;
+        }
+        catch (err) {
+            app.log.warn({ err }, `replaySession failed in stream for ${sessionId}`);
+            if (!timedOut)
+                sendSSE(reply, { type: "error", message: `replay failed: ${err}` });
+            cleanup();
+            try {
+                endSSE(reply);
+            }
+            catch { /* 可能已经 close */ }
+            return;
+        }
+        // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
+        if (!getInflight(sessionId)) {
+            cleanup();
+            try {
+                endSSE(reply);
+            }
+            catch { /* 可能已经 close */ }
+            return;
+        }
     });
     // ───────────────────────────────────────────────────────────
     // POST /api/sessions —— 新建会话并跑首条消息（SSE）
@@ -121,6 +210,8 @@ export async function apiRoutes(app) {
                     profileId,
                     permissionMode,
                     effortLevel,
+                    inputTokens: 0,
+                    outputTokens: 0,
                 });
                 // 通过 SDK 设置标题（写入 jsonl 转录，CLI 也能看到）
                 if (initialTitle) {
@@ -149,21 +240,44 @@ export async function apiRoutes(app) {
                         setInflightRunning(sessionId);
                     }
                 }
-                sendSSE(reply, evt);
+                // done 事件：先累加 token 到持久化存储，再发送新的累计值
+                if (evt.type === "done" && sessionId) {
+                    await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch((err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`));
+                    // 读取累加后的最新累计值，发送给前端
+                    const updated = await getSession(sessionId);
+                    const doneEvt = {
+                        type: "done",
+                        inputTokens: updated?.inputTokens ?? evt.inputTokens,
+                        outputTokens: updated?.outputTokens ?? evt.outputTokens,
+                        durationMs: evt.durationMs,
+                    };
+                    sendSSE(reply, doneEvt);
+                    emitSessionEvent(sessionId, doneEvt);
+                }
+                else {
+                    sendSSE(reply, evt);
+                    if (sessionId) {
+                        emitSessionEvent(sessionId, evt);
+                    }
+                }
             }
         }
         catch (err) {
             const message = err instanceof Error ? err.message : "unknown error";
             // 如果 abort，message 通常是 "This operation was aborted"
-            sendSSE(reply, {
+            const errorEvent = {
                 type: "error",
                 message: err instanceof Error && err.name === "AbortError"
                     ? "aborted"
                     : message,
-            });
+            };
+            sendSSE(reply, errorEvent);
+            if (sessionId)
+                emitSessionEvent(sessionId, errorEvent);
         }
         finally {
             if (sessionId) {
+                emitSessionEnd(sessionId);
                 clearInflight(sessionId);
                 await touchSession(sessionId);
             }
@@ -205,19 +319,38 @@ export async function apiRoutes(app) {
                 else {
                     setInflightRunning(sessionId);
                 }
-                sendSSE(reply, evt);
+                // done 事件：先累加 token 到持久化存储，再发送新的累计值
+                if (evt.type === "done") {
+                    await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch((err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`));
+                    const updated = await getSession(sessionId);
+                    const doneEvt = {
+                        type: "done",
+                        inputTokens: updated?.inputTokens ?? evt.inputTokens,
+                        outputTokens: updated?.outputTokens ?? evt.outputTokens,
+                        durationMs: evt.durationMs,
+                    };
+                    sendSSE(reply, doneEvt);
+                    emitSessionEvent(sessionId, doneEvt);
+                }
+                else {
+                    sendSSE(reply, evt);
+                    emitSessionEvent(sessionId, evt);
+                }
             }
         }
         catch (err) {
             const message = err instanceof Error ? err.message : "unknown error";
-            sendSSE(reply, {
+            const errorEvent = {
                 type: "error",
                 message: err instanceof Error && err.name === "AbortError"
                     ? "aborted"
                     : message,
-            });
+            };
+            sendSSE(reply, errorEvent);
+            emitSessionEvent(sessionId, errorEvent);
         }
         finally {
+            emitSessionEnd(sessionId);
             clearInflight(sessionId);
             await touchSession(sessionId);
             endSSE(reply);

@@ -95,10 +95,11 @@ export async function* runQuery(params) {
             }
             case "result": {
                 if (msg.subtype === "success") {
+                    const s = msg;
                     yield {
                         type: "done",
-                        costUsd: msg.total_cost_usd,
-                        numTurns: msg.num_turns,
+                        inputTokens: s.usage?.input_tokens ?? 0,
+                        outputTokens: s.usage?.output_tokens ?? 0,
                         durationMs: msg.duration_ms,
                     };
                 }
