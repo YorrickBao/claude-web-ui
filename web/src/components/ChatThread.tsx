@@ -13,10 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listProfiles } from "@/lib/api";
 import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
+import { ContextUsageRing } from "@/components/ContextUsageRing";
 import {
   BashToolUI,
   EditToolUI,
@@ -37,6 +38,8 @@ interface ChatThreadProps {
   permissionMode: string;
   effortLevel: string;
   isRunning: boolean;
+  /** 当前累计 input tokens（用于上下文占用指示器） */
+  inputTokens?: number;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
@@ -48,6 +51,7 @@ export function ChatThread({
   permissionMode,
   effortLevel,
   isRunning,
+  inputTokens,
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
@@ -60,6 +64,17 @@ export function ChatThread({
       .then(setProfiles)
       .catch(() => setProfiles([]));
   }, []);
+
+  /** 从当前 profile 的 AUTO_COMPACT_WINDOW 推导上下文上限，否则默认 200k */
+  const contextMax = useMemo(() => {
+    const profile = profiles.find((p) => p.id === profileId);
+    const compactWindow = profile?.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    if (compactWindow) {
+      const n = parseInt(compactWindow, 10);
+      if (!isNaN(n) && n > 0) return n;
+    }
+    return 200_000;
+  }, [profileId, profiles]);
 
   // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
   const profileItems: Record<string, string> = {
@@ -177,6 +192,9 @@ export function ChatThread({
               </SelectContent>
             </Select>
             <div className="flex-1" />
+            {inputTokens !== undefined && inputTokens > 0 && (
+              <ContextUsageRing used={inputTokens} max={contextMax} />
+            )}
             <Select
               items={profileItems}
               value={profileId ?? ""}

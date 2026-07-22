@@ -255,6 +255,7 @@ export function ChatView({
             permissionMode={permissionMode}
             effortLevel={effortLevel}
             isRunning={isRunning}
+            inputTokens={stats?.inputTokens ?? initialInputTokens ?? 0}
             onProfileChange={handleChangeProfile}
             onPermissionModeChange={handleChangePermissionMode}
             onEffortLevelChange={handleChangeEffortLevel}
