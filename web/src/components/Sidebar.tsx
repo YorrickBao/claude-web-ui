@@ -9,8 +9,9 @@ import {
   Menu,
   X,
   Import,
-  ChevronDown,
   FoldHorizontal,
+  Folder,
+  FolderOpen,
   Edit2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -280,10 +281,16 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     className="flex w-full items-center gap-1.5 truncate rounded px-2 text-xs font-medium text-neutral-500 hover:text-neutral-300"
                     title={group.cwd}
                   >
-                    <ChevronDown
+                    <FolderOpen
                       className={clsx(
-                        "h-3 w-3 shrink-0 transition-transform",
-                        isCollapsedGroup && "-rotate-90"
+                        "h-3 w-3 shrink-0 text-neutral-500",
+                        isCollapsedGroup && "hidden"
+                      )}
+                    />
+                    <Folder
+                      className={clsx(
+                        "h-3 w-3 shrink-0 text-neutral-500",
+                        !isCollapsedGroup && "hidden"
                       )}
                     />
                     <span className="truncate">{getDirName(group.cwd)}</span>
