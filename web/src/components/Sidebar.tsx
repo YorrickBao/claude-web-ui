@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
   MessageSquare,
@@ -90,7 +90,7 @@ export function Sidebar({
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
   // 移动端：点击目录名弹出完整路径
   const [pathPopup, setPathPopup] = useState<string | null>(null);
-  // 跟踪真实浏览器 URL（window.history.replaceState 不触发 React Router 更新，但 NavLink 需要正确高亮）
+  // 跟踪真实浏览器 URL（window.history.replaceState 不触发 React Router 更新，需手动同步以正确高亮当前会话）
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   // ── 移动端滑动手势 ──
@@ -335,7 +335,7 @@ export function Sidebar({
                   className={cn(
                     "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                     currentPath === `/c/${s.sessionId}`
-                      ? "bg-primary/10 text-foreground"
+                      ? "bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]"
                       : "text-muted-foreground hover:bg-card"
                   )}
                 >
@@ -346,7 +346,7 @@ export function Sidebar({
                   ) : (
                     <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
-                </NavLink>
+                </Link>
               </li>
             ))}
           </ul>
@@ -418,17 +418,15 @@ export function Sidebar({
                     <ul className="mt-0.5 space-y-0.5 pl-5">
                       {group.sessions.map((s) => (
                         <li key={s.sessionId}>
-                          <NavLink
+                          <Link
                             to={`/c/${s.sessionId}`}
                             onClick={() => onOverlayClose?.()}
-                            className={({ isActive }) =>
-                              cn(
-                                "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
-                                isActive
-                                  ? "bg-primary/10 text-foreground"
-                                  : "text-foreground hover:bg-card"
-                              )
-                            }
+                            className={cn(
+                              "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
+                              currentPath === `/c/${s.sessionId}`
+                                ? "bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]"
+                                : "text-foreground hover:bg-card"
+                            )}
                           >
                             {s.runningStatus === "waiting" ? (
                               <AlertCircle className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
@@ -450,7 +448,7 @@ export function Sidebar({
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
-                          </NavLink>
+                          </Link>
                         </li>
                       ))}
                     </ul>
