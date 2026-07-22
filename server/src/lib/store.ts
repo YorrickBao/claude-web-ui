@@ -196,18 +196,98 @@ export async function setSessionProfile(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 从 .claude/sessions 目录读取历史会话
+// CLI 磁盘遍历（唯一入口，所有 CLI 扫描逻辑只写一遍）
+// ─────────────────────────────────────────────────────────────
+
+/** walkCliSessions 对每个磁盘会话产出的原始条目 */
+interface RawCliEntry {
+  sessionId: string;
+  /** jsonl 文件的绝对路径 */
+  jsonlPath: string;
+  /** sessions-index.json 中的原始条目（存在时优先用其元数据） */
+  indexEntry?: Record<string, unknown>;
+}
+
+/**
+ * 遍历 CLI 磁盘上的所有会话（~/.claude/projects/ + ~/.claude/transcripts/）。
+ *
+ * 每个 session 只产出一次：
+ *  - 优先用 sessions-index.json 中的条目（元数据更丰富）
+ *  - 回退到直接扫 *.jsonl 文件
+ *
+ * 不解析 jsonl 内容，只收集文件路径和 index 元数据。
+ */
+async function* walkCliSessions(): AsyncGenerator<RawCliEntry> {
+  const projectsDir = path.join(HOME_DIR, ".claude", "projects");
+  const transcriptsDir = path.join(HOME_DIR, ".claude", "transcripts");
+  const seen = new Set<string>();
+
+  // ── 1. projects/ 目录 ──
+  try {
+    const dirs = await fsp.readdir(projectsDir, { withFileTypes: true });
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue;
+      const dp = path.join(projectsDir, d.name);
+
+      // 先读 sessions-index.json，建立 id → 条目 映射
+      const indexMap = new Map<string, Record<string, unknown>>();
+      try {
+        const raw = await fsp.readFile(
+          path.join(dp, "sessions-index.json"),
+          "utf8",
+        );
+        const idx = JSON.parse(raw);
+        if (Array.isArray(idx.entries)) {
+          for (const e of idx.entries) {
+            if (e.sessionId) indexMap.set(e.sessionId, e);
+          }
+        }
+      } catch { /* 无 index */ }
+
+      // 扫 *.jsonl，优先匹配 index 条目
+      try {
+        const files = await fsp.readdir(dp);
+        for (const f of files) {
+          if (!f.endsWith(".jsonl")) continue;
+          const sid = f.replace(".jsonl", "");
+          if (seen.has(sid)) continue;
+          seen.add(sid);
+          yield {
+            sessionId: sid,
+            jsonlPath: path.join(dp, f),
+            indexEntry: indexMap.get(sid),
+          };
+        }
+      } catch { /* 目录不可读 */ }
+    }
+  } catch { /* ~/.claude/projects 不存在 */ }
+
+  // ── 2. transcripts/ 目录（兼容旧格式） ──
+  try {
+    const files = await fsp.readdir(transcriptsDir);
+    for (const f of files) {
+      if (!f.endsWith(".jsonl")) continue;
+      const sid = f.replace(".jsonl", "").replace(/^ses_/, "");
+      if (seen.has(sid)) continue;
+      seen.add(sid);
+      yield { sessionId: sid, jsonlPath: path.join(transcriptsDir, f) };
+    }
+  } catch { /* transcripts 目录不存在 */ }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 扫描 CLI 会话（完整版：解析 jsonl，合并本地元数据）
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 尝试从一个 sessions-index.json 条目中读取 .jsonl 转录文件，
- * 提取第一条用户消息作为 firstPrompt。
+ * 尝试从 jsonl 转录文件中提取第一条用户消息。
  */
-async function extractFirstPromptFromTranscript(fullPath: string): Promise<string | null> {
+async function extractFirstPromptFromTranscript(
+  fullPath: string,
+): Promise<string | null> {
   try {
     const content = await fsp.readFile(fullPath, "utf8");
     const lines = content.split("\n").filter((line) => line.trim());
-
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
@@ -217,237 +297,119 @@ async function extractFirstPromptFromTranscript(fullPath: string): Promise<strin
             const trimmed = msgContent.trim().slice(0, 200);
             if (trimmed) return trimmed;
           } else if (Array.isArray(msgContent) && msgContent.length > 0) {
-            const firstText = msgContent.find((c) => typeof c === "string" && c.trim());
-            if (firstText) return firstText.trim().slice(0, 200);
+            const firstText = msgContent.find(
+              (c: unknown) => typeof c === "string" && (c as string).trim(),
+            );
+            if (firstText) return (firstText as string).trim().slice(0, 200);
           }
         }
       } catch { /* skip malformed line */ }
     }
-  } catch {
-    // file not found or unreadable
-  }
+  } catch { /* file not found or unreadable */ }
   return null;
 }
 
 /** .claude 下的会话元信息（同时支持新旧两种存储格式） */
 export async function scanClaudeSessions(): Promise<SessionRecord[]> {
-  const projectsDir: string = path.join(HOME_DIR, ".claude", "projects");
-  const transcriptsDir: string = path.join(HOME_DIR, ".claude", "transcripts");
-
-  const claudeSessions: SessionRecord[] = [];
   const localSessions = await readAllSessions();
-  const seenIds = new Set<string>();
+  const localMap = new Map(localSessions.sessions.map((s) => [s.sessionId, s]));
+  const claudeSessions: SessionRecord[] = [];
 
-  // 读取本地会话记录（避免重复扫描）
-  const localMap = new Map(
-    localSessions.sessions.map((s) => [s.sessionId, s]),
-  );
+  for await (const raw of walkCliSessions()) {
+    let cwd = "";
+    let title: string | null = null;
+    let firstPrompt: string | null = null;
+    let createdAt = Date.now();
+    let lastModified = Date.now();
 
-  // ── 1. 从 sessions-index.json 读取会话元数据（新版 CLI 存储格式） ──
-  try {
-    const projectDirs = await fsp.readdir(projectsDir, { withFileTypes: true });
+    if (raw.indexEntry) {
+      // ── 有 index：直接取结构化元数据 ──
+      const e = raw.indexEntry as Record<string, unknown>;
+      cwd = (e.projectPath as string) || "";
+      title = (e.summary as string) || null;
+      firstPrompt =
+        e.firstPrompt && e.firstPrompt !== "No prompt"
+          ? (e.firstPrompt as string)
+          : null;
+      createdAt = e.created
+        ? new Date(e.created as string).getTime()
+        : Date.now();
+      lastModified = e.modified
+        ? new Date(e.modified as string).getTime()
+        : Date.now();
 
-    for (const projectDir of projectDirs) {
-      if (!projectDir.isDirectory()) continue;
-
-      const indexPath = path.join(projectsDir, projectDir.name, "sessions-index.json");
+      // 优先从 jsonl 实时提取 firstPrompt（比 index 里的更准确）
+      const transcriptPrompt = await extractFirstPromptFromTranscript(
+        raw.jsonlPath,
+      );
+      if (transcriptPrompt) firstPrompt = transcriptPrompt;
+    } else {
+      // ── 无 index：从 jsonl 解析全部元数据 ──
       try {
-        const indexContent = await fsp.readFile(indexPath, "utf8");
-        const index = JSON.parse(indexContent);
-        if (!Array.isArray(index.entries)) continue;
+        const st = await fsp.stat(raw.jsonlPath);
+        lastModified = st.mtimeMs;
+        if (st.birthtimeMs) createdAt = st.birthtimeMs;
+      } catch { /* stat 失败 */ }
 
-        for (const entry of index.entries) {
-          if (!entry.sessionId) continue;
-          seenIds.add(entry.sessionId);
-
-          const sessionId = entry.sessionId;
-          const fullPath: string = entry.fullPath || "";
-          const projectPath: string = entry.projectPath || "";
-
-          // 先从 index 提取 firstPrompt，如果 .jsonl 存在则用实时内容覆盖
-          let firstPrompt: string | null = entry.firstPrompt && entry.firstPrompt !== "No prompt"
-            ? entry.firstPrompt
-            : null;
-
-          // 尝试从转录文件提取更准确的 firstPrompt
-          if (fullPath) {
-            const transcriptPrompt = await extractFirstPromptFromTranscript(fullPath);
-            if (transcriptPrompt) firstPrompt = transcriptPrompt;
-          }
-
-          const record: SessionRecord = {
-            sessionId,
-            cwd: projectPath || "",
-            title: entry.summary || null,
-            firstPrompt: firstPrompt || null,
-            createdAt: entry.created ? new Date(entry.created).getTime() : Date.now(),
-            lastModified: entry.modified ? new Date(entry.modified).getTime() : Date.now(),
-            profileId: null,
-          };
-
-          const local = localMap.get(sessionId);
-          record.alreadyImported = !!local;
-          if (local) {
-            record.title = local.title || record.title;
-            record.firstPrompt = local.firstPrompt || record.firstPrompt;
-            record.profileId = local.profileId;
-            record.lastModified = Math.max(local.lastModified, record.lastModified);
-          }
-
-          claudeSessions.push(record);
-          localMap.delete(sessionId);
-        }
-      } catch {
-        // sessions-index.json 不存在或格式错误，尝试旧格式（见下）
-      }
-
-      // ── 2. 旧格式：直接扫描项目目录下的 .jsonl 文件（兼容老版 CLI） ──
       try {
-        const files = await fsp.readdir(path.join(projectsDir, projectDir.name), { withFileTypes: true });
-
-        for (const file of files) {
-          if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
-
-          const sessionId = file.name.replace(".jsonl", "");
-          if (seenIds.has(sessionId)) continue; // 已被 index 覆盖
-          seenIds.add(sessionId);
-
-          const filePath = path.join(projectsDir, projectDir.name, file.name);
-
-          try {
-            const content = await fsp.readFile(filePath, "utf8");
-            const lines = content.split("\n").filter((line) => line.trim());
-
-            let cwd: string = "";
-            let firstTimestamp: number = Date.now();
-            let lastTimestamp: number = 0;
-            let firstPrompt: string = "";
-
-            for (const line of lines) {
-              try {
-                const jsonlEntry = JSON.parse(line);
-                if (jsonlEntry.cwd && !cwd) cwd = jsonlEntry.cwd;
-                if (jsonlEntry.timestamp) {
-                  const timestamp = new Date(jsonlEntry.timestamp).getTime();
-                  if (timestamp && timestamp < firstTimestamp) firstTimestamp = timestamp;
-                  if (timestamp && timestamp > lastTimestamp) lastTimestamp = timestamp;
-                }
-                if (!firstPrompt && jsonlEntry.type === "user" && jsonlEntry.message?.content) {
-                  const msgContent = jsonlEntry.message.content;
-                  if (typeof msgContent === "string") {
-                    firstPrompt = msgContent.trim().slice(0, 200);
-                  } else if (Array.isArray(msgContent) && msgContent.length > 0) {
-                    const firstText = msgContent.find((c) => typeof c === "string" && c.trim());
-                    if (firstText) firstPrompt = firstText.trim().slice(0, 200);
-                  }
-                }
-              } catch {}
-            }
-
-            const record: SessionRecord = {
-              sessionId,
-              cwd: cwd || "",
-              title: null as any,
-              firstPrompt: firstPrompt || null,
-              createdAt: firstTimestamp || Date.now(),
-              lastModified: lastTimestamp || firstTimestamp || Date.now(),
-              profileId: null,
-            };
-
-            const local = localMap.get(sessionId);
-            record.alreadyImported = !!local;
-            if (local) {
-              record.title = local.title;
-              record.firstPrompt = local.firstPrompt || firstPrompt || null;
-              record.profileId = local.profileId;
-              record.lastModified = Math.max(local.lastModified, record.lastModified);
-            }
-
-            claudeSessions.push(record);
-            localMap.delete(sessionId);
-          } catch (err) {
-            console.error(`Failed to parse ${file.name}:`, err);
-          }
-        }
-      } catch {
-        // 目录不可读，跳过
-      }
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Failed to scan .claude/projects:", err);
-    }
-  }
-
-  // ── 3. 扫描 ~/.claude/transcripts/ 下的 .jsonl 文件 ──
-  try {
-    const transcriptFiles = await fsp.readdir(transcriptsDir, { withFileTypes: true });
-    for (const file of transcriptFiles) {
-      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
-
-      const sessionId = file.name.replace(".jsonl", "").replace(/^ses_/, "");
-      if (seenIds.has(sessionId)) continue;
-      seenIds.add(sessionId);
-
-      const filePath = path.join(transcriptsDir, file.name);
-      try {
-        const content = await fsp.readFile(filePath, "utf8");
-        const lines = content.split("\n").filter((line) => line.trim());
-
-        let firstTimestamp: number = Date.now();
-        let lastTimestamp: number = 0;
-        let firstPrompt: string = "";
+        const content = await fsp.readFile(raw.jsonlPath, "utf8");
+        const lines = content.split("\n").filter((l) => l.trim());
+        let firstTimestamp = Date.now();
+        let lastTimestamp = 0;
 
         for (const line of lines) {
           try {
             const entry = JSON.parse(line);
+            if (entry.cwd && !cwd) cwd = entry.cwd;
             if (entry.timestamp) {
               const ts = new Date(entry.timestamp).getTime();
               if (ts && ts < firstTimestamp) firstTimestamp = ts;
               if (ts && ts > lastTimestamp) lastTimestamp = ts;
             }
             if (!firstPrompt && entry.type === "user" && entry.message?.content) {
-              const msgContent = entry.message.content;
-              if (typeof msgContent === "string") {
-                firstPrompt = msgContent.trim().slice(0, 200);
-              } else if (Array.isArray(msgContent) && msgContent.length > 0) {
-                const firstText = msgContent.find((c) => typeof c === "string" && c.trim());
-                if (firstText) firstPrompt = firstText.trim().slice(0, 200);
+              const mc = entry.message.content;
+              if (typeof mc === "string") {
+                firstPrompt = mc.trim().slice(0, 200);
+              } else if (Array.isArray(mc) && mc.length > 0) {
+                const ft = mc.find(
+                  (c: unknown) => typeof c === "string" && (c as string).trim(),
+                );
+                if (ft) firstPrompt = (ft as string).trim().slice(0, 200);
               }
             }
-          } catch {}
+          } catch { /* skip malformed line */ }
         }
 
-        const record: SessionRecord = {
-          sessionId,
-          cwd: "",
-          title: null as any,
-          firstPrompt: firstPrompt || null,
-          createdAt: firstTimestamp || Date.now(),
-          lastModified: lastTimestamp || firstTimestamp || Date.now(),
-          profileId: null,
-        };
-
-        const local = localMap.get(sessionId);
-        record.alreadyImported = !!local;
-        if (local) {
-          record.title = local.title;
-          record.firstPrompt = local.firstPrompt || firstPrompt || null;
-          record.profileId = local.profileId;
-          record.lastModified = Math.max(local.lastModified, record.lastModified);
-        }
-
-        claudeSessions.push(record);
-        localMap.delete(sessionId);
-      } catch {
-        // 文件损坏，跳过
-      }
+        if (firstTimestamp < createdAt) createdAt = firstTimestamp;
+        if (lastTimestamp > lastModified) lastModified = lastTimestamp;
+      } catch { /* jsonl 不可读 */ }
     }
-  } catch {
-    // transcripts 目录不存在
+
+    const record: SessionRecord = {
+      sessionId: raw.sessionId,
+      cwd,
+      title,
+      firstPrompt,
+      createdAt,
+      lastModified,
+      profileId: null,
+    };
+
+    // 合并本地元数据（title / profileId / firstPrompt）
+    const local = localMap.get(raw.sessionId);
+    record.alreadyImported = !!local;
+    if (local) {
+      record.title = local.title || record.title;
+      record.firstPrompt = local.firstPrompt || record.firstPrompt;
+      record.profileId = local.profileId;
+      record.lastModified = Math.max(local.lastModified, record.lastModified);
+    }
+
+    claudeSessions.push(record);
+    localMap.delete(raw.sessionId);
   }
 
-  // 补充本地会话记录（未被 .claude 扫描到的）
+  // 补充本地会话记录（未被 CLI 扫描到的，如手动导入的旧数据）
   for (const session of localSessions.sessions) {
     if (localMap.has(session.sessionId)) {
       session.alreadyImported = true;
@@ -462,87 +424,33 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
 // 实时同步：sessions.json 作为 CLI 磁盘状态的镜像缓存
 // ─────────────────────────────────────────────────────────────
 
-/** 快速扫描 CLI 磁盘，收集所有会话 id（不解析 jsonl 内容，轻量） */
+/**
+ * 快速收集 CLI 磁盘上的所有会话 id（不解析 jsonl 内容，轻量）。
+ * 用于 syncAndListSessions 的"哪些会话在 CLI 磁盘上"判断。
+ */
 async function collectCliSessionIds(): Promise<
   Map<string, { cwd: string; lastModified: number }>
 > {
   const result = new Map<string, { cwd: string; lastModified: number }>();
-  const projectsDir = path.join(HOME_DIR, ".claude", "projects");
-  const transcriptsDir = path.join(HOME_DIR, ".claude", "transcripts");
+  for await (const raw of walkCliSessions()) {
+    let cwd = "";
+    let lastModified = Date.now();
 
-  // ── projects/ 目录 ──
-  try {
-    const dirs = await fsp.readdir(projectsDir, { withFileTypes: true });
-    for (const d of dirs) {
-      if (!d.isDirectory()) continue;
-      const dp = path.join(projectsDir, d.name);
-
-      // 优先读 sessions-index.json（轻量，带时间戳）
+    if (raw.indexEntry) {
+      const e = raw.indexEntry as Record<string, unknown>;
+      cwd = (e.projectPath as string) || "";
+      lastModified = e.modified
+        ? new Date(e.modified as string).getTime()
+        : Date.now();
+    } else {
       try {
-        const raw = await fsp.readFile(
-          path.join(dp, "sessions-index.json"),
-          "utf8",
-        );
-        const idx = JSON.parse(raw);
-        if (Array.isArray(idx.entries)) {
-          for (const e of idx.entries) {
-            if (!e.sessionId || result.has(e.sessionId)) continue;
-            result.set(e.sessionId, {
-              cwd: e.projectPath || "",
-              lastModified: e.modified
-                ? new Date(e.modified).getTime()
-                : Date.now(),
-            });
-          }
-        }
-      } catch {
-        /* 无 index 则回退到直接扫描 jsonl */
-      }
-
-      // 回退：直接扫 *.jsonl
-      try {
-        const files = await fsp.readdir(dp);
-        for (const f of files) {
-          if (!f.endsWith(".jsonl")) continue;
-          const sid = f.replace(".jsonl", "");
-          if (result.has(sid)) continue;
-          let mtime = Date.now();
-          try {
-            const st = await fsp.stat(path.join(dp, f));
-            mtime = st.mtimeMs;
-          } catch {
-            /* stat 失败用当前时间 */
-          }
-          result.set(sid, { cwd: "", lastModified: mtime });
-        }
-      } catch {
-        /* 目录不可读，跳过 */
-      }
+        const st = await fsp.stat(raw.jsonlPath);
+        lastModified = st.mtimeMs;
+      } catch { /* stat 失败用当前时间 */ }
     }
-  } catch {
-    /* ~/.claude/projects 不存在 */
-  }
 
-  // ── transcripts/ 目录（兼容旧格式） ──
-  try {
-    const files = await fsp.readdir(transcriptsDir);
-    for (const f of files) {
-      if (!f.endsWith(".jsonl")) continue;
-      const sid = f.replace(".jsonl", "").replace(/^ses_/, "");
-      if (result.has(sid)) continue;
-      let mtime = Date.now();
-      try {
-        const st = await fsp.stat(path.join(transcriptsDir, f));
-        mtime = st.mtimeMs;
-      } catch {
-        /* stat 失败用当前时间 */
-      }
-      result.set(sid, { cwd: "", lastModified: mtime });
-    }
-  } catch {
-    /* transcripts 目录不存在 */
+    result.set(raw.sessionId, { cwd, lastModified });
   }
-
   return result;
 }
 
