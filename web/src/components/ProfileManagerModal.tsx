@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  X,
   Plus,
   Trash2,
   Pencil,
@@ -17,6 +16,17 @@ import {
   updateProfile,
   deleteProfile,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import type { EnvProfile } from "@/lib/types";
 
 /**
@@ -39,7 +49,6 @@ export function ProfileManagerModal({
 }: ProfileManagerModalProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
   const [loading, setLoading] = useState(false);
-  // 当前编辑的 profile id；"new" = 新建中；null = 列表态
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
     name: string;
@@ -64,7 +73,6 @@ export function ProfileManagerModal({
     if (open) void refresh();
   }, [open, refresh]);
 
-  // 列表变化时通知外层
   useEffect(() => {
     if (open) onChanged?.();
   }, [profiles, open, onChanged]);
@@ -119,32 +127,14 @@ export function ProfileManagerModal({
     }
   }
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 头部 */}
-        <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
-          <div className="text-sm font-semibold text-neutral-100">
-            环境变量配置
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>环境变量配置</DialogTitle>
+        </DialogHeader>
 
         {editingId === null ? (
-          /* 列表态 */
           <ListView
             profiles={profiles}
             loading={loading}
@@ -155,7 +145,6 @@ export function ProfileManagerModal({
             onDelete={remove}
           />
         ) : (
-          /* 编辑态 */
           <EditView
             form={editForm}
             setForm={setEditForm}
@@ -166,8 +155,8 @@ export function ProfileManagerModal({
             isNew={editingId === "new"}
           />
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -194,16 +183,17 @@ function ListView({
 }) {
   return (
     <>
-      <div className="border-b border-neutral-800 bg-neutral-950/50 px-5 py-2 text-xs text-neutral-400">
+      <div className="border-b border-border bg-card/50 px-5 py-2 text-xs text-muted-foreground">
         新建会话时从这里选一套。空 profile（字段都留空）= 完全用 CLI 默认。
       </div>
       <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
         {loading ? (
-          <div className="flex items-center justify-center py-8 text-sm text-neutral-500">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 加载中…
+          <div className="flex flex-col items-center gap-3 py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Skeleton className="h-4 w-32" />
           </div>
         ) : profiles.length === 0 ? (
-          <div className="py-10 text-center text-sm text-neutral-500">
+          <div className="py-10 text-center text-sm text-muted-foreground">
             还没有配置。点下方"+ 新建"创建第一套。
           </div>
         ) : (
@@ -211,54 +201,55 @@ function ListView({
             {profiles.map((p) => (
               <li
                 key={p.id}
-                className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2"
+                className="flex items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-neutral-100">
+                  <div className="truncate text-sm font-medium text-foreground">
                     {p.name}
                   </div>
-                  <div className="truncate text-xs text-neutral-500">
+                  <div className="truncate text-xs text-muted-foreground">
                     {summarizeProfile(p)}
                   </div>
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => onEdit(p)}
                   title="编辑"
-                  className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => onDuplicate(p)}
                   title="复制"
-                  className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   <Copy className="h-3.5 w-3.5" />
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => onDelete(p)}
                   title="删除"
-                  className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-red-400"
+                  className="hover:text-destructive"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
       </div>
-      <div className="flex items-center justify-between border-t border-neutral-800 px-5 py-3">
+      <DialogFooter className="flex items-center justify-between">
         <div className="text-xs">
-          {err && <span className="text-red-400">⚠ {err}</span>}
+          {err && <span className="text-destructive">⚠ {err}</span>}
         </div>
-        <button
-          onClick={onNew}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-        >
+        <Button onClick={onNew} variant="default">
           <Plus className="h-3.5 w-3.5" />
           新建
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </>
   );
 }
@@ -299,30 +290,32 @@ function EditView({
 
   return (
     <>
-      <div className="border-b border-neutral-800 bg-neutral-950/50 px-5 py-2 text-xs text-neutral-400">
+      <div className="border-b border-border bg-card/50 px-5 py-2 text-xs text-muted-foreground">
         {isNew ? "新建配置" : "编辑配置"}
       </div>
       <div className="max-h-[55vh] overflow-y-auto px-5 py-4">
         {/* 配置名 */}
         <div className="mb-4">
-          <label className="mb-1 block text-sm font-medium text-neutral-200">
+          <Label className="mb-1 block text-sm font-medium text-foreground">
             配置名
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
             value={form.name}
             onChange={(e) =>
               setForm((f) => ({ ...f, name: e.target.value }))
             }
             placeholder="如：生产 / 测试 / 某代理"
-            className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-accent focus:outline-none"
+            className="bg-card"
           />
         </div>
 
         <div className="mb-3 flex justify-end">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowSecrets((v) => !v)}
-            className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200"
+            className="text-xs"
           >
             {showSecrets ? (
               <EyeOff className="h-3.5 w-3.5" />
@@ -330,21 +323,21 @@ function EditView({
               <Eye className="h-3.5 w-3.5" />
             )}
             {showSecrets ? "隐藏敏感值" : "显示敏感值"}
-          </button>
+          </Button>
         </div>
 
         <div className="space-y-4">
           {ENV_FIELDS.map((f) => (
             <div key={f.name}>
               <label className="mb-1 flex items-center gap-2 text-sm">
-                <span className="font-medium text-neutral-200">
+                <span className="font-medium text-foreground">
                   {f.label}
                 </span>
-                <code className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   {f.name}
                 </code>
               </label>
-              <input
+              <Input
                 type={f.secret && !showSecrets ? "password" : "text"}
                 value={form.env[f.name] ?? ""}
                 onChange={(e) =>
@@ -354,34 +347,33 @@ function EditView({
                   }))
                 }
                 placeholder={f.placeholder}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-accent focus:outline-none"
+                className="font-mono text-sm"
               />
               {f.help && (
-                <div className="mt-1 text-xs text-neutral-500">{f.help}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{f.help}</div>
               )}
             </div>
           ))}
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-neutral-800 px-5 py-3">
+      <DialogFooter className="flex items-center justify-between">
         <div className="text-xs">
           {err ? (
-            <span className="text-red-400">⚠ {err}</span>
+            <span className="text-destructive">⚠ {err}</span>
           ) : (
-            <span className="text-neutral-600">空值 = 不设置</span>
+            <span className="text-muted-foreground">空值 = 不设置</span>
           )}
         </div>
         <div className="flex gap-2">
-          <button
+          <Button
+            variant="outline"
             onClick={onCancel}
-            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
           >
             取消
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={onSave}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-600"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -389,9 +381,9 @@ function EditView({
               <Save className="h-3.5 w-3.5" />
             )}
             保存
-          </button>
+          </Button>
         </div>
-      </div>
+      </DialogFooter>
     </>
   );
 }

@@ -3,6 +3,14 @@ import { Settings2 } from "lucide-react";
 import { listProfiles } from "@/lib/api";
 import type { EnvProfile } from "@/lib/types";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * 选 profile 的下拉。
@@ -50,26 +58,31 @@ export function ProfileSelect({
 
   return (
     <div className="flex items-center gap-1.5">
-      <select
+      <Select
         value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || null)}
-        className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100 focus:border-accent focus:outline-none"
+        onValueChange={(v) => onChange(v || null)}
       >
-        <option value="">{noneLabel}</option>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
+        <SelectTrigger className="min-w-0 flex-1">
+          <SelectValue placeholder={noneLabel} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">{noneLabel}</SelectItem>
+          {profiles.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        variant="outline"
+        size="icon"
         onClick={() => setMgrOpen(true)}
         title="管理配置"
-        className="shrink-0 rounded-lg border border-neutral-700 p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+        className="shrink-0"
       >
         <Settings2 className="h-3.5 w-3.5" />
-      </button>
+      </Button>
       <ProfileManagerModal
         open={mgrOpen}
         onClose={() => {

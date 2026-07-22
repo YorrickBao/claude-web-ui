@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { clsx } from "clsx";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * 工具调用 UI 组件。
@@ -50,7 +51,7 @@ export function ToolCardShell({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
         )}
         <span
-          className={clsx(
+          className={cn(
             "font-mono font-medium",
             isError
               ? "text-red-400"
@@ -65,11 +66,13 @@ export function ToolCardShell({
           <span className="truncate text-neutral-400">{summary}</span>
         )}
         {isRunning && (
-          <span className="ml-auto animate-pulse text-xs text-amber-400">
+          <Badge variant="outline" className="ml-auto animate-pulse text-amber-400">
             运行中…
-          </span>
+          </Badge>
         )}
-        {isError && <span className="ml-auto text-xs text-red-400">出错</span>}
+        {isError && (
+          <Badge variant="destructive" className="ml-auto">出错</Badge>
+        )}
       </button>
       {open && children && (
         <div className="space-y-2 border-t border-neutral-800 px-3 py-2">

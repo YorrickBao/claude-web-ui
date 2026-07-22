@@ -4,6 +4,11 @@ import { Folder, ArrowRight } from "lucide-react";
 import { browse } from "@/lib/api";
 import type { DirEntry } from "@/lib/types";
 import { ProfileSelect } from "@/components/ProfileSelect";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * 新建会话视图：选工作目录 + 选 profile + 输入第一条消息。
@@ -65,46 +70,51 @@ export function NewSessionView() {
       </p>
 
       {/* 当前路径 + 手动输入 */}
-      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
         工作目录
-      </label>
+      </Label>
       <div className="mb-2 flex gap-2">
-        <input
+        <Input
           value={cwd}
           onChange={(e) => manualSet(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void doBrowse(cwd);
           }}
           placeholder="/path/to/project"
-          className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-accent focus:outline-none"
+          className="flex-1"
         />
-        <button
+        <Button
+          variant="outline"
           onClick={() => doBrowse(cwd)}
-          className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
         >
           浏览
-        </button>
+        </Button>
       </div>
 
       {/* 目录列表 */}
       <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
         <span>{browseError ?? "点击进入子目录"}</span>
-        <button onClick={goUp} className="hover:text-neutral-300">
+        <Button variant="ghost" size="sm" onClick={goUp} className="text-xs">
           ↑ 上级
-        </button>
+        </Button>
       </div>
       <div className="mb-6 max-h-72 flex-1 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-900/50">
         {entries === null ? (
-          <div className="p-3 text-sm text-neutral-500">加载中…</div>
+          <div className="flex flex-col gap-1.5 p-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-6 w-full" />
+            ))}
+          </div>
         ) : entries.length === 0 ? (
           <div className="p-3 text-sm text-neutral-500">（空目录）</div>
         ) : (
           entries.map((e) => (
-            <button
+            <Button
               key={e.path}
+              variant="ghost"
               onClick={() => pick(e)}
               disabled={!e.isDir}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-800/50 disabled:cursor-default disabled:hover:bg-transparent"
+              className="flex w-full justify-start gap-2 px-3 py-1.5 text-left text-sm"
             >
               <Folder
                 className={
@@ -120,39 +130,39 @@ export function NewSessionView() {
               >
                 {e.name}
               </span>
-            </button>
+            </Button>
           ))
         )}
       </div>
 
       {/* 环境变量 profile */}
-      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
         环境变量配置（profile）
-      </label>
+      </Label>
       <div className="mb-6">
         <ProfileSelect value={profileId} onChange={setProfileId} />
       </div>
 
       {/* 首条消息（可选） */}
-      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
         首条消息（可选，留空则进入会话再发）
-      </label>
-      <textarea
+      </Label>
+      <Textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         rows={2}
         placeholder="想让 Claude 做什么？"
-        className="mb-6 resize-none rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-accent focus:outline-none"
+        className="mb-6"
       />
 
-      <button
+      <Button
         onClick={start}
         disabled={!cwd}
-        className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-600"
+        className="flex items-center justify-center gap-2"
       >
         进入会话
         <ArrowRight className="h-4 w-4" />
-      </button>
+      </Button>
     </div>
   );
 }

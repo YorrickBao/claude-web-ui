@@ -1,9 +1,11 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { clsx } from "clsx";
+import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
 import { ChatView } from "@/components/ChatView";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
 import type { SessionView } from "@/lib/types";
 
@@ -135,7 +137,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className={clsx(
+      className={cn(
         "flex h-screen w-screen overflow-hidden bg-neutral-950",
         isDragging && "select-none"
       )}
@@ -150,14 +152,14 @@ function Shell({ children }: { children: React.ReactNode }) {
       {/* 拖拽手柄 */}
       {!isCollapsed && (
         <div
-          className={clsx(
+          className={cn(
             "group relative shrink-0 cursor-col-resize",
             "w-[5px]" // 5px 点击区域
           )}
           onMouseDown={handleMouseDown}
         >
           <div
-            className={clsx(
+            className={cn(
               "absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 transition-colors",
               isDragging
                 ? "bg-accent"
@@ -168,7 +170,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       <main
-        className={clsx(
+        className={cn(
           "flex min-w-0 flex-1 flex-col",
           isDragging && "pointer-events-none"
         )}
@@ -223,15 +225,19 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
 
   if (err) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-red-400">
-        会话加载失败：{err}
+      <div className="flex h-full items-center justify-center p-4">
+        <Alert variant="destructive">
+          <AlertDescription>会话加载失败：{err}</AlertDescription>
+        </Alert>
       </div>
     );
   }
   if (!meta) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-        加载中…
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-4 w-56" />
       </div>
     );
   }

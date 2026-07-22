@@ -1,4 +1,4 @@
-import { clsx } from "clsx";
+import { cn } from "@/lib/utils";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
@@ -20,6 +20,9 @@ import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { ImportClaudeSessionsDialog } from "@/components/ImportClaudeSessionsDialog";
 import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
 import { deleteSessionApi, importClaudeSessions, updateSessionTitle } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import type { SessionView } from "@/lib/types";
 
 /** 取路径的最后一个组件（目录名） */
@@ -114,7 +117,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       }
       await refresh();
     } catch (err) {
-      alert(`删除失败：${(err as Error).message}`);
+      toast.error(`删除失败：${(err as Error).message}`);
     } finally {
       setDeletingId(null);
     }
@@ -152,7 +155,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       setEditingTitle("");
       await refresh();
     } catch (err) {
-      alert(`保存失败：${(err as Error).message}`);
+      toast.error(`保存失败：${(err as Error).message}`);
     }
   }
 
@@ -161,17 +164,17 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     setImportError(null);
     try {
       if (!sessions || sessions.length === 0) {
-        alert("没有可导入的会话");
+        toast.error("没有可导入的会话");
         return;
       }
 
       await importClaudeSessions(sessions);
-      alert(`成功导入 ${sessions.length} 个会话`);
+      toast.success(`成功导入 ${sessions.length} 个会话`);
       setImportOpen(false);
       await refresh();
     } catch (err) {
       setImportError((err as Error).message);
-      alert(`导入失败：${(err as Error).message}`);
+      toast.error(`导入失败：${(err as Error).message}`);
     } finally {
       setImporting(false);
     }
@@ -179,7 +182,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
 
   return (
     <aside
-      className={clsx(
+      className={cn(
         "flex flex-col border-r border-neutral-800 bg-neutral-950",
         width === undefined &&
           "transition-all duration-300",
@@ -189,7 +192,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     >
       <div className="flex items-center justify-between px-3 py-3">
         <span
-          className={clsx(
+          className={cn(
             "text-sm font-semibold text-neutral-200 transition-opacity",
             isCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
           )}
@@ -197,67 +200,76 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           Claude WebUI
         </span>
         <div className="flex items-center gap-1">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={refresh}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
             title="刷新"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               if (onToggleCollapse) onToggleCollapse();
               else setInternalCollapsed(!internalCollapsed);
             }}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
             title={isCollapsed ? "展开菜单" : "收起菜单"}
           >
             {isCollapsed ? <Menu className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="px-2">
-        <button
+        <Button
+          variant="outline"
           onClick={() => navigate("/new")}
-          className={clsx(
-            "flex w-full items-center gap-2 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800",
+          className={cn(
+            "flex w-full items-center gap-2",
             isCollapsed && "justify-center px-2"
           )}
         >
           {!isCollapsed && <Plus className="h-4 w-4" />}
           {!isCollapsed && "新建会话"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
           onClick={() => setImportOpen(true)}
-          className={clsx(
-            "mt-2 flex w-full items-center gap-2 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800",
+          className={cn(
+            "mt-2 flex w-full items-center gap-2",
             isCollapsed && "justify-center px-2"
           )}
         >
           {!isCollapsed && <Import className="h-4 w-4" />}
           {!isCollapsed && "从 Claude Code CLI 导入"}
-        </button>
+        </Button>
       </div>
 
       <div className="mt-3 flex-1 overflow-y-auto px-2 pb-2">
-        <div className={clsx(
+        <div className={cn(
           "mb-1 flex items-center justify-between px-2",
           isCollapsed && "hidden"
         )}>
           <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">
             历史
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={collapseAllGroups}
-            className="rounded p-0.5 text-neutral-600 hover:bg-neutral-800 hover:text-neutral-400"
             title="全部折叠"
           >
             <FoldHorizontal className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
         {loading && (
-          <div className="px-2 py-2 text-sm text-neutral-500">加载中…</div>
+          <div className="flex flex-col gap-1 px-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full rounded-lg" />
+            ))}
+          </div>
         )}
         {error && (
           <div className="px-2 py-2 text-sm text-red-400">⚠ {error}</div>
@@ -273,7 +285,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                 <NavLink
                   to={`/c/${s.sessionId}`}
                   className={({ isActive }) =>
-                    clsx(
+                    cn(
                       "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm",
                       isActive
                         ? "bg-neutral-800 text-neutral-100"
@@ -300,13 +312,13 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                       title={group.cwd}
                     >
                       <FolderOpen
-                        className={clsx(
+                        className={cn(
                           "h-3 w-3 shrink-0 text-neutral-500",
                           isCollapsedGroup && "hidden"
                         )}
                       />
                       <Folder
-                        className={clsx(
+                        className={cn(
                           "h-3 w-3 shrink-0 text-neutral-500",
                           !isCollapsedGroup && "hidden"
                         )}
@@ -316,13 +328,15 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     <span className="shrink-0 text-[10px] tabular-nums text-neutral-600">
                       {group.sessions.length}
                     </span>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => handleBatchDelete(group.sessions, group.cwd)}
-                      className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-red-400 group-hover:opacity-100"
                       title="批量删除"
+                      className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
                     >
                       <Trash2 className="h-3 w-3" />
-                    </button>
+                    </Button>
                   </div>
                   {!isCollapsedGroup && (
                     <ul className="mt-0.5 space-y-0.5 pl-5">
@@ -331,7 +345,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                           <NavLink
                             to={`/c/${s.sessionId}`}
                             className={({ isActive }) =>
-                              clsx(
+                              cn(
                                 "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm",
                                 isActive
                                   ? "bg-neutral-800 text-neutral-100"
@@ -343,22 +357,26 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             <div className="min-w-0 flex-1">
                               <div className="truncate">{s.title}</div>
                             </div>
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={(e) => void handleEditTitle(s, e)}
                               disabled={editingTitleId === s.sessionId}
                               title="编辑标题"
-                              className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-blue-400 group-hover:opacity-100 disabled:opacity-50"
+                              className="shrink-0 opacity-0 transition-opacity hover:text-blue-400 group-hover:opacity-100 disabled:opacity-50"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={(e) => void handleDelete(s, e)}
                               disabled={deletingId === s.sessionId}
                               title="删除会话"
-                              className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-red-400 group-hover:opacity-100 disabled:opacity-50"
+                              className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 disabled:opacity-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                           </NavLink>
                         </li>
                       ))}
@@ -371,20 +389,21 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         )}
       </div>
 
-      <div className={clsx(
+      <div className={cn(
         "border-t border-neutral-800 px-2 py-2",
         isCollapsed && "px-1"
       )}>
-        <button
+        <Button
+          variant="ghost"
           onClick={() => setEnvOpen(true)}
-          className={clsx(
-            "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800",
+          className={cn(
+            "flex w-full items-center gap-2",
             isCollapsed && "justify-center px-1"
           )}
         >
           <Settings className="h-3.5 w-3.5" />
           {!isCollapsed && "配置管理"}
-        </button>
+        </Button>
         {!isCollapsed && (
           <div className="mt-1 px-2 text-[10px] text-neutral-600">
             bypassPermissions 模式 · 仅本地

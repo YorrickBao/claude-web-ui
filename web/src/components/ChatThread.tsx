@@ -4,6 +4,8 @@ import {
   ComposerPrimitive,
 } from "@assistant-ui/react";
 import { Markdown } from "@/components/Markdown";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   BashToolUI,
   EditToolUI,
@@ -14,8 +16,8 @@ import {
 } from "@/components/tools/ToolUIs";
 
 /**
- * assistant-ui Primitive 搭 Tailwind 的最小 Thread。
- * 不依赖 shadcn，所有样式手写。
+ * assistant-ui Primitive 搭 Tailwind 的 Thread。
+ * 使用 shadcn/ui (Base UI) Button + Avatar。
  */
 export function ChatThread() {
   return (
@@ -44,12 +46,20 @@ export function ChatThread() {
             submitMode="enter"
             className="max-h-60 flex-1 resize-none bg-transparent text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
           />
-          <ComposerPrimitive.Send className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-600">
-            发送
-          </ComposerPrimitive.Send>
-          <ComposerPrimitive.Cancel className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-700 text-neutral-200 hover:bg-neutral-600">
-            停
-          </ComposerPrimitive.Cancel>
+          <ComposerPrimitive.Send
+            render={
+              <Button size="icon" className="h-8 w-8" aria-label="发送">
+                发送
+              </Button>
+            }
+          />
+          <ComposerPrimitive.Cancel
+            render={
+              <Button variant="secondary" size="icon" className="h-8 w-8" aria-label="停止">
+                停
+              </Button>
+            }
+          />
         </div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.Root>
@@ -59,7 +69,7 @@ export function ChatThread() {
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="mb-6 flex flex-row-reverse gap-3">
-      <Avatar role="user" />
+      <AvatarUI role="user" />
       <div className="min-w-0 flex-1 text-right">
         <div className="inline-block max-w-full rounded-2xl bg-accent px-4 py-2 text-left text-white">
           <MessagePrimitive.Parts
@@ -80,7 +90,7 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="mb-6 flex gap-3">
-      <Avatar role="assistant" />
+      <AvatarUI role="assistant" />
       <div className="min-w-0 flex-1">
         <div className="inline-block max-w-full rounded-2xl bg-neutral-900 px-4 py-3 text-neutral-100">
           <MessagePrimitive.Parts
@@ -111,17 +121,18 @@ function RunningCursor() {
   );
 }
 
-function Avatar({ role }: { role: "user" | "assistant" }) {
+function AvatarUI({ role }: { role: "user" | "assistant" }) {
   return (
-    <div
-      className={
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium " +
-        (role === "user"
-          ? "bg-neutral-700 text-neutral-200"
-          : "bg-accent text-white")
-      }
-    >
-      {role === "user" ? "你" : "C"}
-    </div>
+    <Avatar className="h-8 w-8 shrink-0">
+      <AvatarFallback
+        className={
+          role === "user"
+            ? "bg-neutral-700 text-xs text-neutral-200"
+            : "bg-primary text-xs text-primary-foreground"
+        }
+      >
+        {role === "user" ? "你" : "C"}
+      </AvatarFallback>
+    </Avatar>
   );
 }

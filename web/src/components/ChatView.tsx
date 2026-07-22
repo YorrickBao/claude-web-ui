@@ -2,6 +2,7 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
 import { ChatThread } from "@/components/ChatThread";
 import { ProfileSelect } from "@/components/ProfileSelect";
+import { Badge } from "@/components/ui/badge";
 import { setSessionProfile as setSessionProfileApi } from "@/lib/api";
 import { useEffect, useState } from "react";
 
@@ -122,12 +123,12 @@ function Header({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs text-neutral-500">
-          {error && <span className="text-red-400">⚠ {error}</span>}
+          {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {stats && (
             <>
-              <span>{stats.numTurns} 轮</span>
-              <span>${stats.costUsd.toFixed(4)}</span>
-              <span>{(stats.durationMs / 1000).toFixed(1)}s</span>
+              <Badge variant="secondary">{stats.numTurns} 轮</Badge>
+              <Badge variant="secondary">${stats.costUsd.toFixed(4)}</Badge>
+              <Badge variant="secondary">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
             </>
           )}
         </div>
