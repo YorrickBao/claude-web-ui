@@ -50,8 +50,13 @@ body,
   color: #e5e5e5;
 }
 
-/* prose 深色正文增强：prose-invert 默认 body 是 #d1d5db（灰-300），
-   在深色背景下对比度不足，阅读感发虚。提升到接近前景色以对标 CLI 终端体验。 */
+/* prose 正文颜色对标 CLI 终端阅读体验：
+   亮色默认 body #374151 偏淡 → 加深到 #1f2937；
+   暗色 prose-invert 默认 body #d1d5db 偏虚 → 提亮到 #e5e5e5 */
+.prose {
+  --tw-prose-body: #1f2937;
+}
+
 .prose.prose-invert {
   --tw-prose-body: #e5e5e5;
   --tw-prose-lead: #b0b0b0;

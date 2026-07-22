@@ -13,7 +13,7 @@ export const Markdown = memo(function Markdown({
   children: string;
 }) {
   return (
-    <div className="prose prose-invert prose-sm max-w-none break-words prose-pre:rounded-xl prose-pre:border prose-pre:border-border/30 prose-pre:bg-black/40 prose-pre:p-3 prose-code:before:hidden prose-code:after:hidden">
+    <div className="prose prose-sm dark:prose-invert max-w-none break-words prose-pre:rounded-xl prose-pre:border prose-pre:border-border/30 prose-pre:bg-black/40 prose-pre:p-3 prose-code:before:hidden prose-code:after:hidden">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}

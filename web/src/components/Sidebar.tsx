@@ -271,7 +271,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             {groupByCwd(sessions).map((group) => {
               const isCollapsedGroup = collapsedGroups.has(group.cwd);
               return (
-                <div key={group.cwd} className="group">
+                  <div key={group.cwd} className="group/grp">
                   <div className="flex items-center gap-1.5 border-l-2 border-l-border/40 px-2 pl-1.5">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
@@ -300,7 +300,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                       size="icon"
                       onClick={() => navigate("/pending", { state: { cwd: group.cwd, profileId: firstProfileId } })}
                       title="在此目录新建会话"
-                      className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+                      className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover/grp:opacity-100"
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
@@ -309,7 +309,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                       size="icon"
                       onClick={() => handleBatchDelete(group.sessions, group.cwd)}
                       title="批量删除"
-                      className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                      className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/grp:opacity-100"
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -322,7 +322,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             to={`/c/${s.sessionId}`}
                             className={({ isActive }) =>
                               cn(
-                                "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
+                                "group/item flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
                                 isActive
                                   ? "border-l-accent bg-accent/10 text-foreground"
                                   : "border-l-transparent text-muted-foreground hover:bg-card"
@@ -339,7 +339,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                               onClick={(e) => void handleEditTitle(s, e)}
                               disabled={editingTitleId === s.sessionId}
                               title="编辑标题"
-                              className="shrink-0 opacity-0 transition-opacity hover:text-blue-400 group-hover:opacity-100 disabled:opacity-50"
+                              className="shrink-0 opacity-0 transition-opacity hover:text-blue-400 group-hover/item:opacity-100 disabled:opacity-50"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                             </Button>
@@ -349,7 +349,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                               onClick={(e) => void handleDelete(s, e)}
                               disabled={deletingId === s.sessionId}
                               title="删除会话"
-                              className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 disabled:opacity-50"
+                              className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100 disabled:opacity-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
