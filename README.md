@@ -15,14 +15,14 @@ pnpm install
 pnpm dev
 ```
 
-打开 http://localhost:5173 —— 前端 5173，后端 5174，dev 模式下 vite 自动反代 `/api`。
+打开 http://localhost:25173 —— 前端 25173，后端 25174，dev 模式下 vite 自动反代 `/api`。前端监听 `0.0.0.0`，局域网/容器内可通过主机 IP 访问。
 
 **生产模式**（后端托管前端）：
 
 ```bash
 pnpm build
 pnpm start
-# 打开 http://127.0.0.1:5174
+# 打开 http://127.0.0.1:25174
 ```
 
 ## 功能
@@ -118,7 +118,7 @@ web/                 Vite + React + assistant-ui 前端
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `PORT` | `5174` | 后端端口 |
+| `PORT` | `25174` | 后端端口 |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `NODE_ENV` | — | `production` 时关闭 pino-pretty |
 

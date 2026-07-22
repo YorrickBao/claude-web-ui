@@ -22,7 +22,7 @@ export const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 export const WEB_DIST_DIR = path.join(ROOT_DIR, "web", "dist");
 
 /** 监听端口（dev 模式下 vite 也走这个端口的 /api 反代） */
-export const PORT = Number(process.env.PORT ?? 5174);
+export const PORT = Number(process.env.PORT ?? 25174);
 
 /** 监听地址（纯本地部署） */
 export const HOST = process.env.HOST ?? "127.0.0.1";

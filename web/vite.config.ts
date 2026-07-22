@@ -10,12 +10,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 25173,
     strictPort: true,
+    // 监听所有网卡，方便局域网/容器内访问
+    host: "0.0.0.0",
     proxy: {
       // dev 模式下 /api 反代到后端
       "/api": {
-        target: "http://127.0.0.1:5174",
+        target: "http://127.0.0.1:25174",
         changeOrigin: true,
       },
     },
