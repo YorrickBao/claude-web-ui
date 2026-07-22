@@ -1,6 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import YAML from "yaml";
 import type { SlashCommand } from "./types.js";
 
 /**
@@ -54,86 +55,38 @@ async function readCommandsDir(dirPath: string): Promise<SlashCommand[]> {
 }
 
 /**
- * 逐行提取 YAML frontmatter（`---` 之间的内容）。
- * 不依赖字符数截断，支持任意长度的 frontmatter。
+ * 从 SKILL.md 中提取 `---` 包裹的 YAML frontmatter 文本，交给 yaml 库解析。
+ * 不自己解析字段值——所有的块标量、引号、转义都交给成熟库处理。
  */
-function extractFrontmatter(raw: string): string | null {
-  const lines = raw.split("\n");
-  if (lines[0]?.trim() !== "---") return null;
-  const fmLines: string[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === "---") break;
-    fmLines.push(lines[i]);
-  }
-  return fmLines.length > 0 ? fmLines.join("\n") : null;
-}
-
-/**
- * 从 YAML frontmatter 中提取单行或多行字段值。
- * 支持 `key: value`、`key: >-`（folded block scalar）和 `key: |`（literal block）。
- */
-function parseFmField(frontmatter: string, field: string): string {
-  const lines = frontmatter.split("\n");
-  let i = lines.findIndex((l) => l.startsWith(field + ":"));
-  if (i < 0) return "";
-  const first = lines[i];
-
-  // 单行值: "key: value"
-  const inlineMatch = first.match(/^[^:]+:\s*(.+)$/);
-  if (inlineMatch) {
-    let val = inlineMatch[1].trim();
-    // 去掉 YAML 双引号包裹
-    if (val.startsWith('"') && val.endsWith('"')) {
-      val = val.slice(1, -1);
-    }
-    // 如果值是 YAML 块指示符（>- / | / >），继续读缩进行
-    if (val === ">-" || val === "|" || val === ">") {
-      const parts: string[] = [];
-      i++;
-      while (i < lines.length) {
-        const line = lines[i];
-        if (!line.startsWith("  ") && !line.startsWith("\t")) break;
-        const trimmed = line.trimStart();
-        if (trimmed === "") {
-          parts.push("");
-        } else {
-          parts.push(trimmed);
-        }
-        i++;
-      }
-      return parts.join(" ").replace(/\s+/g, " ").trim();
-    }
-    return val;
-  }
-
-  // 仅 key:（值在下一行缩进）
-  i++;
-  if (i < lines.length && lines[i].startsWith("  ")) {
-    return lines[i].trim();
-  }
-  return "";
+function parseSkillFrontmatter(raw: string): Record<string, unknown> | null {
+  if (!raw.startsWith("---")) return null;
+  const endIdx = raw.indexOf("\n---", 3);
+  if (endIdx < 0) return null;
+  const fmText = raw.slice(4, endIdx); // 跳过开头的 "---\n"
+  // yaml 库的 parse 接受纯 YAML 字符串（无 --- 分隔符）
+  const parsed = YAML.parse(fmText);
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
 }
 
 /**
  * 从 .claude/skills/<name>/SKILL.md 目录解析 skill。
- * 每个 skill 是一个子目录，内含 SKILL.md，YAML frontmatter 中
- * `name` 为命令名、`description` 为描述。
+ * 用成熟的 yaml 库解析 YAML frontmatter，覆盖所有边缘情况。
  */
 async function readSkillsDir(dirPath: string): Promise<SlashCommand[]> {
   try {
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     const skills: SlashCommand[] = [];
     for (const e of entries) {
-      // 跳过普通文件和符号链接（符号链接指向外部 skill，暂不追踪）
       if (!e.isDirectory()) continue;
       const skillFile = path.join(dirPath, e.name, "SKILL.md");
       try {
         const raw = await fsp.readFile(skillFile, "utf-8");
-        const fm = extractFrontmatter(raw);
+        const fm = parseSkillFrontmatter(raw);
         if (fm) {
-          const cmdName = "/" + (parseFmField(fm, "name") || e.name);
-          const description = parseFmField(fm, "description") || e.name;
-          skills.push({ name: cmdName, description });
+          const name = "/" + (typeof fm.name === "string" ? fm.name : e.name);
+          const description =
+            typeof fm.description === "string" ? fm.description : e.name;
+          skills.push({ name, description });
         } else {
           skills.push({ name: "/" + e.name, description: e.name });
         }

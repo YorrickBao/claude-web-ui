@@ -15,6 +15,7 @@
     "@larksuiteoapi/node-sdk": "^1.71.1",
     "connect-feishu-bot": "^0.3.0",
     "fastify": "^5.2.1",
+    "yaml": "^2.9.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
