@@ -1,8 +1,38 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fsp from "node:fs/promises";
-import { HOST, PORT, WEB_DIST_DIR } from "./env.js";
+import { spawn } from "node:child_process";
+import { HOST, START_PORT, WEB_DIST_DIR } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
+
+/** 尝试监听端口，占用则 +1 重试（最多试 100 个） */
+async function tryListen(
+  app: FastifyInstance,
+  host: string,
+  startPort: number,
+): Promise<number> {
+  for (let port = startPort; port < startPort + 100; port++) {
+    try {
+      await app.listen({ host, port });
+      return port;
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "EADDRINUSE") throw err;
+    }
+  }
+  throw new Error(`no available port in range ${startPort}-${startPort + 99}`);
+}
+
+/** 在交互终端下打开浏览器 */
+function openBrowser(url: string): void {
+  if (!process.stdout.isTTY) return;
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "", url], { stdio: "ignore", detached: true }).unref();
+  } else {
+    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+    spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();
+  }
+}
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -45,8 +75,10 @@ async function main(): Promise<void> {
   }
 
   try {
-    await app.listen({ host: HOST, port: PORT });
-    app.log.info(`▶ http://${HOST}:${PORT}`);
+    const port = await tryListen(app, HOST, START_PORT);
+    const url = `http://${HOST}:${port}`;
+    app.log.info(`▶ ${url}`);
+    openBrowser(url);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude WebUI</title>
+    <script>
+      // 防止亮/暗模式闪烁：React 挂载前先读 localStorage 应用 class
+      (function() {
+        try {
+          var theme = localStorage.getItem("theme") || "dark";
+          if (theme !== "system") {
+            document.documentElement.classList.add(theme);
+          } else {
+            document.documentElement.classList.add(
+              window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+            );
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-CPbKHJFc.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-k1yYkjK-.css">
+  </head>
+  <body class="bg-background text-foreground">
+    <div id="root"></div>
+  </body>
+</html>

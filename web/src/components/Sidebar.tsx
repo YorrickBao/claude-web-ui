@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
   MessageSquare,
@@ -90,6 +90,8 @@ export function Sidebar({
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
   // 移动端：点击目录名弹出完整路径
   const [pathPopup, setPathPopup] = useState<string | null>(null);
+  // 跟踪真实浏览器 URL（window.history.replaceState 不触发 React Router 更新，但 NavLink 需要正确高亮）
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   // ── 移动端滑动手势 ──
   const sidebarRef = useRef<HTMLElement>(null);
@@ -148,6 +150,18 @@ export function Sidebar({
     listProfiles()
       .then((p) => setFirstProfileId(p[0]?.id ?? null))
       .catch(() => setFirstProfileId(null));
+  }, []);
+
+  // 同步 currentPath：React Router 正常导航时从这里更新
+  useEffect(() => {
+    setCurrentPath(location.pathname);
+  }, [location.pathname]);
+
+  // 同步 currentPath：session-list-changed 事件（window.history.replaceState 后触发）
+  useEffect(() => {
+    const handler = () => setCurrentPath(window.location.pathname);
+    window.addEventListener("session-list-changed", handler);
+    return () => window.removeEventListener("session-list-changed", handler);
   }, []);
 
   async function handleDelete(s: SessionView, e: React.MouseEvent) {
@@ -316,16 +330,14 @@ export function Sidebar({
           <ul className="space-y-0.5">
             {sessions.map((s) => (
               <li key={s.sessionId}>
-                <NavLink
+                <Link
                   to={`/c/${s.sessionId}`}
-                  className={({ isActive }) =>
-                    cn(
-                      "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
-                      isActive
-                        ? "bg-primary/10 text-foreground"
-                        : "text-muted-foreground hover:bg-card"
-                    )
-                  }
+                  className={cn(
+                    "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
+                    currentPath === `/c/${s.sessionId}`
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:bg-card"
+                  )}
                 >
                   {s.runningStatus === "waiting" ? (
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
