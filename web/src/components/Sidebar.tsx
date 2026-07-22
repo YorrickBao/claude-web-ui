@@ -335,7 +335,7 @@ export function Sidebar({
                   className={cn(
                     "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                     currentPath === `/c/${s.sessionId}`
-                      ? "bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]"
+                      ? "bg-accent shadow-[inset_3px_0_0_var(--primary)]"
                       : "text-muted-foreground hover:bg-card"
                   )}
                 >
@@ -424,7 +424,7 @@ export function Sidebar({
                             className={cn(
                               "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                               currentPath === `/c/${s.sessionId}`
-                                ? "bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]"
+                                ? "bg-accent shadow-[inset_3px_0_0_var(--primary)]"
                                 : "text-foreground hover:bg-card"
                             )}
                           >
