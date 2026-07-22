@@ -59,6 +59,9 @@ export function ChatThread({
     bypassPermissions: "完全访问",
     default: "标准模式",
     acceptEdits: "自动编辑",
+    plan: "仅规划",
+    dontAsk: "静默拒绝",
+    auto: "自动判断",
   };
 
   return (
@@ -116,9 +119,42 @@ export function ChatThread({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bypassPermissions">完全访问 · bypassPermissions</SelectItem>
-                <SelectItem value="default">标准模式 · default</SelectItem>
-                <SelectItem value="acceptEdits">自动编辑 · acceptEdits</SelectItem>
+                <SelectItem value="bypassPermissions">
+                  <span className="flex flex-col">
+                    <span>完全访问 · bypassPermissions</span>
+                    <span className="text-[10px] text-muted-foreground">跳过所有权限检查，allowDangerouslySkipPermissions</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="default">
+                  <span className="flex flex-col">
+                    <span>标准模式 · default</span>
+                    <span className="text-[10px] text-muted-foreground">危险操作弹窗确认</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="acceptEdits">
+                  <span className="flex flex-col">
+                    <span>自动编辑 · acceptEdits</span>
+                    <span className="text-[10px] text-muted-foreground">文件编辑自动放行，其余弹窗确认</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="plan">
+                  <span className="flex flex-col">
+                    <span>仅规划 · plan</span>
+                    <span className="text-[10px] text-muted-foreground">只读模式，不执行任何工具</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="dontAsk">
+                  <span className="flex flex-col">
+                    <span>静默拒绝 · dontAsk</span>
+                    <span className="text-[10px] text-muted-foreground">不弹窗，未预授权则直接拒绝</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="auto">
+                  <span className="flex flex-col">
+                    <span>自动判断 · auto</span>
+                    <span className="text-[10px] text-muted-foreground">模型自动判断批准或拒绝</span>
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
             <Select

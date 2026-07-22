@@ -30,6 +30,7 @@ import type {
   CreateSessionRequest,
   SendMessageRequest,
   SessionView,
+  PermissionMode,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
 
@@ -400,14 +401,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found" });
     }
     const mode = req.body?.permissionMode;
-    if (
-      mode !== "bypassPermissions" &&
-      mode !== "default" &&
-      mode !== "acceptEdits"
-    ) {
+    const validModes = ["bypassPermissions", "default", "acceptEdits", "plan", "dontAsk", "auto"];
+    if (!validModes.includes(mode as string)) {
       return reply.code(400).send({ error: "invalid permissionMode" });
     }
-    await touchSession(req.params.id, { permissionMode: mode });
+    await touchSession(req.params.id, { permissionMode: mode as PermissionMode });
     return reply.send({ ok: true, permissionMode: mode });
   });
 

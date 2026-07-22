@@ -3,7 +3,7 @@
  */
 
 /** SDK 权限模式 */
-export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits";
+export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
 
 /** 一套环境变量配置（profile） */
 export interface EnvProfile {
