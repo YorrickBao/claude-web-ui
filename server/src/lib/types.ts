@@ -32,8 +32,6 @@ export interface SessionRecord {
   lastModified: number;
   /** 当前绑定的 profile id（null = 不绑定，纯用 CLI 默认） */
   profileId: string | null;
-  /** 扫描时标记：是否已在 sessions.json 中（仅 scanClaudeSessions 返回，不持久化） */
-  alreadyImported?: boolean;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后） */
@@ -46,8 +44,6 @@ export interface SessionView {
   lastModified: number;
   /** 当前绑定的 profile id（null = 纯 CLI 默认） */
   profileId: string | null;
-  /** 该会话是否已在 sessions.json 中（标记新/旧） */
-  alreadyImported?: boolean;
 }
 
 /** sessions.json 文件结构 */

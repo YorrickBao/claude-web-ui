@@ -5,9 +5,8 @@ import {
   MessageSquare,
   Settings,
   Trash2,
-  Menu,
-  X,
-  Import,
+  PanelLeftClose,
+  PanelLeftOpen,
   FoldHorizontal,
   Folder,
   FolderOpen,
@@ -19,9 +18,8 @@ import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
-import { ImportClaudeSessionsDialog } from "@/components/ImportClaudeSessionsDialog";
 import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
-import { deleteSessionApi, importClaudeSessions, updateSessionTitle } from "@/lib/api";
+import { deleteSessionApi, updateSessionTitle } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -72,9 +70,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
-  const [importOpen, setImportOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -162,27 +157,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     }
   }
 
-  async function handleImportClaudeSessions(sessions: SessionView[]) {
-    setImporting(true);
-    setImportError(null);
-    try {
-      if (!sessions || sessions.length === 0) {
-        toast.error("没有可导入的会话");
-        return;
-      }
-
-      await importClaudeSessions(sessions);
-      toast.success(`成功导入 ${sessions.length} 个会话`);
-      setImportOpen(false);
-      await refresh();
-    } catch (err) {
-      setImportError((err as Error).message);
-      toast.error(`导入失败：${(err as Error).message}`);
-    } finally {
-      setImporting(false);
-    }
-  }
-
   return (
     <aside
       className={cn(
@@ -212,7 +186,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             }}
             title={isCollapsed ? "展开菜单" : "收起菜单"}
           >
-            {isCollapsed ? <Menu className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+            {isCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
           </Button>
         </div>
       </div>
@@ -228,17 +202,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         >
           {!isCollapsed && <Plus className="h-4 w-4" />}
           {!isCollapsed && "新建会话"}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => setImportOpen(true)}
-          className={cn(
-            "mt-2 flex w-full items-center gap-2",
-            isCollapsed && "justify-center px-2"
-          )}
-        >
-          {!isCollapsed && <Import className="h-4 w-4" />}
-          {!isCollapsed && "从 Claude Code CLI 导入"}
         </Button>
       </div>
 
@@ -425,17 +388,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         onClose={() => setEnvOpen(false)}
         onChanged={refresh}
       />
-
-      {/* 从 Claude Code CLI 导入对话框 */}
-      {importOpen && (
-        <ImportClaudeSessionsDialog
-          open={importOpen}
-          onClose={() => setImportOpen(false)}
-          onImport={handleImportClaudeSessions}
-          importing={importing}
-          importError={importError}
-        />
-      )}
 
       {/* 编辑会话标题对话框 */}
       {editingTitleId && (

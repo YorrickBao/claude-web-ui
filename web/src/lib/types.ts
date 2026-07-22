@@ -27,8 +27,6 @@ export interface SessionView {
   createdAt: number;
   lastModified: number;
   profileId: string | null;
-  /** 该会话是否已在 sessions.json 中（标记新/旧） */
-  alreadyImported?: boolean;
 }
 
 /** 一套环境变量配置 */

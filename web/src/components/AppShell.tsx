@@ -149,24 +149,17 @@ function Shell({ children }: { children: React.ReactNode }) {
         noTransition={isDragging}
       />
 
-      {/* 拖拽手柄 */}
+      {/* 拖拽手柄 —— 与侧栏右边框重叠， hover/拖拽时可见 */}
       {!isCollapsed && (
         <div
           className={cn(
-            "group relative shrink-0 cursor-col-resize",
-            "w-[5px]" // 5px 点击区域
+            "shrink-0 w-[5px] -ml-[5px] cursor-col-resize transition-colors",
+            isDragging
+              ? "bg-accent/30"
+              : "bg-transparent hover:bg-accent/15"
           )}
           onMouseDown={handleMouseDown}
-        >
-          <div
-            className={cn(
-              "absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 transition-colors",
-              isDragging
-                ? "bg-accent"
-                : "bg-secondary group-hover:bg-accent/60"
-            )}
-          />
-        </div>
+        />
       )}
 
       <main

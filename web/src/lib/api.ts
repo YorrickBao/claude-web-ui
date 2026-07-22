@@ -8,25 +8,6 @@ export async function listSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
-/** 扫描 .claude/sessions 目录，返回历史会话列表 */
-export async function scanClaudeSessions(): Promise<SessionView[]> {
-  const res = await fetch("/api/sessions/scan-claude");
-  if (!res.ok) throw new Error(`scanClaudeSessions: ${res.status}`);
-  const data = (await res.json()) as { sessions: SessionView[] };
-  return data.sessions;
-}
-
-/** 导入扫描到的会话到本地 sessions.json */
-export async function importClaudeSessions(sessions: SessionView[]): Promise<void> {
-  const res = await fetch("/api/sessions/import-claude", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessions }),
-  });
-  if (!res.ok) throw new Error(`importClaudeSessions: ${res.status}`);
-  await res.json();
-}
-
 /** 单个会话详情（含元信息） */
 export async function getSession(
   id: string,

@@ -411,7 +411,6 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
 
     // 合并本地元数据（title / profileId / firstPrompt）
     const local = localMap.get(raw.sessionId);
-    record.alreadyImported = !!local;
     if (local) {
       record.title = local.title || record.title;
       record.firstPrompt = local.firstPrompt || record.firstPrompt;
@@ -426,7 +425,6 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
   // 补充本地会话记录（未被 CLI 扫描到的，如手动导入的旧数据）
   for (const session of localSessions.sessions) {
     if (localMap.has(session.sessionId)) {
-      session.alreadyImported = true;
       claudeSessions.push(session);
     }
   }
