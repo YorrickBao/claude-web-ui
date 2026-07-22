@@ -88,6 +88,8 @@ export function Sidebar({
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
+  // 移动端：点击目录名弹出完整路径
+  const [pathPopup, setPathPopup] = useState<string | null>(null);
 
   // ── 移动端滑动手势 ──
   const sidebarRef = useRef<HTMLElement>(null);
@@ -346,7 +348,7 @@ export function Sidebar({
                   <div className="flex items-center gap-1.5 px-2">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded py-1 text-xs font-medium text-muted-foreground"
+                      className="flex min-w-0 items-center gap-1.5 rounded py-1 text-xs font-medium text-muted-foreground"
                       title={group.cwd}
                     >
                       {isCollapsedGroup ? (
@@ -354,8 +356,27 @@ export function Sidebar({
                       ) : (
                         <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate">{getDirName(group.cwd)}</span>
                     </button>
+                    <div className="relative min-w-0 flex-1">
+                      <span
+                        className="block cursor-pointer truncate rounded py-1 text-xs font-medium text-muted-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPathPopup(pathPopup === group.cwd ? null : group.cwd);
+                        }}
+                      >
+                        {getDirName(group.cwd)}
+                      </span>
+                      {pathPopup === group.cwd && (
+                        <div className="absolute left-0 top-full z-50 mt-0.5 max-w-[280px] rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg">
+                          {group.cwd}
+                          <div
+                            className="fixed inset-0 z-[-1]"
+                            onClick={() => setPathPopup(null)}
+                          />
+                        </div>
+                      )}
+                    </div>
                     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                       {group.sessions.length}
                     </span>
