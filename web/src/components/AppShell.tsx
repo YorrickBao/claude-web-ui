@@ -178,7 +178,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={cn(
-        "flex h-screen w-screen overflow-hidden bg-background",
+        "flex h-full w-screen overflow-hidden bg-background",
         isDragging && "select-none"
       )}
     >
