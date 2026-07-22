@@ -68,11 +68,11 @@ export function ChatThread({
     auto: "自动判断",
   };
   const effortItems: Record<string, string> = {
-    low: "快速",
-    medium: "适中",
-    high: "深度",
-    xhigh: "更深",
-    max: "极限",
+    low: "低",
+    medium: "中",
+    high: "高",
+    xhigh: "极高",
+    disabled: "关闭",
   };
 
   return (
@@ -195,32 +195,32 @@ export function ChatThread({
               <SelectContent>
                 <SelectItem value="low">
                   <span className="flex flex-col">
-                    <span>快速 · low</span>
+                    <span>低 · low</span>
                     <span className="text-[10px] text-muted-foreground">最少思考，最快响应</span>
                   </span>
                 </SelectItem>
                 <SelectItem value="medium">
                   <span className="flex flex-col">
-                    <span>适中 · medium</span>
+                    <span>中 · medium</span>
                     <span className="text-[10px] text-muted-foreground">适度思考</span>
                   </span>
                 </SelectItem>
                 <SelectItem value="high">
                   <span className="flex flex-col">
-                    <span>深度 · high</span>
+                    <span>高 · high</span>
                     <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
                   </span>
                 </SelectItem>
                 <SelectItem value="xhigh">
                   <span className="flex flex-col">
-                    <span>更深 · xhigh</span>
-                    <span className="text-[10px] text-muted-foreground">比 high 更深</span>
+                    <span>极高 · xhigh</span>
+                    <span className="text-[10px] text-muted-foreground">更深层推理</span>
                   </span>
                 </SelectItem>
-                <SelectItem value="max">
+                <SelectItem value="disabled">
                   <span className="flex flex-col">
-                    <span>极限 · max</span>
-                    <span className="text-[10px] text-muted-foreground">最大努力（部分模型支持）</span>
+                    <span>关闭 · disabled</span>
+                    <span className="text-[10px] text-muted-foreground">关闭扩展思考 · thinking: disabled</span>
                   </span>
                 </SelectItem>
               </SelectContent>

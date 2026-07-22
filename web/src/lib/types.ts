@@ -33,7 +33,7 @@ export interface SessionView {
   /** 权限模式 */
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
   /** 思考级别 */
-  effortLevel: "low" | "medium" | "high" | "xhigh" | "max";
+  effortLevel: "low" | "medium" | "high" | "xhigh" | "disabled";
 }
 
 /** 一套环境变量配置 */

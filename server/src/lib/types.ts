@@ -5,8 +5,8 @@
 /** SDK 权限模式 */
 export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
 
-/** SDK 思考级别 */
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+/** SDK 思考级别（disabled = 关闭扩展思考） */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "disabled";
 
 /** 一套环境变量配置（profile） */
 export interface EnvProfile {
