@@ -81,7 +81,7 @@ export function sendMessage(
 export function createSession(
   cwd: string,
   message: string,
-  opts: { title?: string; profileId?: string | null; permissionMode?: string } = {},
+  opts: { title?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
   return fetch("/api/sessions", {
@@ -93,6 +93,7 @@ export function createSession(
       title: opts.title,
       profileId: opts.profileId ?? null,
       permissionMode: opts.permissionMode ?? "bypassPermissions",
+      effortLevel: opts.effortLevel ?? "high",
     }),
     signal,
   });
@@ -175,4 +176,17 @@ export async function setSessionPermissionMode(
     body: JSON.stringify({ permissionMode }),
   });
   if (!res.ok) throw new Error(`setSessionPermissionMode: ${res.status}`);
+}
+
+/** 切换会话的思考级别 */
+export async function setSessionThinkingLevel(
+  sessionId: string,
+  effortLevel: string,
+): Promise<void> {
+  const res = await fetch(`/api/sessions/${id(sessionId)}/thinking-level`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ effortLevel }),
+  });
+  if (!res.ok) throw new Error(`setSessionThinkingLevel: ${res.status}`);
 }

@@ -35,6 +35,8 @@ export interface UseChatSSEOptions {
   profileId?: string | null;
   /** 新建会话时使用的权限模式 */
   permissionMode?: string;
+  /** 新建会话时使用的思考级别 */
+  effortLevel?: string;
   onSessionCreated?: (sessionId: string) => void;
 }
 
@@ -43,6 +45,7 @@ export function useChatSSE({
   cwd,
   profileId,
   permissionMode,
+  effortLevel,
   onSessionCreated,
 }: UseChatSSEOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -64,6 +67,9 @@ export function useChatSSE({
   // permissionMode 同样用 ref
   const permissionModeRef = useRef<string>(permissionMode ?? "bypassPermissions");
   permissionModeRef.current = permissionMode ?? "bypassPermissions";
+  // effortLevel 同样用 ref
+  const effortLevelRef = useRef<string>(effortLevel ?? "high");
+  effortLevelRef.current = effortLevel ?? "high";
   // 暴露给 UI 的"当前生效 sessionId"——session_created 时更新，
   // 这样 pending → 真实会话过渡时组件能感知（按钮显示等）
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
@@ -119,6 +125,7 @@ export function useChatSSE({
               {
                 profileId: profileIdRef.current,
                 permissionMode: permissionModeRef.current,
+                effortLevel: effortLevelRef.current,
               },
               ctrl.signal,
             );

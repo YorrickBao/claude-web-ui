@@ -31,6 +31,7 @@ import type {
   SendMessageRequest,
   SessionView,
   PermissionMode,
+  EffortLevel,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
 
@@ -59,6 +60,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       profileId: r.profileId ?? null,
       runningStatus: getInflightStatus(r.sessionId) ?? "idle",
       permissionMode: r.permissionMode ?? "bypassPermissions",
+      effortLevel: r.effortLevel ?? "high",
     }));
     return reply.send({ sessions: views });
   });
@@ -93,6 +95,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         lastModified: rec.lastModified,
         profileId: rec.profileId ?? null,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
+        effortLevel: rec.effortLevel ?? "high",
         messages: history,
       });
     },
@@ -130,6 +133,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     let sessionId: string | undefined;
     const profileId = body.profileId ?? null;
     const permissionMode = body.permissionMode ?? "bypassPermissions";
+    const effortLevel = body.effortLevel ?? "high";
 
     try {
       const stream = runQuery({
@@ -137,6 +141,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         prompt: body.message,
         abortController: ctrl,
         permissionMode,
+        effortLevel,
         // 新会话：env 来自用户选的 profile（可能为空）
         env: await resolveProfileEnv(profileId),
       });
@@ -159,6 +164,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           lastModified: Date.now(),
           profileId,
           permissionMode,
+          effortLevel,
         });
         registered = true;
       };
@@ -227,6 +233,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         resume: sessionId,
         abortController: ctrl,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
+        effortLevel: rec.effortLevel ?? "high",
         // 已有会话：env = 全局默认 + 会话级 override
         env: await resolveSessionEnv(sessionId),
       });
@@ -407,6 +414,27 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     }
     await touchSession(req.params.id, { permissionMode: mode as PermissionMode });
     return reply.send({ ok: true, permissionMode: mode });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // PUT /api/sessions/:id/thinking-level —— 切换思考级别
+  // body: { effortLevel: EffortLevel }
+  // ───────────────────────────────────────────────────────────
+  app.put<{
+    Params: { id: string };
+    Body: { effortLevel?: string };
+  }>("/api/sessions/:id/thinking-level", async (req, reply) => {
+    const rec = await getSession(req.params.id);
+    if (!rec) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const level = req.body?.effortLevel;
+    const validLevels = ["low", "medium", "high", "xhigh", "max"];
+    if (!validLevels.includes(level as string)) {
+      return reply.code(400).send({ error: "invalid effortLevel" });
+    }
+    await touchSession(req.params.id, { effortLevel: level as EffortLevel });
+    return reply.send({ ok: true, effortLevel: level });
   });
 
   // ───────────────────────────────────────────────────────────

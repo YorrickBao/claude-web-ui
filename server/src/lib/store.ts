@@ -409,15 +409,17 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
       lastModified,
       profileId: null,
       permissionMode: "bypassPermissions",
+      effortLevel: "high",
     };
 
-    // 合并本地元数据（title / profileId / firstPrompt / permissionMode）
+    // 合并本地元数据（title / profileId / firstPrompt / permissionMode / effortLevel）
     const local = localMap.get(raw.sessionId);
     if (local) {
       record.title = local.title || record.title;
       record.firstPrompt = local.firstPrompt || record.firstPrompt;
       record.profileId = local.profileId;
       record.permissionMode = local.permissionMode || record.permissionMode;
+      record.effortLevel = local.effortLevel || record.effortLevel;
       record.lastModified = Math.max(local.lastModified, record.lastModified);
     }
 
@@ -522,6 +524,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
           lastModified: cs.lastModified,
           profileId: null,
           permissionMode: "bypassPermissions",
+          effortLevel: "high",
         });
         changed = true;
       }

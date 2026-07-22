@@ -30,7 +30,7 @@ export function AppShell() {
   // ── /pending：新会话草稿态 ──
   if (path === "/pending") {
     const state = location.state as
-      | { cwd?: string; profileId?: string | null; permissionMode?: string }
+      | { cwd?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string }
       | null;
     const cwd = state?.cwd ?? null;
     if (!cwd) {
@@ -47,6 +47,7 @@ export function AppShell() {
           subtitle={cwd}
           initialProfileId={state?.profileId ?? null}
           initialPermissionMode={state?.permissionMode}
+          initialEffortLevel={state?.effortLevel}
         />
       </Shell>
     );
@@ -250,6 +251,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     messages: ThreadMessageLike[];
     profileId: string | null;
     permissionMode: string;
+    effortLevel: string;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -274,6 +276,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
           messages: data.messages ?? [],
           profileId: data.profileId ?? null,
           permissionMode: data.permissionMode ?? "bypassPermissions",
+          effortLevel: data.effortLevel ?? "high",
         });
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
@@ -314,6 +317,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
       initialMessages={meta.messages}
       initialProfileId={meta.profileId}
       initialPermissionMode={meta.permissionMode}
+      initialEffortLevel={meta.effortLevel}
     />
   );
 }

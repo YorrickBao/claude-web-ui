@@ -32,15 +32,19 @@ import {
 interface ChatThreadProps {
   profileId: string | null;
   permissionMode: string;
+  effortLevel: string;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
+  onEffortLevelChange: (level: string) => void;
 }
 
 export function ChatThread({
   profileId,
   permissionMode,
+  effortLevel,
   onProfileChange,
   onPermissionModeChange,
+  onEffortLevelChange,
 }: ChatThreadProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
 
@@ -62,6 +66,13 @@ export function ChatThread({
     plan: "仅规划",
     dontAsk: "静默拒绝",
     auto: "自动判断",
+  };
+  const effortItems: Record<string, string> = {
+    low: "快速",
+    medium: "适中",
+    high: "深度",
+    xhigh: "更深",
+    max: "极限",
   };
 
   return (
@@ -171,6 +182,47 @@ export function ChatThread({
                     {label}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select
+              items={effortItems}
+              value={effortLevel}
+              onValueChange={(v) => { if (v) onEffortLevelChange(v); }}
+            >
+              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">
+                  <span className="flex flex-col">
+                    <span>快速 · low</span>
+                    <span className="text-[10px] text-muted-foreground">最少思考，最快响应</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="medium">
+                  <span className="flex flex-col">
+                    <span>适中 · medium</span>
+                    <span className="text-[10px] text-muted-foreground">适度思考</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="high">
+                  <span className="flex flex-col">
+                    <span>深度 · high</span>
+                    <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="xhigh">
+                  <span className="flex flex-col">
+                    <span>更深 · xhigh</span>
+                    <span className="text-[10px] text-muted-foreground">比 high 更深</span>
+                  </span>
+                </SelectItem>
+                <SelectItem value="max">
+                  <span className="flex flex-col">
+                    <span>极限 · max</span>
+                    <span className="text-[10px] text-muted-foreground">最大努力（部分模型支持）</span>
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

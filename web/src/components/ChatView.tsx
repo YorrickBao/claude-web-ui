@@ -2,7 +2,7 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
 import { ChatThread } from "@/components/ChatThread";
 import { Badge } from "@/components/ui/badge";
-import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, updateSessionTitle } from "@/lib/api";
+import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, setSessionThinkingLevel, updateSessionTitle } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ export interface ChatViewProps {
   initialProfileId?: string | null;
   /** 会话初始权限模式 */
   initialPermissionMode?: string;
+  /** 会话初始思考级别 */
+  initialEffortLevel?: string;
 }
 
 export function ChatView({
@@ -27,6 +29,7 @@ export function ChatView({
   initialMessages,
   initialProfileId,
   initialPermissionMode,
+  initialEffortLevel,
 }: ChatViewProps) {
   const { runtime, error, stats, loadHistory, sessionId: activeSessionId } =
     useChatSSE({
@@ -34,6 +37,7 @@ export function ChatView({
       cwd,
       profileId: initialProfileId ?? null,
       permissionMode: initialPermissionMode,
+      effortLevel: initialEffortLevel,
       onSessionCreated: (id) => {
         // 静默替换 URL（不触发组件重挂，对话状态不丢）
         window.history.replaceState(null, "", `/c/${id}`);
@@ -56,6 +60,14 @@ export function ChatView({
   useEffect(() => {
     setPermissionMode(initialPermissionMode ?? "bypassPermissions");
   }, [initialPermissionMode]);
+
+  // 当前生效的思考级别：初始值来自 prop；切换时本地更新
+  const [effortLevel, setEffortLevel] = useState<string>(
+    initialEffortLevel ?? "high",
+  );
+  useEffect(() => {
+    setEffortLevel(initialEffortLevel ?? "high");
+  }, [initialEffortLevel]);
 
   // 已有会话：挂载时载入历史
   useEffect(() => {
@@ -85,12 +97,24 @@ export function ChatView({
   // 切换权限模式
   async function handleChangePermissionMode(mode: string) {
     setPermissionMode(mode);
-    if (!activeSessionId) return; // pending 态只更新本地
+    if (!activeSessionId) return;
     try {
       await setSessionPermissionMode(activeSessionId, mode);
       window.dispatchEvent(new CustomEvent("session-list-changed"));
     } catch {
       setPermissionMode(permissionMode);
+    }
+  }
+
+  // 切换思考级别
+  async function handleChangeEffortLevel(level: string) {
+    setEffortLevel(level);
+    if (!activeSessionId) return;
+    try {
+      await setSessionThinkingLevel(activeSessionId, level);
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+    } catch {
+      setEffortLevel(effortLevel);
     }
   }
 
@@ -108,8 +132,10 @@ export function ChatView({
           <ChatThread
             profileId={profileId}
             permissionMode={permissionMode}
+            effortLevel={effortLevel}
             onProfileChange={handleChangeProfile}
             onPermissionModeChange={handleChangePermissionMode}
+            onEffortLevelChange={handleChangeEffortLevel}
           />
         </AssistantRuntimeProvider>
       </div>

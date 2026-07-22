@@ -32,6 +32,8 @@ export interface SessionView {
   runningStatus: "idle" | "running" | "waiting";
   /** 权限模式 */
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
+  /** 思考级别 */
+  effortLevel: "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /** 一套环境变量配置 */

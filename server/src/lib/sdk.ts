@@ -1,5 +1,5 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { SSEEvent, PermissionMode } from "./types.js";
+import type { SSEEvent, PermissionMode, EffortLevel } from "./types.js";
 
 /**
  * 运行一次 Claude Agent SDK 的 query()，把 SDKMessage 流翻译成 SSEEvent 流。
@@ -21,6 +21,8 @@ export interface RunQueryParams {
   env?: Record<string, string>;
   /** 权限模式（缺省 = bypassPermissions 兼容旧调用） */
   permissionMode?: PermissionMode;
+  /** 思考级别（缺省 = high） */
+  effortLevel?: EffortLevel;
 }
 
 export async function* runQuery(
@@ -52,6 +54,7 @@ export async function* runQuery(
       ],
       permissionMode: mode,
       allowDangerouslySkipPermissions: mode === "bypassPermissions",
+      effort: params.effortLevel ?? "high",
       abortController: params.abortController,
       // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
       ...(childEnv ? { env: childEnv } : {}),

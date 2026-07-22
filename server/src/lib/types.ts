@@ -5,6 +5,9 @@
 /** SDK 权限模式 */
 export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
 
+/** SDK 思考级别 */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
 /** 一套环境变量配置（profile） */
 export interface EnvProfile {
   /** 唯一 id（前端生成的 uuid） */
@@ -37,6 +40,8 @@ export interface SessionRecord {
   profileId: string | null;
   /** 权限模式（默认完全放行兼容旧数据） */
   permissionMode: PermissionMode;
+  /** 思考级别（默认深度推理兼容旧数据） */
+  effortLevel: EffortLevel;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后） */
@@ -53,6 +58,8 @@ export interface SessionView {
   runningStatus: "idle" | "running" | "waiting";
   /** 权限模式 */
   permissionMode: PermissionMode;
+  /** 思考级别 */
+  effortLevel: EffortLevel;
 }
 
 /** sessions.json 文件结构 */
@@ -94,6 +101,8 @@ export interface CreateSessionRequest {
   profileId?: string | null;
   /** 权限模式（缺省 = bypassPermissions 兼容旧客户端） */
   permissionMode?: PermissionMode;
+  /** 思考级别（缺省 = high） */
+  effortLevel?: EffortLevel;
 }
 
 /** 发消息请求 */

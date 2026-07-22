@@ -27,6 +27,7 @@ export function NewSessionView() {
   
   const [profileId, setProfileId] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<string>("bypassPermissions");
+  const [effortLevel, setEffortLevel] = useState<string>("high");
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
 
   // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
@@ -41,6 +42,13 @@ export function NewSessionView() {
     plan: "仅规划",
     dontAsk: "静默拒绝",
     auto: "自动判断",
+  };
+  const effortItems: Record<string, string> = {
+    low: "快速",
+    medium: "适中",
+    high: "深度",
+    xhigh: "更深",
+    max: "极限",
   };
 
   // 初次加载：如果 URL 带了 cwd 参数则直接进入该目录，否则尝试 home
@@ -82,7 +90,7 @@ export function NewSessionView() {
     if (!cwd) return;
     // 跳到一个"待创建"的聊天页：sessionId=null，首条消息通过 ChatView 触发后端创建
     navigate("/pending", {
-      state: { cwd, profileId, permissionMode },
+      state: { cwd, profileId, permissionMode, effortLevel },
     });
   }
 
@@ -224,6 +232,47 @@ export function NewSessionView() {
                 {label}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select
+          items={effortItems}
+          value={effortLevel}
+          onValueChange={(v) => { if (v) setEffortLevel(v); }}
+        >
+          <SelectTrigger className="h-9 min-w-0 flex-1 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">
+              <span className="flex flex-col">
+                <span>快速 · low</span>
+                <span className="text-[10px] text-muted-foreground">最少思考，最快响应</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="medium">
+              <span className="flex flex-col">
+                <span>适中 · medium</span>
+                <span className="text-[10px] text-muted-foreground">适度思考</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="high">
+              <span className="flex flex-col">
+                <span>深度 · high</span>
+                <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="xhigh">
+              <span className="flex flex-col">
+                <span>更深 · xhigh</span>
+                <span className="text-[10px] text-muted-foreground">比 high 更深</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="max">
+              <span className="flex flex-col">
+                <span>极限 · max</span>
+                <span className="text-[10px] text-muted-foreground">最大努力（部分模型支持）</span>
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
