@@ -257,6 +257,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     profileId: string | null;
     permissionMode: string;
     effortLevel: string;
+    runningStatus: "idle" | "running" | "waiting";
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -282,6 +283,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
           profileId: data.profileId ?? null,
           permissionMode: data.permissionMode ?? "bypassPermissions",
           effortLevel: data.effortLevel ?? "high",
+          runningStatus: data.runningStatus ?? "idle",
         });
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
@@ -323,6 +325,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
       initialProfileId={meta.profileId}
       initialPermissionMode={meta.permissionMode}
       initialEffortLevel={meta.effortLevel}
+      initialRunningStatus={meta.runningStatus}
     />
   );
 }

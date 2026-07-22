@@ -86,6 +86,88 @@ export function useChatSSE({
     setError(null);
   }, []);
 
+  /**
+   * 订阅模式：用 GET SSE 连接到一个正在运行的会话，
+   * 先接收完整历史（history 事件），再转到实时事件流。
+   * 用于切回 inflight 会话时续上流式输出。
+   */
+  const subscribe = useCallback(async (targetSessionId: string) => {
+    setError(null);
+    setStats(null);
+    setIsRunning(true);
+    sessionIdRef.current = targetSessionId;
+    setActiveSessionId(targetSessionId);
+    window.dispatchEvent(new CustomEvent("session-list-changed"));
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(targetSessionId)}/stream`,
+        { signal: ctrl.signal },
+      );
+
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${errText}`.trim());
+      }
+
+      for await (const evt of parseSSE(res.body, ctrl.signal)) {
+        switch (evt.type) {
+          case "history":
+            setMessages(evt.messages as ChatMessage[]);
+            break;
+          case "text":
+            setMessages((prev) => appendTextToLast(prev, evt.text));
+            break;
+          case "tool_use":
+            setMessages((prev) =>
+              appendToolCall(prev, evt.id, evt.name, evt.input),
+            );
+            break;
+          case "tool_result":
+            setMessages((prev) =>
+              fillToolResult(prev, evt.id, evt.result, evt.isError),
+            );
+            break;
+          case "error":
+            setError(evt.message);
+            setMessages((prev) =>
+              appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
+            );
+            break;
+          case "done":
+            setStats({
+              costUsd: evt.costUsd,
+              numTurns: evt.numTurns,
+              durationMs: evt.durationMs,
+            });
+            setMessages((prev) => completeLast(prev));
+            break;
+          case "waiting_for_user":
+            // 侧栏轮询会感知 runningStatus="waiting"
+            break;
+          case "session_created":
+            // 订阅模式下 sessionId 已确定，忽略
+            break;
+        }
+      }
+    } catch (err) {
+      const e = err as Error;
+      if (e.name === "AbortError") {
+        setMessages((prev) => completeLast(prev));
+      } else {
+        setError(e.message);
+        setMessages((prev) => completeLast(prev));
+      }
+    } finally {
+      setIsRunning(false);
+      abortRef.current = null;
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+    }
+  }, []);
+
   const runtime = useExternalStoreRuntime<ChatMessage>({
     messages,
     isRunning,
@@ -202,6 +284,7 @@ export function useChatSSE({
     stats,
     stop,
     loadHistory,
+    subscribe,
     sessionId: activeSessionId,
   };
 }

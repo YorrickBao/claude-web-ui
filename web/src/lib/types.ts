@@ -17,7 +17,9 @@ export type SSEEvent =
       numTurns: number;
       durationMs: number;
     }
-  | { type: "waiting_for_user" };
+  | { type: "waiting_for_user" }
+  /** GET /stream 订阅：先发送全部历史消息，再转发现场事件 */
+  | { type: "history"; messages: unknown[] };
 
 /** 会话列表/详情里的单条会话 */
 export interface SessionView {

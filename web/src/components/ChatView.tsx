@@ -19,6 +19,8 @@ export interface ChatViewProps {
   initialPermissionMode?: string;
   /** 会话初始思考级别 */
   initialEffortLevel?: string;
+  /** 会话当前运行状态：running 时用 subscribe 续流，而非静态 loadHistory */
+  initialRunningStatus?: "idle" | "running" | "waiting";
 }
 
 export function ChatView({
@@ -30,8 +32,9 @@ export function ChatView({
   initialProfileId,
   initialPermissionMode,
   initialEffortLevel,
+  initialRunningStatus,
 }: ChatViewProps) {
-  const { runtime, error, stats, isRunning, loadHistory, sessionId: activeSessionId } =
+  const { runtime, error, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
       cwd,
@@ -69,13 +72,19 @@ export function ChatView({
     setEffortLevel(initialEffortLevel ?? "high");
   }, [initialEffortLevel]);
 
-  // 已有会话：挂载时载入历史
+  // 已有会话：挂载时载入历史（静止会话）或续流（运行中会话）
   useEffect(() => {
-    if (sessionId && initialMessages) {
+    if (!sessionId) return;
+    if (initialRunningStatus === "running") {
+      // 会话正在运行 → 订阅实时流，续上输出
+      void subscribe(sessionId);
+    } else if (initialMessages) {
+      // 静止会话 → 直接加载静态历史
       loadHistory(initialMessages);
     }
+    // 仅在 sessionId 变化（切换会话）时触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, initialMessages]);
+  }, [sessionId]);
 
   // 切换 profile：调后端绑定接口，成功后刷新本地
   async function handleChangeProfile(newId: string | null) {

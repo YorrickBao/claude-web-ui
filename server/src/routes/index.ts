@@ -36,6 +36,7 @@ import type {
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
+import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
 
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk: { customTitle?: string; summary?: string }): string {
@@ -101,8 +102,89 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         profileId: rec.profileId ?? null,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
         effortLevel: rec.effortLevel ?? "high",
+        runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
         messages: history,
       });
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
+  // GET /api/sessions/:id/stream —— 订阅会话实时 SSE 流
+  //
+  // 先 replay 全部历史消息（history 事件），如果会话正在运行则
+  // 通过 EventBus 订阅后续实时事件，实现"切回正在运行的会话时续流"。
+  //
+  // 关键：必须在 replay 之前订阅 bus，否则 replay 期间的
+  // 新事件会丢失。订阅后用 historySent 标记过滤掉早于
+  // history 的事件（它们已包含在 history 里）。
+  // ───────────────────────────────────────────────────────────
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/stream",
+    async (req, reply) => {
+      const sessionId = req.params.id;
+      const rec = await getSession(sessionId);
+      if (!rec) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+
+      initSSE(reply);
+
+      // 安全超时：防止 TCP 异常断开（无 FIN）导致监听器永不清理。
+      // 10 分钟足够覆盖绝大多数 SDK 查询，超时后强制关闭。
+      const TIMEOUT_MS = 10 * 60 * 1000;
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        app.log.warn(`stream timeout for session ${sessionId}, forcing close`);
+        cleanup();
+        try { endSSE(reply); } catch { /* 可能已经 close */ }
+      }, TIMEOUT_MS);
+
+      // 订阅 bus（在 replay 之前！），用标记过滤早期事件
+      let historySent = false;
+      const unsubEvent = onSessionEvent(sessionId, (evt) => {
+        if (historySent) {
+          sendSSE(reply, evt);
+        }
+        // historySent === false 时的事件已在 history 中包含，跳过
+      });
+
+      let unsubEnd: () => void;
+      const cleanup = () => {
+        clearTimeout(timeout);
+        unsubEvent();
+        unsubEnd();
+      };
+
+      unsubEnd = onSessionEnd(sessionId, () => {
+        cleanup();
+        try { endSSE(reply); } catch { /* 可能已经 close */ }
+      });
+
+      // 客户端正常断开时清理（仅注册一次）
+      req.raw.on("close", cleanup);
+
+      // 发送当前全部历史消息
+      try {
+        const history = await replaySession(sessionId, rec.cwd);
+        // 如果在 replay 期间已超时关闭，不再发后续事件
+        if (timedOut) return;
+        sendSSE(reply, { type: "history", messages: history });
+        historySent = true;
+      } catch (err) {
+        app.log.warn({ err }, `replaySession failed in stream for ${sessionId}`);
+        if (!timedOut) sendSSE(reply, { type: "error", message: `replay failed: ${err}` });
+        cleanup();
+        try { endSSE(reply); } catch { /* 可能已经 close */ }
+        return;
+      }
+
+      // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
+      if (!getInflight(sessionId)) {
+        cleanup();
+        try { endSSE(reply); } catch { /* 可能已经 close */ }
+        return;
+      }
     },
   );
 
@@ -195,19 +277,26 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           }
         }
         sendSSE(reply, evt);
+        // 广播到事件总线，供 GET /stream 订阅者续流
+        if (sessionId) {
+          emitSessionEvent(sessionId, evt);
+        }
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "unknown error";
       // 如果 abort，message 通常是 "This operation was aborted"
-      sendSSE(reply, {
+      const errorEvent: { type: "error"; message: string } = {
         type: "error",
         message: err instanceof Error && err.name === "AbortError"
           ? "aborted"
           : message,
-      });
+      };
+      sendSSE(reply, errorEvent);
+      if (sessionId) emitSessionEvent(sessionId, errorEvent);
     } finally {
       if (sessionId) {
+        emitSessionEnd(sessionId);
         clearInflight(sessionId);
         await touchSession(sessionId);
       }
@@ -255,17 +344,22 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           setInflightRunning(sessionId);
         }
         sendSSE(reply, evt);
+        // 广播到事件总线，供 GET /stream 订阅者续流
+        emitSessionEvent(sessionId, evt);
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "unknown error";
-      sendSSE(reply, {
+      const errorEvent: { type: "error"; message: string } = {
         type: "error",
         message: err instanceof Error && err.name === "AbortError"
           ? "aborted"
           : message,
-      });
+      };
+      sendSSE(reply, errorEvent);
+      emitSessionEvent(sessionId, errorEvent);
     } finally {
+      emitSessionEnd(sessionId);
       clearInflight(sessionId);
       await touchSession(sessionId);
       endSSE(reply);
