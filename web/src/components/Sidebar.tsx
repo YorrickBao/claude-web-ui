@@ -19,6 +19,7 @@ import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
+import { NewSessionFromGroupDialog } from "@/components/NewSessionFromGroupDialog";
 import { deleteSessionApi, updateSessionTitle } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,6 +74,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [newSessionGroupCwd, setNewSessionGroupCwd] = useState<string | null>(null);
 
   function toggleGroup(cwd: string) {
     setCollapsedGroups((prev) => {
@@ -289,7 +291,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => navigate(`/new?cwd=${encodeURIComponent(group.cwd)}`)}
+                      onClick={() => setNewSessionGroupCwd(group.cwd)}
                       title="在此目录新建会话"
                       className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
                     >
@@ -411,6 +413,13 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           onSaved={handleSaveTitle}
         />
       )}
+
+      {/* 从分组新建会话弹窗 */}
+      <NewSessionFromGroupDialog
+        open={newSessionGroupCwd !== null}
+        cwd={newSessionGroupCwd}
+        onClose={() => setNewSessionGroupCwd(null)}
+      />
     </aside>
   );
 }
