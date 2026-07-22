@@ -3,10 +3,9 @@ import {
   MessagePrimitive,
   ComposerPrimitive,
 } from "@assistant-ui/react";
-import { ArrowUp, Square, User, Bot } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   BashToolUI,
   EditToolUI,
@@ -18,7 +17,7 @@ import {
 
 /**
  * assistant-ui Primitive 搭 Tailwind 的 Thread。
- * 使用 shadcn/ui (Base UI) Button + Avatar。
+ * 使用 shadcn/ui (Base UI) Button。
  */
 export function ChatThread() {
   return (
@@ -76,9 +75,8 @@ export function ChatThread() {
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="mb-6 flex flex-row-reverse gap-3">
-      <AvatarUI role="user" />
-      <div className="min-w-0 flex-1 text-right">
+    <MessagePrimitive.Root className="mb-6 flex justify-end">
+      <div className="min-w-0">
         <div className="inline-block max-w-full rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-left text-white">
           <MessagePrimitive.Parts
             components={{
@@ -98,7 +96,6 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="mb-6 flex gap-3">
-      <AvatarUI role="assistant" />
       <div className="min-w-0 flex-1">
         <div className="inline-block max-w-full rounded-2xl rounded-bl-md bg-card px-4 py-3 text-foreground">
           <MessagePrimitive.Parts
@@ -126,25 +123,5 @@ function AssistantMessage() {
 function RunningCursor() {
   return (
     <span className="ml-0.5 inline-block h-4 w-2.5 animate-pulse rounded-sm bg-accent align-middle" />
-  );
-}
-
-function AvatarUI({ role }: { role: "user" | "assistant" }) {
-  return (
-    <Avatar className="h-7 w-7 shrink-0">
-      <AvatarFallback
-        className={
-          role === "user"
-            ? "bg-secondary text-foreground/70"
-            : "bg-primary text-primary-foreground"
-        }
-      >
-        {role === "user" ? (
-          <User className="h-3.5 w-3.5" />
-        ) : (
-          <Bot className="h-3.5 w-3.5" />
-        )}
-      </AvatarFallback>
-    </Avatar>
   );
 }
