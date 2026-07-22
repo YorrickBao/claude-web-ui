@@ -161,22 +161,6 @@ export function NewSessionView() {
       {/* 简化选择器：无 label，无管理按钮 */}
       <div className="mb-6 flex items-center gap-2">
         <Select
-          items={profileItems}
-          value={profileId ?? ""}
-          onValueChange={(v) => setProfileId(v || null)}
-        >
-          <SelectTrigger className="h-9 min-w-0 flex-1 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(profileItems).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
           items={permissionItems}
           value={permissionMode}
           onValueChange={(v) => { if (v) setPermissionMode(v); }}
@@ -186,6 +170,22 @@ export function NewSessionView() {
           </SelectTrigger>
           <SelectContent>
             {Object.entries(permissionItems).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          items={profileItems}
+          value={profileId ?? ""}
+          onValueChange={(v) => setProfileId(v || null)}
+        >
+          <SelectTrigger className="h-9 min-w-0 flex-1 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(profileItems).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
               </SelectItem>

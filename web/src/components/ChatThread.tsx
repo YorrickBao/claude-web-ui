@@ -108,22 +108,6 @@ export function ChatThread({
           {/* 简化选择器：无 label，无管理按钮 */}
           <div className="mt-2 flex items-center gap-2">
             <Select
-              items={profileItems}
-              value={profileId ?? ""}
-              onValueChange={(v) => onProfileChange(v || null)}
-            >
-              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(profileItems).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
               items={permissionItems}
               value={permissionMode}
               onValueChange={(v) => { if (v) onPermissionModeChange(v); }}
@@ -133,6 +117,22 @@ export function ChatThread({
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(permissionItems).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              items={profileItems}
+              value={profileId ?? ""}
+              onValueChange={(v) => onProfileChange(v || null)}
+            >
+              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(profileItems).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
