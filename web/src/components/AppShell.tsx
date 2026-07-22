@@ -86,7 +86,12 @@ function Shell({ children }: { children: React.ReactNode }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   // ── 移动端检测 ──
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(max-width: 767px)").matches;
+    }
+    return false;
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
