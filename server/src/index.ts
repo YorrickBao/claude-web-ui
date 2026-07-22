@@ -4,6 +4,7 @@ import fsp from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { HOST, START_PORT, WEB_DIST_DIR } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
+import { startFeishuChannel, type FeishuConfig } from "./channels/feishu.js";
 
 /** 尝试监听端口，占用则 +1 重试（最多试 100 个） */
 async function tryListen(
@@ -84,6 +85,19 @@ async function main(): Promise<void> {
     app.log.error(err);
     process.exit(1);
   }
+
+  const feishuConfig: FeishuConfig = {
+    enabled: process.env.FEISHU_ENABLED === "true",
+    appId: process.env.FEISHU_APP_ID || "",
+    appSecret: process.env.FEISHU_APP_SECRET || "",
+    domain: process.env.FEISHU_DOMAIN === "lark" ? "lark" : "feishu",
+    defaultCwd: process.env.FEISHU_DEFAULT_CWD || process.cwd(),
+    defaultProfileId: process.env.FEISHU_DEFAULT_PROFILE_ID || null,
+  };
+
+  startFeishuChannel(feishuConfig).catch((err) => {
+    app.log.error("[feishu] channel startup failed:", err);
+  });
 }
 
 main().catch((err) => {
