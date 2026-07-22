@@ -8,21 +8,40 @@
 
 ## 快速开始
 
-前置：Node ≥ 20、pnpm ≥ 9、本机已 `claude login`（SDK 会 spawn `claude` 子进程）。
+### 零安装（推荐）
+
+前置：Node ≥ 20，本机已 `claude login`（SDK 会 spawn `claude` 子进程）。
+
+```bash
+npx github:YorrickBao/claude-web-ui
+```
+
+浏览器会自动打开。首次运行 SDK 会下载约 250MB 的 `claude` 二进制到 `~/.claude/`，后续秒开。
+
+### 全局安装（短命令）
+
+```bash
+npm install -g github:YorrickBao/claude-web-ui
+cwu
+```
+
+### 开发模式
+
+前置：Node ≥ 20、pnpm ≥ 9。
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-打开 http://localhost:25173 —— 前端 25173，后端 25174，dev 模式下 vite 自动反代 `/api`。前端监听 `0.0.0.0`，局域网/容器内可通过主机 IP 访问。
+打开 http://localhost:25173 —— 前端 25173，后端 23456，dev 模式下 vite 自动反代 `/api`。前端监听 `0.0.0.0`，局域网/容器内可通过主机 IP 访问。
 
 **生产模式**（后端托管前端）：
 
 ```bash
 pnpm build
 pnpm start
-# 打开 http://127.0.0.1:25174
+# 打开 http://127.0.0.1:23456
 ```
 
 ## 功能
@@ -118,9 +137,9 @@ web/                 Vite + React + assistant-ui 前端
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `PORT` | `25174` | 后端端口 |
+| `PORT` | `23456` | 后端起始端口（占用则 +1 递增） |
 | `HOST` | `127.0.0.1` | 监听地址 |
-| `NODE_ENV` | — | `production` 时关闭 pino-pretty |
+| `CLAUDE_WEB_UI_DATA` | `~/.claude-web-ui` | 数据目录（sessions.json、profiles.json） |
 
 ### Claude 子进程（UI 里配）
 
@@ -148,7 +167,7 @@ web/                 Vite + React + assistant-ui 前端
 
 **实现**：
 - 后端 `query()` 调用时传 `env: { ...process.env, ...profile.env }`（SDK 的 env 是完全替换，必须 spread process.env）。
-- 存储：profile 在 `server/data/profiles.json`；会话与 profile 的绑定在 `sessions.json` 每条记录的 `profileId` 字段。两个文件都已 gitignore（含 token）。
+- 存储：profile 在 `~/.claude-web-ui/profiles.json`；会话与 profile 的绑定在 `sessions.json` 每条记录的 `profileId` 字段。
 - 删除 profile 时，引用它的会话自动解绑（profileId 置 null）。
 
 ## 已知限制 / 后续可做
