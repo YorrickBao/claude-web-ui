@@ -9,6 +9,9 @@ import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
+import { getSessionStats, startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
+// 启动僵尸子代理扫描器（全局单例）
+startZombieScanner();
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk) {
     return sdk.customTitle || sdk.summary || "（无标题）";
@@ -24,6 +27,7 @@ export async function apiRoutes(app) {
         const sdkMap = new Map(sdkAll.map((s) => [s.sessionId, s]));
         const views = records.map((r) => {
             const sdk = sdkMap.get(r.sessionId);
+            const stats = getSessionStats(r.sessionId);
             return {
                 sessionId: r.sessionId,
                 cwd: r.cwd,
@@ -36,6 +40,7 @@ export async function apiRoutes(app) {
                 effortLevel: r.effortLevel ?? "default",
                 inputTokens: r.inputTokens ?? 0,
                 outputTokens: r.outputTokens ?? 0,
+                subagentCount: stats.total,
             };
         });
         return reply.send({ sessions: views });
@@ -59,6 +64,7 @@ export async function apiRoutes(app) {
         catch (err) {
             app.log.warn({ err }, `replaySession failed for ${rec.sessionId}`);
         }
+        const stats = getSessionStats(rec.sessionId);
         return reply.send({
             sessionId: rec.sessionId,
             cwd: rec.cwd,
@@ -71,6 +77,7 @@ export async function apiRoutes(app) {
             runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
             inputTokens: rec.inputTokens ?? 0,
             outputTokens: rec.outputTokens ?? 0,
+            subagentCount: stats.total,
             messages: history,
         });
     });
@@ -230,6 +237,8 @@ export async function apiRoutes(app) {
         const profileId = body.profileId ?? null;
         const permissionMode = body.permissionMode ?? "bypassPermissions";
         const effortLevel = body.effortLevel ?? "default";
+        /** 子代理事件的 eventBus 取消订阅函数（session_created 后赋值，finally 中清理） */
+        let unsubSubagentEvents = null;
         try {
             const stream = runQuery({
                 cwd: body.cwd,
@@ -275,6 +284,14 @@ export async function apiRoutes(app) {
                 // 会话不在 CLI 磁盘上而被误删
                 if (evt.type === "session_created" && !registered) {
                     await register(evt.sessionId);
+                    // 注册完成后立即订阅子代理事件（钩子异步触发 → eventBus → SSE 客户端）
+                    if (sessionId && !unsubSubagentEvents) {
+                        unsubSubagentEvents = onSessionEvent(sessionId, (subEvt) => {
+                            if (subEvt.type === "subagent_started" || subEvt.type === "subagent_stopped") {
+                                sendSSE(reply, subEvt);
+                            }
+                        });
+                    }
                 }
                 // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
                 if (sessionId) {
@@ -321,7 +338,10 @@ export async function apiRoutes(app) {
                 emitSessionEvent(sessionId, errorEvent);
         }
         finally {
+            if (unsubSubagentEvents)
+                unsubSubagentEvents();
             if (sessionId) {
+                finalizeSession(sessionId);
                 emitSessionEnd(sessionId);
                 clearInflight(sessionId);
                 await touchSession(sessionId);
@@ -345,6 +365,12 @@ export async function apiRoutes(app) {
         initSSE(reply);
         const ctrl = new AbortController();
         setInflight(sessionId, ctrl);
+        // 订阅子代理事件（钩子异步触发 → eventBus → 转发给当前 SSE 客户端）
+        const unsubSubagentEvents = onSessionEvent(sessionId, (evt) => {
+            if (evt.type === "subagent_started" || evt.type === "subagent_stopped") {
+                sendSSE(reply, evt);
+            }
+        });
         try {
             const stream = runQuery({
                 cwd: rec.cwd,
@@ -395,6 +421,8 @@ export async function apiRoutes(app) {
             emitSessionEvent(sessionId, errorEvent);
         }
         finally {
+            unsubSubagentEvents();
+            finalizeSession(sessionId);
             emitSessionEnd(sessionId);
             clearInflight(sessionId);
             await touchSession(sessionId);
@@ -443,6 +471,8 @@ export async function apiRoutes(app) {
         if (!removed) {
             return reply.code(404).send({ error: "session not found" });
         }
+        // 清理子代理注册记录
+        cleanupSession(sessionId);
         return reply.send({ ok: true });
     });
     // ───────────────────────────────────────────────────────────

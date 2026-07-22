@@ -39,6 +39,10 @@ import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
+import { getSessionStats, startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
+
+// 启动僵尸子代理扫描器（全局单例）
+startZombieScanner();
 
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk: { customTitle?: string; summary?: string }): string {
@@ -57,6 +61,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     const views: SessionView[] = records.map((r) => {
       const sdk = sdkMap.get(r.sessionId);
+      const stats = getSessionStats(r.sessionId);
       return {
         sessionId: r.sessionId,
         cwd: r.cwd,
@@ -69,6 +74,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
+        subagentCount: stats.total,
       };
     });
     return reply.send({ sessions: views });
@@ -97,6 +103,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           `replaySession failed for ${rec.sessionId}`,
         );
       }
+      const stats = getSessionStats(rec.sessionId);
       return reply.send({
         sessionId: rec.sessionId,
         cwd: rec.cwd,
@@ -109,6 +116,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
+        subagentCount: stats.total,
         messages: history,
       });
     },
@@ -273,6 +281,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const profileId = body.profileId ?? null;
     const permissionMode = body.permissionMode ?? "bypassPermissions";
     const effortLevel = body.effortLevel ?? "default";
+    /** 子代理事件的 eventBus 取消订阅函数（session_created 后赋值，finally 中清理） */
+    let unsubSubagentEvents: (() => void) | null = null;
 
     try {
       const stream = runQuery({
@@ -287,6 +297,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
       // 新会话要等拿到 session_created 才能登记 inflight + store
       let registered = false;
+
       const register = async (id: string) => {
         sessionId = id;
         setInflight(id, ctrl);
@@ -321,6 +332,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         // 会话不在 CLI 磁盘上而被误删
         if (evt.type === "session_created" && !registered) {
           await register(evt.sessionId);
+          // 注册完成后立即订阅子代理事件（钩子异步触发 → eventBus → SSE 客户端）
+          if (sessionId && !unsubSubagentEvents) {
+            unsubSubagentEvents = onSessionEvent(sessionId, (subEvt) => {
+              if (subEvt.type === "subagent_started" || subEvt.type === "subagent_stopped") {
+                sendSSE(reply, subEvt);
+              }
+            });
+          }
         }
         // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
         if (sessionId) {
@@ -365,7 +384,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       sendSSE(reply, errorEvent);
       if (sessionId) emitSessionEvent(sessionId, errorEvent);
     } finally {
+      if (unsubSubagentEvents) (unsubSubagentEvents as () => void)();
       if (sessionId) {
+        finalizeSession(sessionId);
         emitSessionEnd(sessionId);
         clearInflight(sessionId);
         await touchSession(sessionId);
@@ -394,6 +415,13 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     initSSE(reply);
     const ctrl = new AbortController();
     setInflight(sessionId, ctrl);
+
+    // 订阅子代理事件（钩子异步触发 → eventBus → 转发给当前 SSE 客户端）
+    const unsubSubagentEvents = onSessionEvent(sessionId, (evt) => {
+      if (evt.type === "subagent_started" || evt.type === "subagent_stopped") {
+        sendSSE(reply, evt);
+      }
+    });
 
     try {
       const stream = runQuery({
@@ -444,6 +472,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       sendSSE(reply, errorEvent);
       emitSessionEvent(sessionId, errorEvent);
     } finally {
+      unsubSubagentEvents();
+      finalizeSession(sessionId);
       emitSessionEnd(sessionId);
       clearInflight(sessionId);
       await touchSession(sessionId);
@@ -501,6 +531,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (!removed) {
         return reply.code(404).send({ error: "session not found" });
       }
+
+      // 清理子代理注册记录
+      cleanupSession(sessionId);
 
       return reply.send({ ok: true });
     },

@@ -1,4 +1,5 @@
 import { query, listSessions, getSessionInfo, renameSession, } from "@anthropic-ai/claude-agent-sdk";
+import { registerStart, registerStop } from "./agentRegistry.js";
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
 export { listSessions, getSessionInfo, renameSession };
 export async function* runQuery(params) {
@@ -37,6 +38,41 @@ export async function* runQuery(params) {
             abortController: params.abortController,
             // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
             ...(childEnv ? { env: childEnv } : {}),
+            // 子代理生命周期追踪：SubagentStart/Stop hook → agentRegistry
+            hooks: {
+                SubagentStart: [
+                    {
+                        matcher: "*",
+                        hooks: [
+                            async (input) => {
+                                try {
+                                    registerStart(input);
+                                }
+                                catch {
+                                    // 追踪失败不阻塞 agent 执行
+                                }
+                                return { continue: true };
+                            },
+                        ],
+                    },
+                ],
+                SubagentStop: [
+                    {
+                        matcher: "*",
+                        hooks: [
+                            async (input) => {
+                                try {
+                                    await registerStop(input);
+                                }
+                                catch {
+                                    // 追踪失败不阻塞 agent 执行
+                                }
+                                return { continue: true };
+                            },
+                        ],
+                    },
+                ],
+            },
         },
     });
     for await (const msg of stream) {

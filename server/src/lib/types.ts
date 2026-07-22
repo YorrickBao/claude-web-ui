@@ -64,6 +64,8 @@ export interface SessionView {
   inputTokens: number;
   /** 累计 output tokens */
   outputTokens: number;
+  /** 历史子代理总数 */
+  subagentCount: number;
 }
 
 /** sessions.json 文件结构 */
@@ -99,7 +101,11 @@ export type SSEEvent =
     }
   | { type: "waiting_for_user" }
   /** GET /stream 订阅时，先发历史消息再转发现场事件 */
-  | { type: "history"; messages: unknown[] };
+  | { type: "history"; messages: unknown[] }
+  /** 子代理启动（SubagentStart hook 触发） */
+  | { type: "subagent_started"; agentId: string; agentType: string }
+  /** 子代理结束（SubagentStop hook 触发） */
+  | { type: "subagent_stopped"; agentId: string; agentType: string; phantom: boolean };
 
 /** 新建会话请求 */
 export interface CreateSessionRequest {
