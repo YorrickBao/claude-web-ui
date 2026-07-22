@@ -85,11 +85,29 @@ export function createPendingPermission(
   toolName: string,
   toolInput: unknown,
 ): { requestId: string; promise: Promise<PermissionDecision> } {
-  let resolveRef: ((result: PermissionDecision) => void) | undefined;
-  const promise = new Promise<PermissionDecision>((resolve) => {
-    resolveRef = resolve;
-  });
   const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  let resolveRef: ((result: PermissionDecision) => void) | undefined;
+  let settled = false;
+
+  // 5 分钟超时：防止前端断连或 bug 导致 hook 永久阻塞
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  const timeoutId = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    resolveRef?.({ behavior: "deny", message: "Permission request timed out" });
+    pendingPermissions.delete(requestId);
+  }, TIMEOUT_MS);
+
+  const promise = new Promise<PermissionDecision>((resolve) => {
+    resolveRef = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
+  });
+
   pendingPermissions.set(requestId, {
     resolve: resolveRef!,
     sessionId,

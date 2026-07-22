@@ -190,3 +190,43 @@ export async function setSessionThinkingLevel(
   });
   if (!res.ok) throw new Error(`setSessionThinkingLevel: ${res.status}`);
 }
+
+/** 响应权限请求：批准或拒绝某个工具调用 */
+export async function respondToPermission(
+  sessionId: string,
+  requestId: string,
+  behavior: "allow" | "deny",
+  message?: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/sessions/${id(sessionId)}/permission-response`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, behavior, message }),
+    },
+  );
+  if (!res.ok) throw new Error(`respondToPermission: ${res.status}`);
+}
+
+/**
+ * 审批计划：批准后返回新的 SSE Response。
+ * 调用方用 parseSSE 解析，延续当前消息流。
+ */
+export function approvePlan(
+  sessionId: string,
+  action: "approve" | "reject",
+  opts: { editedPlan?: string; prompt?: string } = {},
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(`/api/sessions/${id(sessionId)}/approve-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action,
+      editedPlan: opts.editedPlan,
+      prompt: opts.prompt,
+    }),
+    signal,
+  });
+}

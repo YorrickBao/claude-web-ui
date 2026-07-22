@@ -4,8 +4,9 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { createSession, sendMessage } from "@/lib/api";
+import { createSession, sendMessage, respondToPermission, approvePlan } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
+import type { SSEEvent } from "@/lib/types";
 
 export type { ThreadMessageLike };
 
@@ -38,6 +39,22 @@ export interface UseChatSSEOptions {
   /** 新建会话时使用的思考级别 */
   effortLevel?: string;
   onSessionCreated?: (sessionId: string) => void;
+  /** 收到权限请求时的回调（前端弹出审批对话框） */
+  onPermissionRequest?: (evt: {
+    requestId: string;
+    toolName: string;
+    toolInput: unknown;
+    decisionReason?: string;
+    respond: (behavior: "allow" | "deny", message?: string) => Promise<void>;
+  }) => void;
+  /** 收到计划提案时的回调（前端渲染审批卡片） */
+  onPlanProposed?: (evt: {
+    planContent: string;
+    approve: (opts?: { editedPlan?: string; prompt?: string }) => Promise<void>;
+    reject: () => void;
+  }) => void;
+  /** 权限模式变更回调 */
+  onModeChanged?: (mode: string) => void;
 }
 
 export function useChatSSE({
@@ -47,16 +64,16 @@ export function useChatSSE({
   permissionMode,
   effortLevel,
   onSessionCreated,
+  onPermissionRequest,
+  onPlanProposed,
+  onModeChanged,
 }: UseChatSSEOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{
-    /** 会话累计 input tokens */
     inputTokens: number;
-    /** 会话累计 output tokens */
     outputTokens: number;
-    /** 本轮耗时（ms） */
     durationMs: number;
   } | null>(null);
 
@@ -64,17 +81,18 @@ export function useChatSSE({
   const sessionIdRef = useRef<string | null>(sessionId);
   const onCreatedRef = useRef(onSessionCreated);
   onCreatedRef.current = onSessionCreated;
-  // profileId 用 ref，避免 ExternalStoreRuntime 缓存 onNew 闭包导致拿到旧值
+  const onPermissionRef = useRef(onPermissionRequest);
+  onPermissionRef.current = onPermissionRequest;
+  const onPlanRef = useRef(onPlanProposed);
+  onPlanRef.current = onPlanProposed;
+  const onModeRef = useRef(onModeChanged);
+  onModeRef.current = onModeChanged;
   const profileIdRef = useRef<string | null>(profileId ?? null);
   profileIdRef.current = profileId ?? null;
-  // permissionMode 同样用 ref
   const permissionModeRef = useRef<string>(permissionMode ?? "bypassPermissions");
   permissionModeRef.current = permissionMode ?? "bypassPermissions";
-  // effortLevel 同样用 ref
   const effortLevelRef = useRef<string>(effortLevel ?? "default");
   effortLevelRef.current = effortLevel ?? "default";
-  // 暴露给 UI 的"当前生效 sessionId"——session_created 时更新，
-  // 这样 pending → 真实会话过渡时组件能感知（按钮显示等）
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     sessionId,
   );
@@ -116,44 +134,7 @@ export function useChatSSE({
       }
 
       for await (const evt of parseSSE(res.body, ctrl.signal)) {
-        switch (evt.type) {
-          case "history":
-            setMessages(evt.messages as ChatMessage[]);
-            break;
-          case "text":
-            setMessages((prev) => appendTextToLast(prev, evt.text));
-            break;
-          case "tool_use":
-            setMessages((prev) =>
-              appendToolCall(prev, evt.id, evt.name, evt.input),
-            );
-            break;
-          case "tool_result":
-            setMessages((prev) =>
-              fillToolResult(prev, evt.id, evt.result, evt.isError),
-            );
-            break;
-          case "error":
-            setError(evt.message);
-            setMessages((prev) =>
-              appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
-            );
-            break;
-          case "done":
-            setStats({
-              inputTokens: evt.inputTokens,
-              outputTokens: evt.outputTokens,
-              durationMs: evt.durationMs,
-            });
-            setMessages((prev) => completeLast(prev));
-            break;
-          case "waiting_for_user":
-            // 侧栏轮询会感知 runningStatus="waiting"
-            break;
-          case "session_created":
-            // 订阅模式下 sessionId 已确定，忽略
-            break;
-        }
+        handleSSEEvent(evt, targetSessionId);
       }
     } catch (err) {
       const e = err as Error;
@@ -169,6 +150,105 @@ export function useChatSSE({
       window.dispatchEvent(new CustomEvent("session-list-changed"));
     }
   }, []);
+
+  /**
+   * 共享的 SSE 事件处理。供 subscribe 和 plan approval 续流复用。
+   *
+   * 此函数是组件内的普通函数（非 hook），在每次 render 中重新创建闭包。
+   * 它依赖的 setMessages / setError / setStats 是 React useState 的 setter，
+   * React 保证其引用稳定，因此闭包重新创建不会导致 stale state 问题。
+   * 同理，onPermissionRef / onPlanRef / onModeRef 通过 ref.current 读取最新值。
+   */
+  function handleSSEEvent(evt: SSEEvent, targetSessionId: string) {
+    switch (evt.type) {
+      case "history":
+        setMessages(evt.messages as ChatMessage[]);
+        break;
+      case "text":
+        setMessages((prev) => appendTextToLast(prev, evt.text));
+        break;
+      case "tool_use":
+        setMessages((prev) =>
+          appendToolCall(prev, evt.id, evt.name, evt.input),
+        );
+        break;
+      case "tool_result":
+        setMessages((prev) =>
+          fillToolResult(prev, evt.id, evt.result, evt.isError),
+        );
+        break;
+      case "error":
+        setError(evt.message);
+        setMessages((prev) =>
+          appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
+        );
+        break;
+      case "done":
+        setStats({
+          inputTokens: evt.inputTokens,
+          outputTokens: evt.outputTokens,
+          durationMs: evt.durationMs,
+        });
+        setMessages((prev) => completeLast(prev));
+        break;
+      case "waiting_for_user":
+        break;
+      case "session_created":
+        sessionIdRef.current = evt.sessionId;
+        setActiveSessionId(evt.sessionId);
+        onCreatedRef.current?.(evt.sessionId);
+        break;
+      case "permission_request":
+        if (onPermissionRef.current) {
+          onPermissionRef.current({
+            requestId: evt.requestId,
+            toolName: evt.toolName,
+            toolInput: evt.toolInput,
+            decisionReason: evt.decisionReason,
+            respond: async (behavior, message) => {
+              await respondToPermission(targetSessionId, evt.requestId, behavior, message);
+            },
+          });
+        }
+        break;
+      case "plan_proposed":
+        if (onPlanRef.current) {
+          onPlanRef.current({
+            planContent: evt.planContent,
+            approve: async (opts) => {
+              const sid = targetSessionId;
+              setIsRunning(true);
+              const ctrl2 = new AbortController();
+              abortRef.current = ctrl2;
+              try {
+                const res2 = await approvePlan(sid, "approve", opts, ctrl2.signal);
+                if (!res2.ok || !res2.body) throw new Error(`approvePlan: ${res2.status}`);
+                for await (const evt2 of parseSSE(res2.body, ctrl2.signal)) {
+                  handleSSEEvent(evt2 as SSEEvent, sid);
+                }
+              } catch (err2) {
+                const e2 = err2 as Error;
+                if (e2.name !== "AbortError") setError(e2.message);
+              } finally {
+                setIsRunning(false);
+                abortRef.current = null;
+                window.dispatchEvent(new CustomEvent("session-list-changed"));
+              }
+            },
+            reject: () => {
+              setMessages((prev) =>
+                appendTextToLast(prev, "\n\n⏹ 计划已拒绝。"),
+              );
+              setMessages((prev) => completeLast(prev));
+            },
+          });
+        }
+        break;
+      case "mode_changed":
+        onModeRef.current?.(evt.mode);
+        break;
+    }
+  }
 
   const runtime = useExternalStoreRuntime<ChatMessage>({
     messages,
@@ -220,43 +300,8 @@ export function useChatSSE({
         }
 
         for await (const evt of parseSSE(res.body, ctrl.signal)) {
-          switch (evt.type) {
-            case "session_created":
-              sessionIdRef.current = evt.sessionId;
-              setActiveSessionId(evt.sessionId);
-              onCreatedRef.current?.(evt.sessionId);
-              break;
-            case "text":
-              setMessages((prev) => appendTextToLast(prev, evt.text));
-              break;
-            case "tool_use":
-              setMessages((prev) =>
-                appendToolCall(prev, evt.id, evt.name, evt.input),
-              );
-              break;
-            case "tool_result":
-              setMessages((prev) =>
-                fillToolResult(prev, evt.id, evt.result, evt.isError),
-              );
-              break;
-            case "error":
-              setError(evt.message);
-              setMessages((prev) =>
-                appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
-              );
-              break;
-            case "done":
-              setStats({
-                inputTokens: evt.inputTokens,
-                outputTokens: evt.outputTokens,
-                durationMs: evt.durationMs,
-              });
-              setMessages((prev) => completeLast(prev));
-              break;
-            case "waiting_for_user":
-              // 会话进入 HITL 阻塞，侧栏轮询会感知 runningStatus="waiting"
-              break;
-          }
+          // 用共享的 handleSSEEvent 处理，targetSessionId 用 sessionIdRef.current
+          handleSSEEvent(evt, sessionIdRef.current ?? "");
         }
       } catch (err) {
         const e = err as Error;

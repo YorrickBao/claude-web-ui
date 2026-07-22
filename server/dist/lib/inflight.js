@@ -43,11 +43,27 @@ const pendingPermissions = new Map();
  * 返回 requestId（用于 EventBus 通知前端）和 promise（hook 内部 await）。
  */
 export function createPendingPermission(sessionId, toolName, toolInput) {
-    let resolveRef;
-    const promise = new Promise((resolve) => {
-        resolveRef = resolve;
-    });
     const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let resolveRef;
+    let settled = false;
+    // 5 分钟超时：防止前端断连或 bug 导致 hook 永久阻塞
+    const TIMEOUT_MS = 5 * 60 * 1000;
+    const timeoutId = setTimeout(() => {
+        if (settled)
+            return;
+        settled = true;
+        resolveRef?.({ behavior: "deny", message: "Permission request timed out" });
+        pendingPermissions.delete(requestId);
+    }, TIMEOUT_MS);
+    const promise = new Promise((resolve) => {
+        resolveRef = (result) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timeoutId);
+            resolve(result);
+        };
+    });
     pendingPermissions.set(requestId, {
         resolve: resolveRef,
         sessionId,
