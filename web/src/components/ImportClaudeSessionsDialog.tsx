@@ -6,7 +6,7 @@ import type { SessionView } from "@/lib/types";
 interface ImportClaudeSessionsDialogProps {
   open: boolean;
   onClose: () => void;
-  onImport: () => void;
+  onImport: (sessions: SessionView[]) => void;
   importing: boolean;
   importError: string | null;
 }
@@ -43,6 +43,9 @@ export function ImportClaudeSessionsDialog({
   }, [open]);
 
   if (!open) return null;
+
+  const newSessions = sessions.filter((s) => !s.alreadyImported);
+  const skippedCount = sessions.length - newSessions.length;
 
   return (
     <div
@@ -94,27 +97,42 @@ export function ImportClaudeSessionsDialog({
 
           {!loading && !error && sessions.length > 0 && (
             <div className="space-y-2">
-              <div className="mb-4 text-sm text-neutral-500">
-                找到 {sessions.length} 个历史会话，是否导入？
-              </div>
-              <div className="max-h-96 overflow-y-auto space-y-1 rounded-lg border border-neutral-800 bg-neutral-950/50">
-                {sessions.map((s) => (
-                  <div
-                    key={s.sessionId}
-                    className="flex items-start gap-2 rounded px-3 py-2 text-sm hover:bg-neutral-800"
-                  >
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-neutral-600" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-neutral-200">
-                        {s.title}
-                      </div>
-                      <div className="truncate text-xs text-neutral-600">
-                        {s.cwd}
-                      </div>
-                    </div>
+              {newSessions.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-neutral-500">
+                    全部 {sessions.length} 个会话均已导入，无新会话
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4 text-sm text-neutral-500">
+                    找到 {newSessions.length} 个未导入的历史会话
+                    {skippedCount > 0 && (
+                      <span className="text-neutral-600">
+                        （已跳过 {skippedCount} 个已导入的）
+                      </span>
+                    )}
+                  </div>
+                  <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950/50">
+                    {newSessions.map((s) => (
+                      <div
+                        key={s.sessionId}
+                        className="flex items-start gap-2 rounded px-3 py-2 text-sm hover:bg-neutral-800"
+                      >
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-neutral-600" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-neutral-200">
+                            {s.title}
+                          </div>
+                          <div className="truncate text-xs text-neutral-600">
+                            {s.cwd}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -129,8 +147,8 @@ export function ImportClaudeSessionsDialog({
             取消
           </button>
           <button
-            onClick={onImport}
-            disabled={importing}
+            onClick={() => onImport(newSessions)}
+            disabled={importing || newSessions.length === 0}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {importing ? "导入中…" : "确认导入"}

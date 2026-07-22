@@ -1,6 +1,5 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { Dirent } from "node:fs";
 import { DATA_DIR, HOME_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
@@ -201,29 +200,8 @@ export async function setSessionProfile(
 // ─────────────────────────────────────────────────────────────
 
 /** .claude/sessions 下的会话元信息 */
-interface ClaudeSessionInfo {
-  pid?: number;
-  sessionId: string;
-  cwd: string;
-  startedAt: number;
-  procStart?: string;
-  version?: string;
-  peerProtocol?: number;
-  kind?: string;
-  entrypoint?: string;
-  name?: string;
-  nameSource?: string;
-  status?: string;
-  updatedAt?: number;
-  statusUpdatedAt?: number;
-}
-
-/**
- * 从 .claude/sessions 目录扫描所有会话文件，返回会话记录列表。
- * 与本地的 sessions.json 合并，优先使用本地记录的更新信息。
- */
 export async function scanClaudeSessions(): Promise<SessionRecord[]> {
-  const claudeSessionsDir: string = path.join(HOME_DIR, ".claude", "sessions");
+  const projectsDir: string = path.join(HOME_DIR, ".claude", "projects");
 
   const claudeSessions: SessionRecord[] = [];
   const localSessions = await readAllSessions();
@@ -234,62 +212,107 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
   );
 
   try {
-    const entries = await fsp.readdir(claudeSessionsDir, {
-      withFileTypes: true,
-    });
+    const projectDirs = await fsp.readdir(projectsDir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      const e: Dirent = entry;
-      if (!e.isFile() || !e.name.endsWith(".json")) continue;
+    for (const projectDir of projectDirs) {
+      if (!projectDir.isDirectory()) continue;
 
       try {
-        const filePath: string = path.join(claudeSessionsDir, e.name);
-        const content: string = await fsp.readFile(filePath, "utf8");
-        const info: ClaudeSessionInfo = JSON.parse(content) as ClaudeSessionInfo;
+        const projectPath = path.join(projectsDir, projectDir.name);
+        const files = await fsp.readdir(projectPath, { withFileTypes: true });
 
-        // 提取 sessionId（从文件名或 JSON 中）
-        const sessionId = info.sessionId || e.name.replace(".json", "");
+        for (const file of files) {
+          if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
 
-        // 转换为 SessionRecord
-        const record: SessionRecord = {
-          sessionId,
-          cwd: info.cwd || "",
-          title: null, // 暂时为 null，后续可以从历史消息中提取
-          firstPrompt: null,
-          createdAt: info.startedAt || Date.now(),
-          lastModified: info.updatedAt || info.startedAt || Date.now(),
-          profileId: null, // 暂时为 null
-        };
+          const filePath = path.join(projectPath, file.name);
 
-        // 如果本地有记录，合并更新
-        const local = localMap.get(sessionId);
-        if (local) {
-          record.title = local.title;
-          record.firstPrompt = local.firstPrompt;
-          record.profileId = local.profileId;
-          record.lastModified = Math.max(
-            local.lastModified,
-            record.lastModified,
-          );
+          try {
+            const sessionId = file.name.replace(".jsonl", "");
+            const content = await fsp.readFile(filePath, "utf8");
+            const lines = content.split("\n").filter((line) => line.trim());
+
+            let cwd: string = "";
+            let firstTimestamp: number = Date.now();
+            let lastTimestamp: number = 0;
+            let firstPrompt: string = "";
+
+            // 提取第一条用户消息作为标题和首条提示
+            for (const line of lines) {
+              try {
+                const entry = JSON.parse(line);
+
+                // 提取 cwd
+                if (entry.cwd && !cwd) {
+                  cwd = entry.cwd;
+                }
+
+                // 提取时间戳
+                if (entry.timestamp) {
+                  const timestamp = new Date(entry.timestamp).getTime();
+                  if (timestamp && timestamp < firstTimestamp) {
+                    firstTimestamp = timestamp;
+                  }
+                  if (timestamp && timestamp > lastTimestamp) {
+                    lastTimestamp = timestamp;
+                  }
+                }
+
+                // 提取第一条用户消息
+                if (!firstPrompt && entry.type === "user" && entry.message?.content) {
+                  const msgContent = entry.message.content;
+                  if (typeof msgContent === "string") {
+                    firstPrompt = msgContent.trim().slice(0, 200);
+                  } else if (Array.isArray(msgContent) && msgContent.length > 0) {
+                    const firstText = msgContent.find((c) => typeof c === "string" && c.trim());
+                    if (firstText) {
+                      firstPrompt = firstText.trim().slice(0, 200);
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            const record: SessionRecord = {
+              sessionId,
+              cwd: cwd || "",
+              title: null as any,
+              firstPrompt: firstPrompt || null,
+              createdAt: firstTimestamp || Date.now(),
+              lastModified: lastTimestamp || firstTimestamp || Date.now(),
+              profileId: null,
+            };
+
+            const local = localMap.get(sessionId);
+            record.alreadyImported = !!local;
+            if (local) {
+              record.title = local.title;
+              record.firstPrompt = local.firstPrompt || firstPrompt || null;
+              record.profileId = local.profileId;
+              record.lastModified = Math.max(local.lastModified, record.lastModified);
+            }
+
+            claudeSessions.push(record);
+            localMap.delete(sessionId);
+          } catch (err) {
+            console.error(`Failed to parse ${file.name}:`, err);
+          }
         }
-
-        claudeSessions.push(record);
-        localMap.delete(sessionId); // 标记为已处理
       } catch (err) {
-        const e = err as Error;
-        console.error(`Failed to parse ${e.name}:`, e);
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error(`Failed to read project ${projectDir.name}:`, err);
+        }
       }
     }
   } catch (err) {
-    // .claude/sessions 目录不存在或无法访问，返回空数组
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Failed to scan .claude/sessions:", err);
+      console.error("Failed to scan .claude/projects:", err);
     }
   }
 
   // 补充本地会话记录（未被 .claude 扫描到的）
   for (const session of localSessions.sessions) {
     if (localMap.has(session.sessionId)) {
+      session.alreadyImported = true;
       claudeSessions.push(session);
     }
   }

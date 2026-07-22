@@ -72,12 +72,48 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         createdAt: r.createdAt,
         lastModified: r.lastModified,
         profileId: r.profileId ?? null,
+        alreadyImported: r.alreadyImported,
       }));
       return reply.send({ sessions: views });
     } catch (err) {
       return reply.code(500).send({ error: "Failed to scan .claude/sessions" });
     }
   });
+
+  // ───────────────────────────────────────────────────────────
+  // POST /api/sessions/import-claude —— 导入扫描到的会话到本地
+  // ───────────────────────────────────────────────────────────
+  app.post<{ Body: { sessions: SessionView[] } }>(
+    "/api/sessions/import-claude",
+    async (req, reply) => {
+      try {
+        const { sessions } = req.body;
+        if (!Array.isArray(sessions)) {
+          return reply.code(400).send({ error: "sessions is required" });
+        }
+
+        // 将 SessionView 转换为 SessionRecord 并保存
+        const records = sessions.map((s) => ({
+          sessionId: s.sessionId,
+          cwd: s.cwd,
+          title: s.title === "（无标题）" ? null : s.title,
+          firstPrompt: s.firstPrompt,
+          createdAt: s.createdAt,
+          lastModified: s.lastModified,
+          profileId: s.profileId ?? null,
+        }));
+
+        // 逐个保存到 sessions.json
+        for (const record of records) {
+          await upsertSession(record);
+        }
+
+        return reply.send({ ok: true, count: records.length });
+      } catch (err) {
+        return reply.code(500).send({ error: "Failed to import sessions" });
+      }
+    },
+  );
 
   // ───────────────────────────────────────────────────────────
   // GET /api/sessions/:id —— 单会话历史（暂返回 store 元信息；
@@ -290,6 +326,32 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       }
 
       return reply.send({ ok: true });
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
+  // PUT /api/sessions/:id/title —— 更新会话标题
+  // ───────────────────────────────────────────────────────────
+  app.put<{
+    Params: { id: string };
+    Body: { title: string | null };
+  }>(
+    "/api/sessions/:id/title",
+    async (req, reply) => {
+      const { id } = req.params;
+      const { title } = req.body;
+
+      const session = await getSession(id);
+      if (!session) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+
+      await upsertSession({
+        ...session,
+        title: title === "" ? null : title || null,
+      });
+
+      return reply.send({ ok: true, title });
     },
   );
 

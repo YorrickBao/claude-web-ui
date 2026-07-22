@@ -16,6 +16,17 @@ export async function scanClaudeSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
+/** 导入扫描到的会话到本地 sessions.json */
+export async function importClaudeSessions(sessions: SessionView[]): Promise<void> {
+  const res = await fetch("/api/sessions/import-claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessions }),
+  });
+  if (!res.ok) throw new Error(`importClaudeSessions: ${res.status}`);
+  await res.json();
+}
+
 /** 单个会话详情（含元信息） */
 export async function getSession(
   id: string,
@@ -40,6 +51,20 @@ export async function deleteSessionApi(id: string): Promise<void> {
   if (!res.ok && res.status !== 404) {
     throw new Error(`deleteSession: ${res.status}`);
   }
+}
+
+/** 更新会话标题 */
+export async function updateSessionTitle(
+  sessionId: string,
+  title: string | null,
+): Promise<void> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/title`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`updateSessionTitle: ${res.status}`);
+  await res.json();
 }
 
 /** 列目录 */

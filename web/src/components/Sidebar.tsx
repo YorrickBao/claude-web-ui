@@ -11,12 +11,14 @@ import {
   Import,
   ChevronDown,
   FoldHorizontal,
+  Edit2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { ImportClaudeSessionsDialog } from "@/components/ImportClaudeSessionsDialog";
-import { deleteSessionApi, scanClaudeSessions, importClaudeSessions } from "@/lib/api";
+import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
+import { deleteSessionApi, importClaudeSessions, updateSessionTitle } from "@/lib/api";
 import type { SessionView } from "@/lib/types";
 
 /** 取路径的最后一个组件（目录名） */
@@ -54,6 +56,8 @@ export function Sidebar() {
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   function toggleGroup(cwd: string) {
@@ -100,6 +104,25 @@ export function Sidebar() {
       alert(`删除失败：${(err as Error).message}`);
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleEditTitle(s: SessionView, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingTitleId(s.sessionId);
+    setEditingTitle(s.title || "");
+  }
+
+  async function handleSaveTitle() {
+    if (!editingTitleId) return;
+    try {
+      await updateSessionTitle(editingTitleId, editingTitle || null);
+      setEditingTitleId(null);
+      setEditingTitle("");
+      await refresh();
+    } catch (err) {
+      alert(`保存失败：${(err as Error).message}`);
     }
   }
 
@@ -270,6 +293,14 @@ export function Sidebar() {
                               <div className="truncate">{s.title}</div>
                             </div>
                             <button
+                              onClick={(e) => void handleEditTitle(s, e)}
+                              disabled={editingTitleId === s.sessionId}
+                              title="编辑标题"
+                              className="shrink-0 rounded p-0.5 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-blue-400 group-hover:opacity-100 disabled:opacity-50"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
                               onClick={(e) => void handleDelete(s, e)}
                               disabled={deletingId === s.sessionId}
                               title="删除会话"
@@ -324,6 +355,20 @@ export function Sidebar() {
           onImport={handleImportClaudeSessions}
           importing={importing}
           importError={importError}
+        />
+      )}
+
+      {/* 编辑会话标题对话框 */}
+      {editingTitleId && (
+        <EditSessionTitleDialog
+          open={!!editingTitleId}
+          sessionId={editingTitleId}
+          currentTitle={editingTitle || null}
+          onClose={() => {
+            setEditingTitleId(null);
+            setEditingTitle("");
+          }}
+          onSaved={handleSaveTitle}
         />
       )}
     </aside>

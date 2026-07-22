@@ -1,5 +1,6 @@
-import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import type { SSEEvent } from "./types.js";
+import { sessionStore } from "./sessionStore.js";
 
 /**
  * 运行一次 Claude Agent SDK 的 query()，把 SDKMessage 流翻译成 SSEEvent 流。
@@ -53,6 +54,8 @@ export async function* runQuery(
       abortController: params.abortController,
       // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
       ...(childEnv ? { env: childEnv } : {}),
+      // 镜像会话转录到本地文件，实现 CLI 和 WebUI 共享
+      sessionStore: sessionStore as SessionStore,
     },
   });
 
