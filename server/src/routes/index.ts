@@ -34,7 +34,7 @@ import type {
   EffortLevel,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
-import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
+import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
 
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
@@ -520,12 +520,17 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/api/feishu/connect", async (_req, reply) => {
+    console.log("[feishu] connect request received");
     initSSE(reply);
     const ctrl = new AbortController();
 
     function sendFeishuEvent(type: string, data: Record<string, unknown>): void {
       reply.raw.write(`event: ${type}\n`);
       reply.raw.write(`data: ${JSON.stringify({ ...data, type })}\n\n`);
+      const raw = reply.raw as { flush?: () => void };
+      if (raw.flush) {
+        raw.flush();
+      }
     }
 
     try {
@@ -556,6 +561,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       });
 
       sendFeishuEvent("success", { appId: result.appId, domain: result.domain });
+
+      const channelConfig: FeishuConfig = {
+        enabled: true,
+        appId: result.appId,
+        appSecret: result.appSecret,
+        domain: result.domain,
+      };
+      await (globalThis as any).__feishuChannelStarter?.(channelConfig);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         sendFeishuEvent("error", { message: "已取消" });

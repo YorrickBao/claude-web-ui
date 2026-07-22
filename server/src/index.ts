@@ -106,9 +106,31 @@ async function main(): Promise<void> {
     defaultProfileId: process.env.FEISHU_DEFAULT_PROFILE_ID || null,
   };
 
-  startFeishuChannel(feishuConfig).catch((err: unknown) => {
+  let feishuChannelStarted = false;
+
+  async function startFeishuChannelIfNeeded(config: FeishuConfig): Promise<void> {
+    if (feishuChannelStarted) {
+      console.info("[feishu] channel already started, skipping");
+      return;
+    }
+    if (!config.enabled || !config.appId || !config.appSecret) {
+      console.info("[feishu] channel disabled or missing credentials");
+      return;
+    }
+    try {
+      await startFeishuChannel(config);
+      feishuChannelStarted = true;
+      console.info("[feishu] channel started");
+    } catch (err) {
+      console.error("[feishu] channel startup failed:", err);
+    }
+  }
+
+  startFeishuChannelIfNeeded(feishuConfig).catch((err: unknown) => {
     app.log.error({ err: err instanceof Error ? err.message : err }, "[feishu] channel startup failed");
   });
+
+  (globalThis as any).__feishuChannelStarter = startFeishuChannelIfNeeded;
 }
 
 main().catch((err) => {
