@@ -18,6 +18,17 @@ npx github:YorrickBao/claude-web-ui
 
 浏览器会自动打开。首次运行 SDK 会下载约 250MB 的 `claude` 二进制到 `~/.claude/`，后续秒开。
 
+```bash
+# 自定义端口
+npx github:YorrickBao/claude-web-ui --port 8080
+
+# 允许局域网访问
+npx github:YorrickBao/claude-web-ui --host 0.0.0.0
+
+# 查看选项
+npx github:YorrickBao/claude-web-ui --help
+```
+
 ### 全局安装（短命令）
 
 ```bash
@@ -133,13 +144,17 @@ web/                 Vite + React + assistant-ui 前端
 
 ## 配置
 
-### 后端进程
+### 启动参数
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `PORT` | `23456` | 后端起始端口（占用则 +1 递增） |
-| `HOST` | `127.0.0.1` | 监听地址 |
-| `CLAUDE_WEB_UI_DATA` | `~/.claude-web-ui` | 数据目录（sessions.json、profiles.json） |
+| 参数 | 简写 | 默认 | 说明 |
+|---|---|---|---|
+| `--port` | `-p` | `23456` | 起始端口（占用则 +1 递增） |
+| `--host` | `-h` | `127.0.0.1` | 监听地址（`0.0.0.0` 允许局域网访问） |
+| `--help` | | | 打印帮助 |
+
+也可用环境变量 `PORT` 和 `HOST`。
+
+### 后端进程
 
 ### Claude 子进程（UI 里配）
 
