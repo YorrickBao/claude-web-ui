@@ -1,8 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fsp from "node:fs/promises";
+import path from "node:path";
 import { spawn } from "node:child_process";
-import { HOST, START_PORT, WEB_DIST_DIR } from "./env.js";
+import { HOST, START_PORT, WEB_DIST_DIR, DATA_DIR } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
 import { startFeishuChannel, type FeishuConfig } from "./channels/feishu.js";
 
@@ -85,17 +86,28 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const FEISHU_CONFIG_FILE = path.join(DATA_DIR, "feishu-config.json");
+
+  let savedFeishuConfig: { appId: string; appSecret: string; domain: "feishu" | "lark" } | null = null;
+  try {
+    const content = await fsp.readFile(FEISHU_CONFIG_FILE, "utf-8");
+    savedFeishuConfig = JSON.parse(content);
+    app.log.info("[feishu] loaded saved config");
+  } catch {
+    savedFeishuConfig = null;
+  }
+
   const feishuConfig: FeishuConfig = {
-    enabled: process.env.FEISHU_ENABLED === "true",
-    appId: process.env.FEISHU_APP_ID || "",
-    appSecret: process.env.FEISHU_APP_SECRET || "",
-    domain: process.env.FEISHU_DOMAIN === "lark" ? "lark" : "feishu",
+    enabled: process.env.FEISHU_ENABLED === "true" || !!savedFeishuConfig,
+    appId: process.env.FEISHU_APP_ID || savedFeishuConfig?.appId || "",
+    appSecret: process.env.FEISHU_APP_SECRET || savedFeishuConfig?.appSecret || "",
+    domain: process.env.FEISHU_DOMAIN === "lark" ? "lark" : savedFeishuConfig?.domain || "feishu",
     defaultCwd: process.env.FEISHU_DEFAULT_CWD || process.cwd(),
     defaultProfileId: process.env.FEISHU_DEFAULT_PROFILE_ID || null,
   };
 
-  startFeishuChannel(feishuConfig).catch((err) => {
-    app.log.error("[feishu] channel startup failed:", err);
+  startFeishuChannel(feishuConfig).catch((err: unknown) => {
+    app.log.error({ err: err instanceof Error ? err.message : err }, "[feishu] channel startup failed");
   });
 }
 

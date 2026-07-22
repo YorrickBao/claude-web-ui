@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Parse CLI args before modules read process.env
 const args = process.argv.slice(2);
+let feishuBind = false;
+
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--host" || args[i] === "-h") {
     process.env.HOST = args[++i];
@@ -18,6 +20,8 @@ for (let i = 0; i < args.length; i++) {
     process.env.FEISHU_DEFAULT_CWD = args[++i];
   } else if (args[i] === "--feishu-profile-id") {
     process.env.FEISHU_DEFAULT_PROFILE_ID = args[++i];
+  } else if (args[i] === "--feishu-bind") {
+    feishuBind = true;
   } else if (args[i] === "--help") {
     console.log(`
   claude-web-ui  v${process.env.npm_package_version || "0.1.0"}
@@ -36,8 +40,56 @@ for (let i = 0; i < args.length; i++) {
     --feishu-domain         Feishu domain: "feishu" or "lark" (default: feishu)
     --feishu-cwd            Default working directory for Feishu sessions
     --feishu-profile-id     Default profile ID for Feishu sessions
+    --feishu-bind           Bind Feishu bot via QR code (interactive)
 `);
     process.exit(0);
+  }
+}
+
+if (feishuBind) {
+  const { connectFeishuBot } = await import("connect-feishu-bot");
+  const { DATA_DIR } = await import("./server/dist/env.js");
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+
+  console.log("\n  Feishu Bot Binding");
+  console.log("  ─────────────────────────────────");
+  console.log("\n  Scan with Feishu to create your bot:\n");
+
+  try {
+    const result = await connectFeishuBot({
+      onQRCode: (url) => {
+        console.log(`  QR URL: ${url}`);
+        console.log();
+      },
+      onStatus: (status) => {
+        if (status.phase === "waiting_for_scan") {
+          console.log("  Waiting for scan...");
+        } else if (status.phase === "success") {
+          console.log("  ✓ Bot created!");
+        } else if (status.phase === "expired") {
+          console.log("  ✗ QR code expired");
+        } else if (status.phase === "denied") {
+          console.log("  ✗ User denied");
+        }
+      },
+    });
+
+    const configPath = path.join(DATA_DIR, "feishu-config.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      appId: result.appId,
+      appSecret: result.appSecret,
+      domain: result.domain,
+    }, null, 2), "utf-8");
+
+    console.log(`\n  App ID: ${result.appId}`);
+    console.log(`  Domain: ${result.domain}`);
+    console.log(`  Config saved to: ${configPath}`);
+    console.log(`\n  You can now start the server and Feishu channel will be enabled.`);
+    process.exit(0);
+  } catch (err) {
+    console.error("\n  Error:", err.message);
+    process.exit(1);
   }
 }
 
