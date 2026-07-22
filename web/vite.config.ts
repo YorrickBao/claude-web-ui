@@ -22,6 +22,6 @@ export default defineConfig({
       },
     },
   },
-  // 后端生产模式托管 web/dist，构建产物用相对路径
-  base: "./",
+  // 后端生产模式托管 web/dist，构建产物用绝对路径（SPA 嵌套路由刷新需要）
+  base: "/",
 });
