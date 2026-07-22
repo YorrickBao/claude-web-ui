@@ -258,9 +258,17 @@ async function* walkCliSessions(): AsyncGenerator<RawCliEntry> {
             indexEntry: indexMap.get(sid),
           };
         }
-      } catch { /* 目录不可读 */ }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error(`Failed to read project directory ${dp}:`, err);
+        }
+      }
     }
-  } catch { /* ~/.claude/projects 不存在 */ }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("Failed to scan .claude/projects:", err);
+    }
+  }
 
   // ── 2. transcripts/ 目录（兼容旧格式） ──
   try {
@@ -272,7 +280,11 @@ async function* walkCliSessions(): AsyncGenerator<RawCliEntry> {
       seen.add(sid);
       yield { sessionId: sid, jsonlPath: path.join(transcriptsDir, f) };
     }
-  } catch { /* transcripts 目录不存在 */ }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("Failed to scan .claude/transcripts:", err);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -382,7 +394,9 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
 
         if (firstTimestamp < createdAt) createdAt = firstTimestamp;
         if (lastTimestamp > lastModified) lastModified = lastTimestamp;
-      } catch { /* jsonl 不可读 */ }
+      } catch (err) {
+        console.error(`Failed to parse ${raw.jsonlPath}:`, err);
+      }
     }
 
     const record: SessionRecord = {
