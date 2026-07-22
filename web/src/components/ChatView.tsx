@@ -160,6 +160,7 @@ function Header({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [currentTitle, setCurrentTitle] = useState(title ?? "");
+  const [subtitlePopup, setSubtitlePopup] = useState(false);
 
   // 进入编辑态时自动聚焦并全选
   useEffect(() => {
@@ -245,11 +246,23 @@ function Header({
             </div>
           )}
           {subtitle && (
-            <div
-              className="truncate text-xs text-muted-foreground"
-              title={subtitle}
-            >
-              {subtitle}
+            <div className="relative">
+              <div
+                className="truncate text-xs text-muted-foreground cursor-pointer"
+                title={subtitle}
+                onClick={() => setSubtitlePopup(!subtitlePopup)}
+              >
+                {subtitle}
+              </div>
+              {subtitlePopup && (
+                <div className="absolute left-0 top-full z-50 mt-0.5 max-w-[320px] rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg break-all">
+                  {subtitle}
+                  <div
+                    className="fixed inset-0 z-[-1]"
+                    onClick={() => setSubtitlePopup(false)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
