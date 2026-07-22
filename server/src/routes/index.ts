@@ -14,18 +14,17 @@ import {
   resolveSessionEnv,
   resolveProfileEnv,
   setSessionProfile,
-  accumulateTokens,
 } from "../lib/store.js";
 import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
+import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
   setInflight,
-  setInflightWaiting,
-  setInflightRunning,
   clearInflight,
   getInflight,
   getInflightStatus,
+  takePendingPermission,
 } from "../lib/inflight.js";
 import type {
   CreateSessionRequest,
@@ -250,6 +249,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // POST /api/sessions —— 新建会话并跑首条消息（SSE）
+  //
+  // 事件处理通过 emitEventToBus 统一完成（inflight 跟踪、token 累加、
+  // 总线发射）。session_created 之后订阅总线，后续事件由总线转发，
+  // 不再直接 sendSSE，消除双写。
   // ───────────────────────────────────────────────────────────
   app.post<{
     Body: CreateSessionRequest;
@@ -281,8 +284,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const profileId = body.profileId ?? null;
     const permissionMode = body.permissionMode ?? "bypassPermissions";
     const effortLevel = body.effortLevel ?? "default";
-    /** 子代理事件的 eventBus 取消订阅函数（session_created 后赋值，finally 中清理） */
-    let unsubSubagentEvents: (() => void) | null = null;
+    /** 总线订阅取消函数（session_created 后赋值，finally 中清理） */
+    let unsubBusEvents: (() => void) | null = null;
 
     try {
       const stream = runQuery({
@@ -328,53 +331,30 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
       for await (const evt of stream) {
         // session_created 必须先完成持久化再推给前端，
-        // 避免侧栏刷新时 syncAndListSessions 发现
-        // 会话不在 CLI 磁盘上而被误删
+        // 避免侧栏刷新时 syncAndListSessions 发现会话不在 CLI 磁盘上而被误删
         if (evt.type === "session_created" && !registered) {
           await register(evt.sessionId);
-          // 注册完成后立即订阅子代理事件（钩子异步触发 → eventBus → SSE 客户端）
-          if (sessionId && !unsubSubagentEvents) {
-            unsubSubagentEvents = onSessionEvent(sessionId, (subEvt) => {
-              if (subEvt.type === "subagent_started" || subEvt.type === "subagent_stopped") {
-                sendSSE(reply, subEvt);
-              }
+          // 注册完成后订阅总线：所有事件（含查询事件、子代理事件）
+          // 统一通过总线转发到客户端，不再直接 sendSSE
+          if (sessionId && !unsubBusEvents) {
+            unsubBusEvents = onSessionEvent(sessionId, (e) => {
+              sendSSE(reply, e);
             });
           }
         }
-        // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
+
         if (sessionId) {
-          if (evt.type === "waiting_for_user") {
-            setInflightWaiting(sessionId);
-          } else {
-            setInflightRunning(sessionId);
-          }
-        }
-        // done 事件：先累加 token 到持久化存储，再发送新的累计值
-        if (evt.type === "done" && sessionId) {
-          await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
-            (err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`),
-          );
-          // 读取累加后的最新累计值，发送给前端
-          const updated = await getSession(sessionId);
-          const doneEvt = {
-            type: "done" as const,
-            inputTokens: updated?.inputTokens ?? evt.inputTokens,
-            outputTokens: updated?.outputTokens ?? evt.outputTokens,
-            durationMs: evt.durationMs,
-          };
-          sendSSE(reply, doneEvt);
-          emitSessionEvent(sessionId, doneEvt);
+          // 统一事件处理 + 总线发射（inflight 跟踪、token 累加）
+          await emitEventToBus(sessionId, evt);
+          // 不直接 sendSSE —— 总线订阅负责转发
         } else {
+          // session_created 之前的异常情况，直接发
           sendSSE(reply, evt);
-          if (sessionId) {
-            emitSessionEvent(sessionId, evt);
-          }
         }
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "unknown error";
-      // 如果 abort，message 通常是 "This operation was aborted"
       const errorEvent: { type: "error"; message: string } = {
         type: "error",
         message: err instanceof Error && err.name === "AbortError"
@@ -384,7 +364,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       sendSSE(reply, errorEvent);
       if (sessionId) emitSessionEvent(sessionId, errorEvent);
     } finally {
-      if (unsubSubagentEvents) (unsubSubagentEvents as () => void)();
+      if (unsubBusEvents) unsubBusEvents();
       if (sessionId) {
         finalizeSession(sessionId);
         emitSessionEnd(sessionId);
@@ -397,6 +377,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // POST /api/sessions/:id/messages —— 已有会话发消息（SSE）
+  //
+  // 事件流统一经过 EventBus：runQueryToBus 将所有事件 emit 到总线，
+  // handler 订阅总线转发到 HTTP 客户端。子代理事件也通过同一总线
+  // 通道到达，无需单独订阅。
   // ───────────────────────────────────────────────────────────
   app.post<{
     Params: { id: string };
@@ -416,66 +400,28 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const ctrl = new AbortController();
     setInflight(sessionId, ctrl);
 
-    // 订阅子代理事件（钩子异步触发 → eventBus → 转发给当前 SSE 客户端）
-    const unsubSubagentEvents = onSessionEvent(sessionId, (evt) => {
-      if (evt.type === "subagent_started" || evt.type === "subagent_stopped") {
-        sendSSE(reply, evt);
-      }
+    // 订阅总线：所有事件（含查询事件、子代理事件）统一转发到客户端
+    const unsubEvent = onSessionEvent(sessionId, (evt) => {
+      sendSSE(reply, evt);
+    });
+
+    // 客户端断开时中止查询
+    req.raw.on("close", () => {
+      ctrl.abort();
     });
 
     try {
-      const stream = runQuery({
+      await runQueryToBus(sessionId, {
         cwd: rec.cwd,
         prompt: body.message,
         resume: sessionId,
         abortController: ctrl,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
         effortLevel: rec.effortLevel ?? "default",
-        // 已有会话：env = 全局默认 + 会话级 override
         env: await resolveSessionEnv(sessionId),
       });
-      for await (const evt of stream) {
-        // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
-        if (evt.type === "waiting_for_user") {
-          setInflightWaiting(sessionId);
-        } else {
-          setInflightRunning(sessionId);
-        }
-        // done 事件：先累加 token 到持久化存储，再发送新的累计值
-        if (evt.type === "done") {
-          await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
-            (err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`),
-          );
-          const updated = await getSession(sessionId);
-          const doneEvt = {
-            type: "done" as const,
-            inputTokens: updated?.inputTokens ?? evt.inputTokens,
-            outputTokens: updated?.outputTokens ?? evt.outputTokens,
-            durationMs: evt.durationMs,
-          };
-          sendSSE(reply, doneEvt);
-          emitSessionEvent(sessionId, doneEvt);
-        } else {
-          sendSSE(reply, evt);
-          emitSessionEvent(sessionId, evt);
-        }
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "unknown error";
-      const errorEvent: { type: "error"; message: string } = {
-        type: "error",
-        message: err instanceof Error && err.name === "AbortError"
-          ? "aborted"
-          : message,
-      };
-      sendSSE(reply, errorEvent);
-      emitSessionEvent(sessionId, errorEvent);
     } finally {
-      unsubSubagentEvents();
-      finalizeSession(sessionId);
-      emitSessionEnd(sessionId);
-      clearInflight(sessionId);
+      unsubEvent();
       await touchSession(sessionId);
       endSSE(reply);
     }
@@ -816,5 +762,110 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     await saveFeishuConfig({ appId, appSecret, domain });
     return reply.send({ ok: true, appId, domain });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // POST /api/sessions/:id/permission-response
+  // 前端对 permission_request 事件的响应：批准/拒绝某个工具调用
+  // ───────────────────────────────────────────────────────────
+  app.post<{
+    Params: { id: string };
+    Body: { requestId: string; behavior: "allow" | "deny"; message?: string };
+  }>("/api/sessions/:id/permission-response", async (req, reply) => {
+    const { requestId, behavior, message } = req.body;
+    if (!requestId || !behavior) {
+      return reply.code(400).send({ error: "requestId and behavior are required" });
+    }
+    if (!["allow", "deny"].includes(behavior)) {
+      return reply.code(400).send({ error: "behavior must be 'allow' or 'deny'" });
+    }
+
+    const pending = takePendingPermission(requestId);
+    if (!pending) {
+      return reply.code(404).send({ error: "permission request not found or already resolved" });
+    }
+
+    // 检查 sessionId 匹配（防止跨会话操作）
+    if (pending.sessionId !== req.params.id) {
+      // 跨会话请求：拒绝它
+      pending.resolve({ behavior: "deny", message: "Session mismatch" });
+      return reply.code(403).send({ error: "session mismatch" });
+    }
+
+    // 解析决策并唤醒 PermissionRequest hook 中的 Promise
+    pending.resolve({
+      behavior,
+      message: message ?? (behavior === "deny" ? "User denied the operation" : undefined),
+    });
+
+    return reply.send({ ok: true });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // POST /api/sessions/:id/approve-plan
+  // 前端对 plan_proposed 事件的审批：批准后自动切到执行模式继续
+  // ───────────────────────────────────────────────────────────
+  app.post<{
+    Params: { id: string };
+    Body: { action: "approve" | "reject"; editedPlan?: string; prompt?: string };
+  }>("/api/sessions/:id/approve-plan", async (req, reply) => {
+    const sessionId = req.params.id;
+    const { action, editedPlan, prompt } = req.body;
+
+    const rec = await getSession(sessionId);
+    if (!rec) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+
+    if (action === "reject") {
+      return reply.send({ ok: true, action: "rejected" });
+    }
+
+    // action === "approve"：更新权限模式并启动执行阶段
+    const execMode: PermissionMode = "acceptEdits";
+    await touchSession(sessionId, { permissionMode: execMode });
+
+    // 构建执行提示词
+    let execPrompt: string;
+    if (prompt?.trim()) {
+      execPrompt = prompt.trim();
+    } else if (editedPlan?.trim()) {
+      execPrompt = `The user has approved the following plan with edits:\n\n${editedPlan}\n\nProceed with implementation.`;
+    } else {
+      execPrompt = "The user has approved the plan. Proceed with implementation.";
+    }
+
+    initSSE(reply);
+    const ctrl = new AbortController();
+    setInflight(sessionId, ctrl);
+
+    // 订阅总线：统一转发所有事件，session_created 替换为 mode_changed
+    const unsubEvent = onSessionEvent(sessionId, (evt) => {
+      if (evt.type === "session_created") {
+        sendSSE(reply, { type: "mode_changed", mode: execMode });
+      } else {
+        sendSSE(reply, evt);
+      }
+    });
+
+    req.raw.on("close", () => {
+      ctrl.abort();
+    });
+
+    try {
+      await runQueryToBus(sessionId, {
+        cwd: rec.cwd,
+        prompt: execPrompt,
+        resume: sessionId,
+        abortController: ctrl,
+        permissionMode: execMode,
+        effortLevel: rec.effortLevel ?? "default",
+        env: await resolveSessionEnv(sessionId),
+      });
+    } finally {
+      unsubEvent();
+      await touchSession(sessionId);
+      endSSE(reply);
+    }
   });
 }
