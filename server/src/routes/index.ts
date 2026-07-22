@@ -441,7 +441,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found" });
     }
     const level = req.body?.effortLevel;
-    const validLevels = ["low", "medium", "high", "xhigh", "disabled"];
+    const validLevels = ["low", "medium", "high", "xhigh", "max", "disabled"];
     if (!validLevels.includes(level as string)) {
       return reply.code(400).send({ error: "invalid effortLevel" });
     }

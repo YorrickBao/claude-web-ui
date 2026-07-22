@@ -82,6 +82,7 @@ export function ChatThread({
     medium: "中",
     high: "高",
     xhigh: "极高",
+    max: "最强",
     disabled: "关闭",
   };
 
@@ -225,6 +226,12 @@ export function ChatThread({
                     <span className="flex flex-col">
                       <span>极高 · xhigh</span>
                       <span className="text-[10px] text-muted-foreground">更深层推理</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="max">
+                    <span className="flex flex-col">
+                      <span>最强 · max</span>
+                      <span className="text-[10px] text-muted-foreground">最大思考深度（需模型支持）</span>
                     </span>
                   </SelectItem>
                   <SelectItem value="disabled">

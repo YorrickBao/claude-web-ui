@@ -6,7 +6,7 @@
 export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
 
 /** SDK 思考级别（disabled = 关闭扩展思考） */
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "disabled";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max" | "disabled";
 
 /** 一套环境变量配置（profile） */
 export interface EnvProfile {
