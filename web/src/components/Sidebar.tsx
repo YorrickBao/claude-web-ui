@@ -10,6 +10,7 @@ import {
   X,
   Import,
   ChevronDown,
+  FoldHorizontal,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSessions } from "@/hooks/useSessions";
@@ -67,6 +68,13 @@ export function Sidebar() {
     });
   }
 
+  function toggleAllGroups() {
+    const groups = groupByCwd(sessions);
+    if (groups.length === 0) return;
+    const allCollapsed = groups.every((g) => collapsedGroups.has(g.cwd));
+    setCollapsedGroups(new Set(allCollapsed ? [] : groups.map((g) => g.cwd)));
+  }
+
   // 移动端：默认收起，桌面端：默认展开
   useEffect(() => {
     const isMobile = window.innerWidth < 768;
@@ -95,17 +103,12 @@ export function Sidebar() {
     }
   }
 
-  async function handleImportClaudeSessions() {
+  async function handleImportClaudeSessions(sessions: SessionView[]) {
     setImporting(true);
     setImportError(null);
     try {
-      const sessions = await scanClaudeSessions();
-      if (sessions.length === 0) {
-        alert("未找到历史会话");
-        return;
-      }
-
-      if (!confirm(`确定导入 ${sessions.length} 个会话吗？`)) {
+      if (!sessions || sessions.length === 0) {
+        alert("没有可导入的会话");
         return;
       }
 
@@ -180,10 +183,19 @@ export function Sidebar() {
 
       <div className="mt-3 flex-1 overflow-y-auto px-2 pb-2">
         <div className={clsx(
-          "mb-1 px-2 text-xs font-medium uppercase tracking-wide text-neutral-600",
+          "mb-1 flex items-center justify-between px-2",
           isCollapsed && "hidden"
         )}>
-          历史
+          <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">
+            历史
+          </span>
+          <button
+            onClick={toggleAllGroups}
+            className="rounded p-0.5 text-neutral-600 hover:bg-neutral-800 hover:text-neutral-400"
+            title="全部折叠"
+          >
+            <FoldHorizontal className="h-3 w-3" />
+          </button>
         </div>
         {loading && (
           <div className="px-2 py-2 text-sm text-neutral-500">加载中…</div>
