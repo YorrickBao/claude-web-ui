@@ -268,7 +268,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     profileId: string | null;
     permissionMode: string;
     effortLevel: string;
-    runningStatus: "idle" | "running" | "waiting";
+    runningStatus: "idle" | "running" | "waiting" | "completed";
     inputTokens: number;
     outputTokens: number;
   } | null>(null);

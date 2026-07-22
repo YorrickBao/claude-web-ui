@@ -43,7 +43,7 @@ export interface SessionView {
   lastModified: number;
   profileId: string | null;
   /** 会话运行状态 */
-  runningStatus: "idle" | "running" | "waiting";
+  runningStatus: "idle" | "running" | "waiting" | "completed";
   /** 权限模式 */
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
   /** 思考级别 */

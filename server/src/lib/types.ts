@@ -55,7 +55,7 @@ export interface SessionView {
   /** 当前绑定的 profile id（null = 纯 CLI 默认） */
   profileId: string | null;
   /** 会话运行状态 */
-  runningStatus: "idle" | "running" | "waiting";
+  runningStatus: "idle" | "running" | "waiting" | "completed";
   /** 权限模式 */
   permissionMode: PermissionMode;
   /** 思考级别 */

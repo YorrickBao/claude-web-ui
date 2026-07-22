@@ -5,6 +5,7 @@ import {
   MessageSquare,
   Loader2,
   AlertCircle,
+  CheckCircle2,
   Settings,
   Trash2,
   PanelLeftClose,
@@ -357,6 +358,8 @@ export function Sidebar({
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
                   ) : s.runningStatus === "running" ? (
                     <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                  ) : s.runningStatus === "completed" ? (
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                   ) : (
                     <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
@@ -446,6 +449,8 @@ export function Sidebar({
                               <AlertCircle className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
                             ) : s.runningStatus === "running" ? (
                               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                            ) : s.runningStatus === "completed" ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                             ) : (
                               <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             )}

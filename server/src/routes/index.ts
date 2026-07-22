@@ -68,7 +68,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         createdAt: r.createdAt,
         lastModified: r.lastModified,
         profileId: r.profileId ?? null,
-        runningStatus: getInflightStatus(r.sessionId) ?? "idle",
+        runningStatus:
+          getInflightStatus(r.sessionId) ??
+          ((r.inputTokens ?? 0) + (r.outputTokens ?? 0) > 0
+            ? "completed"
+            : "idle"),
         permissionMode: r.permissionMode ?? "bypassPermissions",
         effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
@@ -112,7 +116,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         profileId: rec.profileId ?? null,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
         effortLevel: rec.effortLevel ?? "default",
-        runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
+        runningStatus:
+          getInflightStatus(rec.sessionId) ??
+          ((rec.inputTokens ?? 0) + (rec.outputTokens ?? 0) > 0
+            ? "completed"
+            : "idle"),
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
         subagentCount: stats.total,

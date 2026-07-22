@@ -22,7 +22,7 @@ export interface ChatViewProps {
   /** 会话初始思考级别 */
   initialEffortLevel?: string;
   /** 会话当前运行状态：running 时用 subscribe 续流，而非静态 loadHistory */
-  initialRunningStatus?: "idle" | "running" | "waiting";
+  initialRunningStatus?: "idle" | "running" | "waiting" | "completed";
   /** 会话累计 input tokens（用于首次渲染；后续由 SSE done 事件更新） */
   initialInputTokens?: number;
   /** 会话累计 output tokens */
