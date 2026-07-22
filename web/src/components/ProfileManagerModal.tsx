@@ -561,6 +561,9 @@ function EditView({
                     <SelectValue placeholder={f.placeholder} />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">
+                      <span className="text-muted-foreground">不设置</span>
+                    </SelectItem>
                     {(f.options ?? []).map((opt) => (
                       <SelectItem key={opt} value={opt}>
                         {opt}

@@ -249,7 +249,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
       lastModified: sdk.lastModified,
       profileId: localRec?.profileId ?? null,
       permissionMode: localRec?.permissionMode ?? "bypassPermissions",
-      effortLevel: localRec?.effortLevel ?? "high",
+      effortLevel: localRec?.effortLevel ?? "default",
       inputTokens: localRec?.inputTokens ?? 0,
       outputTokens: localRec?.outputTokens ?? 0,
     };

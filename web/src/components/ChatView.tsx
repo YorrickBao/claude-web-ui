@@ -72,10 +72,10 @@ export function ChatView({
 
   // 当前生效的思考级别：初始值来自 prop；切换时本地更新
   const [effortLevel, setEffortLevel] = useState<string>(
-    initialEffortLevel ?? "high",
+    initialEffortLevel ?? "default",
   );
   useEffect(() => {
-    setEffortLevel(initialEffortLevel ?? "high");
+    setEffortLevel(initialEffortLevel ?? "default");
   }, [initialEffortLevel]);
 
   // 已有会话：挂载时载入历史（静止会话）或续流（运行中会话）

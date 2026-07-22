@@ -93,7 +93,7 @@ export function createSession(
       title: opts.title,
       profileId: opts.profileId ?? null,
       permissionMode: opts.permissionMode ?? "bypassPermissions",
-      effortLevel: opts.effortLevel ?? "high",
+      effortLevel: opts.effortLevel ?? "default",
     }),
     signal,
   });

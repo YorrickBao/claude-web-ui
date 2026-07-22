@@ -27,7 +27,7 @@ export function NewSessionView() {
   
   const [profileId, setProfileId] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<string>("bypassPermissions");
-  const [effortLevel, setEffortLevel] = useState<string>("high");
+  const [effortLevel, setEffortLevel] = useState<string>("default");
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
 
   // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
@@ -52,6 +52,7 @@ export function NewSessionView() {
     auto: "自动判断",
   };
   const effortItems: Record<string, string> = {
+    default: "默认",
     low: "低",
     medium: "中",
     high: "高",
@@ -264,6 +265,12 @@ export function NewSessionView() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="default">
+              <span className="flex flex-col">
+                <span>默认 · default</span>
+                <span className="text-[10px] text-muted-foreground">使用 Profile 环境变量配置的思考深度</span>
+              </span>
+            </SelectItem>
             <SelectItem value="low">
               <span className="flex flex-col">
                 <span>低 · low</span>
@@ -279,7 +286,7 @@ export function NewSessionView() {
             <SelectItem value="high">
               <span className="flex flex-col">
                 <span>高 · high</span>
-                <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
+                <span className="text-[10px] text-muted-foreground">深度推理</span>
               </span>
             </SelectItem>
             <SelectItem value="xhigh">

@@ -63,10 +63,14 @@ export async function* runQuery(
       ],
       permissionMode: mode,
       allowDangerouslySkipPermissions: mode === "bypassPermissions",
-      // disabled → thinking: { type: 'disabled' }，其余 → effort 参数
+      // disabled → thinking: { type: 'disabled' }
+      // default/未指定 → 不传 effort，让 SDK 用环境变量 CLAUDE_CODE_EFFORT_LEVEL
+      // 其余 → effort 参数
       ...(params.effortLevel === "disabled"
         ? { thinking: { type: "disabled" as const } }
-        : { effort: (params.effortLevel ?? "high") as Exclude<EffortLevel, "disabled"> }),
+        : (params.effortLevel === "default" || !params.effortLevel)
+          ? {}
+          : { effort: params.effortLevel as Exclude<EffortLevel, "disabled" | "default"> }),
       abortController: params.abortController,
       // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
       ...(childEnv ? { env: childEnv } : {}),

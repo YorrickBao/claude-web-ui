@@ -26,10 +26,14 @@ export async function* runQuery(params) {
             ],
             permissionMode: mode,
             allowDangerouslySkipPermissions: mode === "bypassPermissions",
-            // disabled → thinking: { type: 'disabled' }，其余 → effort 参数
+            // disabled → thinking: { type: 'disabled' }
+            // default/未指定 → 不传 effort，让 SDK 用环境变量 CLAUDE_CODE_EFFORT_LEVEL
+            // 其余 → effort 参数
             ...(params.effortLevel === "disabled"
                 ? { thinking: { type: "disabled" } }
-                : { effort: (params.effortLevel ?? "high") }),
+                : (params.effortLevel === "default" || !params.effortLevel)
+                    ? {}
+                    : { effort: params.effortLevel }),
             abortController: params.abortController,
             // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
             ...(childEnv ? { env: childEnv } : {}),
@@ -105,6 +109,14 @@ export async function* runQuery(params) {
                 }
                 else {
                     // error_max_turns / error_during_execution / ...
+                    // 即使在错误退出路径上，前面轮次消耗的 token 也是真实数据，先发 done 累加上去
+                    const e = msg;
+                    yield {
+                        type: "done",
+                        inputTokens: e.usage?.input_tokens ?? 0,
+                        outputTokens: e.usage?.output_tokens ?? 0,
+                        durationMs: msg.duration_ms,
+                    };
                     yield {
                         type: "error",
                         message: `会话结束（${msg.subtype}）`,

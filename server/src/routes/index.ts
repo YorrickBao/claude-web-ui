@@ -65,7 +65,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         profileId: r.profileId ?? null,
         runningStatus: getInflightStatus(r.sessionId) ?? "idle",
         permissionMode: r.permissionMode ?? "bypassPermissions",
-        effortLevel: r.effortLevel ?? "high",
+        effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
       };
@@ -104,7 +104,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         lastModified: rec.lastModified,
         profileId: rec.profileId ?? null,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
-        effortLevel: rec.effortLevel ?? "high",
+        effortLevel: rec.effortLevel ?? "default",
         runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
@@ -225,7 +225,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     let sessionId: string | undefined;
     const profileId = body.profileId ?? null;
     const permissionMode = body.permissionMode ?? "bypassPermissions";
-    const effortLevel = body.effortLevel ?? "high";
+    const effortLevel = body.effortLevel ?? "default";
 
     try {
       const stream = runQuery({
@@ -355,7 +355,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         resume: sessionId,
         abortController: ctrl,
         permissionMode: rec.permissionMode ?? "bypassPermissions",
-        effortLevel: rec.effortLevel ?? "high",
+        effortLevel: rec.effortLevel ?? "default",
         // 已有会话：env = 全局默认 + 会话级 override
         env: await resolveSessionEnv(sessionId),
       });
@@ -575,7 +575,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found" });
     }
     const level = req.body?.effortLevel;
-    const validLevels = ["low", "medium", "high", "xhigh", "max", "disabled"];
+    const validLevels = ["low", "medium", "high", "xhigh", "max", "disabled", "default"];
     if (!validLevels.includes(level as string)) {
       return reply.code(400).send({ error: "invalid effortLevel" });
     }

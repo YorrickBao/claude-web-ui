@@ -77,7 +77,7 @@ export const ENV_FIELDS: readonly EnvFieldMeta[] = [
     label: "思考深度",
     placeholder: "选择思考强度",
     type: "select",
-    options: ["low", "medium", "high", "xhigh", "max"],
+    options: ["default", "low", "medium", "high", "xhigh", "max"],
     help: "思考强度。会话级强制覆盖（高于 /effort 命令）。",
   },
   {

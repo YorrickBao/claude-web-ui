@@ -37,7 +37,7 @@ export interface SessionView {
   /** 权限模式 */
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
   /** 思考级别 */
-  effortLevel: "low" | "medium" | "high" | "xhigh" | "max" | "disabled";
+  effortLevel: "low" | "medium" | "high" | "xhigh" | "max" | "disabled" | "default";
   /** 累计 input tokens */
   inputTokens: number;
   /** 累计 output tokens */

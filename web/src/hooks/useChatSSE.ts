@@ -71,8 +71,8 @@ export function useChatSSE({
   const permissionModeRef = useRef<string>(permissionMode ?? "bypassPermissions");
   permissionModeRef.current = permissionMode ?? "bypassPermissions";
   // effortLevel 同样用 ref
-  const effortLevelRef = useRef<string>(effortLevel ?? "high");
-  effortLevelRef.current = effortLevel ?? "high";
+  const effortLevelRef = useRef<string>(effortLevel ?? "default");
+  effortLevelRef.current = effortLevel ?? "default";
   // 暴露给 UI 的"当前生效 sessionId"——session_created 时更新，
   // 这样 pending → 真实会话过渡时组件能感知（按钮显示等）
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
