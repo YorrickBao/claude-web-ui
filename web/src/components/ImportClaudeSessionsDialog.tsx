@@ -61,7 +61,7 @@ export function ImportClaudeSessionsDialog({
           <div className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5 text-accent" />
             <h2 className="text-lg font-semibold text-neutral-100">
-              导入历史会话
+              从 Claude Code CLI 导入
             </h2>
           </div>
           <button

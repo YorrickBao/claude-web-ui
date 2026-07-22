@@ -219,7 +219,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           )}
         >
           {!isCollapsed && <Import className="h-4 w-4" />}
-          {!isCollapsed && "导入历史会话"}
+          {!isCollapsed && "从 Claude Code CLI 导入"}
         </button>
       </div>
 
@@ -372,7 +372,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         onChanged={refresh}
       />
 
-      {/* 导入历史会话对话框 */}
+      {/* 从 Claude Code CLI 导入对话框 */}
       {importOpen && (
         <ImportClaudeSessionsDialog
           open={importOpen}
