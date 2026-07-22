@@ -31,7 +31,7 @@ export function ChatView({
   initialPermissionMode,
   initialEffortLevel,
 }: ChatViewProps) {
-  const { runtime, error, stats, loadHistory, sessionId: activeSessionId } =
+  const { runtime, error, stats, isRunning, loadHistory, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
       cwd,
@@ -133,6 +133,7 @@ export function ChatView({
             profileId={profileId}
             permissionMode={permissionMode}
             effortLevel={effortLevel}
+            isRunning={isRunning}
             onProfileChange={handleChangeProfile}
             onPermissionModeChange={handleChangePermissionMode}
             onEffortLevelChange={handleChangeEffortLevel}

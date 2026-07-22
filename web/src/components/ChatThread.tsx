@@ -33,6 +33,7 @@ interface ChatThreadProps {
   profileId: string | null;
   permissionMode: string;
   effortLevel: string;
+  isRunning: boolean;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
@@ -42,6 +43,7 @@ export function ChatThread({
   profileId,
   permissionMode,
   effortLevel,
+  isRunning,
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
@@ -112,20 +114,23 @@ export function ChatThread({
               submitMode="enter"
               className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
             />
-            <ComposerPrimitive.Cancel
-              render={
-                <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground/60 hover:text-foreground md:h-8 md:w-8" aria-label="停止生成">
-                  <Square className="size-4 md:size-3.5" />
-                </Button>
-              }
-            />
-            <ComposerPrimitive.Send
-              render={
-                <Button size="icon" className="h-10 w-10 shrink-0 rounded-lg md:h-8 md:w-8" aria-label="发送消息">
-                  <ArrowUp className="size-5 md:size-4" />
-                </Button>
-              }
-            />
+            {isRunning ? (
+              <ComposerPrimitive.Cancel
+                render={
+                  <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground/60 hover:text-foreground md:h-8 md:w-8" aria-label="停止生成">
+                    <Square className="size-4 md:size-3.5" />
+                  </Button>
+                }
+              />
+            ) : (
+              <ComposerPrimitive.Send
+                render={
+                  <Button size="icon" className="h-10 w-10 shrink-0 rounded-lg md:h-8 md:w-8" aria-label="发送消息">
+                    <ArrowUp className="size-5 md:size-4" />
+                  </Button>
+                }
+              />
+            )}
           </div>
           {/* 简化选择器：无 label，无管理按钮 */}
           <div className="mt-2 flex items-center gap-2">
