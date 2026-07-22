@@ -3,8 +3,10 @@ import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
 import { ChatThread } from "@/components/ChatThread";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { Badge } from "@/components/ui/badge";
-import { setSessionProfile as setSessionProfileApi } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { setSessionProfile as setSessionProfileApi, updateSessionTitle } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { Pencil } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface ChatViewProps {
   sessionId: string | null;
@@ -72,6 +74,7 @@ export function ChatView({
   return (
     <div className="flex h-full flex-col">
       <Header
+        sessionId={sessionId}
         title={title}
         subtitle={subtitle}
         stats={stats}
@@ -89,6 +92,7 @@ export function ChatView({
 }
 
 function Header({
+  sessionId,
   title,
   subtitle,
   stats,
@@ -96,6 +100,7 @@ function Header({
   profileId,
   onProfileChange,
 }: {
+  sessionId: string | null;
   title?: string;
   subtitle?: string;
   stats: { costUsd: number; numTurns: number; durationMs: number } | null;
@@ -103,13 +108,94 @@ function Header({
   profileId: string | null;
   onProfileChange: (id: string | null) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [currentTitle, setCurrentTitle] = useState(title ?? "");
+
+  // 进入编辑态时自动聚焦并全选
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  function startEdit() {
+    if (!sessionId) return; // pending 新会话不可编辑
+    setEditValue(currentTitle);
+    setIsEditing(true);
+  }
+
+  function cancelEdit() {
+    setIsEditing(false);
+    setEditValue("");
+  }
+
+  async function saveEdit() {
+    const newTitle = editValue.trim();
+    setIsEditing(false);
+    setEditValue("");
+
+    if (!sessionId) return;
+    if (newTitle === currentTitle) return; // 未变化
+
+    // 乐观更新本地标题
+    setCurrentTitle(newTitle);
+
+    try {
+      await updateSessionTitle(sessionId, newTitle || null);
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+    } catch {
+      // 回滚
+      setCurrentTitle(currentTitle);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void saveEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEdit();
+    }
+  }
+
+  const canEdit = sessionId !== null;
+
   return (
     <div className="flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-4 py-2.5 backdrop-blur">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-foreground">
-            {title ?? "新会话"}
-          </div>
+        <div className="min-w-0 flex-1">
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={() => void saveEdit()}
+              className="w-full truncate text-sm font-medium bg-transparent text-foreground outline-none border-b border-accent px-0.5 -mx-0.5"
+              placeholder="输入标题"
+            />
+          ) : (
+            <div
+              className={cn(
+                "group/title flex items-center gap-1.5 min-w-0",
+                canEdit && "cursor-pointer"
+              )}
+              onClick={canEdit ? startEdit : undefined}
+              title={canEdit ? "点击编辑标题" : undefined}
+            >
+              <span className="truncate text-sm font-medium text-foreground group-hover/title:text-accent transition-colors">
+                {currentTitle || "新会话"}
+              </span>
+              {canEdit && (
+                <Pencil className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 transition-opacity" />
+              )}
+            </div>
+          )}
           {subtitle && (
             <div
               className="truncate text-xs text-muted-foreground"
@@ -143,3 +229,4 @@ function Header({
     </div>
   );
 }
+

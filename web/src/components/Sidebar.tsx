@@ -10,7 +10,6 @@ import {
   FoldHorizontal,
   Folder,
   FolderOpen,
-  Edit2,
   Sun,
   Moon,
 } from "lucide-react";
@@ -18,9 +17,8 @@ import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
-import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
 import { listProfiles } from "@/lib/api";
-import { deleteSessionApi, updateSessionTitle } from "@/lib/api";
+import { deleteSessionApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -71,8 +69,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
-  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
 
@@ -145,25 +141,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       }
     }
     await refresh();
-  }
-
-  async function handleEditTitle(s: SessionView, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setEditingTitleId(s.sessionId);
-    setEditingTitle(s.title || "");
-  }
-
-  async function handleSaveTitle() {
-    if (!editingTitleId) return;
-    try {
-      await updateSessionTitle(editingTitleId, editingTitle || null);
-      setEditingTitleId(null);
-      setEditingTitle("");
-      await refresh();
-    } catch (err) {
-      toast.error(`保存失败：${(err as Error).message}`);
-    }
   }
 
   return (
@@ -336,16 +313,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={(e) => void handleEditTitle(s, e)}
-                              disabled={editingTitleId === s.sessionId}
-                              title="编辑标题"
-                              className="shrink-0 opacity-0 transition-opacity hover:text-blue-400 group-hover/item:opacity-100 disabled:opacity-50"
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
                               onClick={(e) => void handleDelete(s, e)}
                               disabled={deletingId === s.sessionId}
                               title="删除会话"
@@ -407,19 +374,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         onChanged={refresh}
       />
 
-      {/* 编辑会话标题对话框 */}
-      {editingTitleId && (
-        <EditSessionTitleDialog
-          open={!!editingTitleId}
-          sessionId={editingTitleId}
-          currentTitle={editingTitle || null}
-          onClose={() => {
-            setEditingTitleId(null);
-            setEditingTitle("");
-          }}
-          onSaved={handleSaveTitle}
-        />
-      )}
     </aside>
   );
 }
