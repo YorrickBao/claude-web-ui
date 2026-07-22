@@ -19,7 +19,7 @@ import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { EditSessionTitleDialog } from "@/components/EditSessionTitleDialog";
-import { NewSessionFromGroupDialog } from "@/components/NewSessionFromGroupDialog";
+import { listProfiles } from "@/lib/api";
 import { deleteSessionApi, updateSessionTitle } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,7 +74,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [newSessionGroupCwd, setNewSessionGroupCwd] = useState<string | null>(null);
+  const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
 
   function toggleGroup(cwd: string) {
     setCollapsedGroups((prev) => {
@@ -100,6 +100,13 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
       setInternalCollapsed(window.innerWidth < 768);
     }
   }, [controlledCollapsed]);
+
+  // 加载第一个 profile 作为分组新建会话的默认选择
+  useEffect(() => {
+    listProfiles()
+      .then((p) => setFirstProfileId(p[0]?.id ?? null))
+      .catch(() => setFirstProfileId(null));
+  }, []);
 
   async function handleDelete(s: SessionView, e: React.MouseEvent) {
     // 阻止 NavLink 跳转
@@ -291,7 +298,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setNewSessionGroupCwd(group.cwd)}
+                      onClick={() => navigate("/pending", { state: { cwd: group.cwd, profileId: firstProfileId } })}
                       title="在此目录新建会话"
                       className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
                     >
@@ -413,13 +420,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           onSaved={handleSaveTitle}
         />
       )}
-
-      {/* 从分组新建会话弹窗 */}
-      <NewSessionFromGroupDialog
-        open={newSessionGroupCwd !== null}
-        cwd={newSessionGroupCwd}
-        onClose={() => setNewSessionGroupCwd(null)}
-      />
     </aside>
   );
 }
