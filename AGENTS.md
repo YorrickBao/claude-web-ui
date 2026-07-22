@@ -4,6 +4,30 @@
 
 制作一个 Web UI，方便在浏览器中执行与 Claude Code 等价的操作。
 
+## 分发方式
+
+用户通过 `npx` 直接使用，不从 npm registry 下载：
+
+```
+npx claude-web-ui
+```
+
+`package.json` 的 `files` 字段指定了发布内容：
+
+```json
+"files": ["cli.mjs", "server/dist/", "web/dist/"]
+"bin": { "claude-web-ui": "cli.mjs", "cwu": "cli.mjs" }
+```
+
+`cli.mjs` 启动 Fastify 服务器，托管 `web/dist/` 静态文件并暴露 `/api/*` 路由。
+
+**因此 `web/dist/` 和 `server/dist/` 必须提交到 Git。** 每次修改源码后：
+
+1. `pnpm run build` — 重新构建前后端
+2. 将 dist 变更一并提交
+
+源码修改和构建产物可以分开 commit（源码 feat/fix + chore 构建产物），也可以合在一起。
+
 ## 关键约束
 
 - 所有设计决策应服务于"浏览器操作等效于终端 `claude` 命令"这一目标
