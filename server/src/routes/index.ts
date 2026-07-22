@@ -452,7 +452,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // DELETE /api/sessions/:id —— 删除会话
-  // ① 中止进行中的 query ② 删 ~/.claude/projects/ 转录
+  // ① 中止进行中的 query ② 删 ~/.claude/projects/ 转录（含子代理）
   // ③ 删 sessions.json 记录
   // ───────────────────────────────────────────────────────────
   app.delete<{ Params: { id: string } }>(
@@ -468,39 +468,39 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (ctrl && !ctrl.signal.aborted) ctrl.abort();
       clearInflight(sessionId);
 
-      // 真删 CLI 转录文件（含子代理）
-      if (rec?.cwd) {
-        // 先查子代理列表，逐个删除子代理转录
-        try {
-          const childIds = await listSubagents(sessionId, { dir: rec.cwd });
-          await Promise.all(
-            childIds.map((childId) =>
-              deleteSession(childId, { dir: rec.cwd }).catch((err: unknown) => {
-                const code = (err as NodeJS.ErrnoException)?.code;
-                if (code !== "ENOENT") {
-                  app.log.warn({ err }, `failed to delete subagent session ${childId}`);
-                }
-              }),
-            ),
-          );
-        } catch (err) {
-          app.log.warn({ err }, `listSubagents failed during delete for ${sessionId}`);
-        }
-        // 再删主会话转录
-        try {
-          await deleteSession(sessionId, { dir: rec.cwd });
-        } catch (err: unknown) {
-          const code = (err as NodeJS.ErrnoException)?.code;
-          if (code !== "ENOENT") {
-            app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
-          }
+      // 真删 CLI 转录文件（含子代理）。
+      // 有 cwd 时传 dir 精确删除；无 cwd 时不传 dir，让 SDK 全局搜索。
+      const dirOpt = rec?.cwd ? { dir: rec.cwd } : {};
+
+      // 先查子代理列表，逐个删除子代理转录
+      try {
+        const childIds = await listSubagents(sessionId, dirOpt);
+        await Promise.all(
+          childIds.map((childId) =>
+            deleteSession(childId, dirOpt).catch((err: unknown) => {
+              const code = (err as NodeJS.ErrnoException)?.code;
+              if (code !== "ENOENT") {
+                app.log.warn({ err }, `failed to delete subagent session ${childId}`);
+              }
+            }),
+          ),
+        );
+      } catch (err) {
+        app.log.warn({ err }, `listSubagents failed during delete for ${sessionId}`);
+      }
+
+      // 再删主会话转录
+      try {
+        await deleteSession(sessionId, dirOpt);
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") {
+          app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
         }
       }
 
-      const removed = await deleteSessionRecord(sessionId);
-      if (!removed) {
-        return reply.code(404).send({ error: "session not found" });
-      }
+      // 删 sessions.json 记录（可能不存在，不阻塞）
+      await deleteSessionRecord(sessionId);
 
       // 清理子代理注册记录
       cleanupSession(sessionId);
