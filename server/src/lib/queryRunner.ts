@@ -22,10 +22,13 @@ export async function emitEventToBus(
   sessionId: string,
   evt: SSEEvent,
 ): Promise<SSEEvent> {
-  // Inflight 状态跟踪
+  // Inflight 状态跟踪（跳过终结事件和子代理事件）
   if (evt.type === "waiting_for_user") {
     setInflightWaiting(sessionId);
-  } else {
+  } else if (
+    evt.type !== "done" &&
+    evt.type !== "error"
+  ) {
     setInflightRunning(sessionId);
   }
 

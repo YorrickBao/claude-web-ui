@@ -315,9 +315,17 @@ export async function apiRoutes(app) {
                     ? "aborted"
                     : message,
             };
-            sendSSE(reply, errorEvent);
-            if (sessionId)
+            if (sessionId) {
                 emitSessionEvent(sessionId, errorEvent);
+                // 如果总线订阅未建立（error 发生在 register 期间），
+                // 需要直接发给 POST 客户端，否则 bus 订阅已负责转发
+                if (!unsubBusEvents) {
+                    sendSSE(reply, errorEvent);
+                }
+            }
+            else {
+                sendSSE(reply, errorEvent);
+            }
         }
         finally {
             if (unsubBusEvents)

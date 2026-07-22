@@ -16,11 +16,12 @@ import { finalizeSession } from "./agentRegistry.js";
  * @returns 实际 emit 的事件（done 事件会替换为累加后的版本）
  */
 export async function emitEventToBus(sessionId, evt) {
-    // Inflight 状态跟踪
+    // Inflight 状态跟踪（跳过终结事件和子代理事件）
     if (evt.type === "waiting_for_user") {
         setInflightWaiting(sessionId);
     }
-    else {
+    else if (evt.type !== "done" &&
+        evt.type !== "error") {
         setInflightRunning(sessionId);
     }
     // done 事件：先累加 token，再发送累加后的值
