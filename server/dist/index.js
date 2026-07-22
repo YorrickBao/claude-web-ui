@@ -54,6 +54,7 @@ async function main() {
             root: WEB_DIST_DIR,
             prefix: "/",
             decorateReply: true,
+            wildcard: false, // 不拦截 /*，让 SPA 路由落到 setNotFoundHandler
         });
         // SPA fallback：未匹配的 GET 返回 index.html
         app.setNotFoundHandler((req, reply) => {
