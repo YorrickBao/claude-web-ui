@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Settings2 } from "lucide-react";
 import { listProfiles } from "@/lib/api";
 import type { EnvProfile } from "@/lib/types";
-import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -17,7 +17,7 @@ import {
  * 用法：value = 当前选中的 profileId（null = 不绑定），
  *      onChange = 切换回调。
  *
- * 旁边带个齿轮按钮快速打开管理 modal。
+ * 旁边带个齿轮按钮跳转到设置页管理 profile。
  */
 export interface ProfileSelectProps {
   value: string | null;
@@ -31,8 +31,8 @@ export function ProfileSelect({
   onChange,
   noneLabel = "不绑定 · CLI 默认",
 }: ProfileSelectProps) {
+  const navigate = useNavigate();
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
-  const [mgrOpen, setMgrOpen] = useState(false);
 
   const refresh = () => {
     listProfiles()
@@ -83,20 +83,12 @@ export function ProfileSelect({
       <Button
         variant="outline"
         size="icon"
-        onClick={() => setMgrOpen(true)}
+        onClick={() => navigate("/settings")}
         title="管理配置"
         className="shrink-0"
       >
         <Settings2 className="h-3.5 w-3.5" />
       </Button>
-      <ProfileManagerModal
-        open={mgrOpen}
-        onClose={() => {
-          setMgrOpen(false);
-          refresh();
-        }}
-        onChanged={refresh}
-      />
     </div>
   );
 }

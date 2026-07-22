@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
 import { ChatView } from "@/components/ChatView";
+import { SettingsPage } from "@/components/SettingsPage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,6 +17,7 @@ import type { SessionView } from "@/lib/types";
  * 主内容区根据 URL 决定渲染什么：
  *   /new          → 新建会话（选 cwd）
  *   /pending      → 新会话待创建（cwd 来自 location.state，首条消息触发后端创建）
+ *   /settings     → 设置页（飞书绑定 + 环境变量配置）
  *   /c/:sessionId → 已有会话
  *
  * 移动端（<768px）：侧栏变成叠加抽屉，通过汉堡菜单按钮打开，带背景遮罩。
@@ -49,6 +51,15 @@ export function AppShell() {
           initialPermissionMode={state?.permissionMode}
           initialEffortLevel={state?.effortLevel}
         />
+      </Shell>
+    );
+  }
+
+  // ── /settings：设置页 ──
+  if (path === "/settings") {
+    return (
+      <Shell>
+        <SettingsPage />
       </Shell>
     );
   }

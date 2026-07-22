@@ -127,6 +127,8 @@ a, button, input, select, textarea, [role="button"] {
     --font-sans: 'Geist Variable', sans-serif;
   }
   :root {
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
     /* 亮色主题（默认），低调蓝灰 accent 映射到 primary */
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

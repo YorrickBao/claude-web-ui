@@ -19,7 +19,6 @@ import {
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
-import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { listProfiles } from "@/lib/api";
 import { deleteSessionApi } from "@/lib/api";
@@ -83,7 +82,6 @@ export function Sidebar({
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const [envOpen, setEnvOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const confirm = useConfirm();
   const [internalCollapsed, setInternalCollapsed] = useState(false);
@@ -484,14 +482,14 @@ export function Sidebar({
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
-            onClick={() => setEnvOpen(true)}
-            className={cn(
-              "flex flex-1 items-center gap-2",
-              (!isMobile && isCollapsed) && "justify-center px-1"
-            )}
+            size="icon"
+            onClick={() => {
+              navigate("/settings");
+              onOverlayClose?.();
+            }}
+            title="设置"
           >
             <Settings className="h-3.5 w-3.5" />
-            {(!isMobile && isCollapsed) ? null : "配置管理"}
           </Button>
           <Button
             variant="ghost"
@@ -507,12 +505,6 @@ export function Sidebar({
           </Button>
         </div>
       </div>
-
-      <ProfileManagerModal
-        open={envOpen}
-        onClose={() => setEnvOpen(false)}
-        onChanged={refresh}
-      />
     </aside>
   );
 }
