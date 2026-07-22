@@ -27,15 +27,21 @@ body,
 
 /* 滚动条 */
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* 选中文本高亮 */
+::selection {
+  background: rgba(217, 119, 87, 0.3);
+  color: #fff;
 }
 
 /* highlight.js 基础深色（rehype-highlight 需要） */

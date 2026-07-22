@@ -63,7 +63,13 @@ export function ProfileSelect({
         onValueChange={(v) => onChange(v || null)}
       >
         <SelectTrigger className="min-w-0 flex-1">
-          <SelectValue placeholder={noneLabel} />
+          <SelectValue placeholder={noneLabel}>
+            {(v) => {
+              if (!v) return null;
+              const profile = profiles.find((p) => p.id === v);
+              return profile?.name ?? v;
+            }}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="">{noneLabel}</SelectItem>

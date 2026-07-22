@@ -19,6 +19,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -287,6 +294,21 @@ function EditView({
   isNew: boolean;
 }) {
   const [showSecrets, setShowSecrets] = useState(false);
+  /** 独立显隐的敏感字段（全局关闭时，可单独点开某个字段） */
+  const [revealedFields, setRevealedFields] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const isSecretRevealed = (name: string) =>
+    showSecrets || revealedFields.has(name);
+
+  const toggleSingleField = (name: string) =>
+    setRevealedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
 
   return (
     <>
@@ -314,7 +336,10 @@ function EditView({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setShowSecrets((v) => !v)}
+            onClick={() => {
+              setShowSecrets((v) => !v);
+              if (!showSecrets) setRevealedFields(new Set());
+            }}
             className="text-xs"
           >
             {showSecrets ? (
@@ -337,18 +362,70 @@ function EditView({
                   {f.name}
                 </code>
               </label>
-              <Input
-                type={f.secret && !showSecrets ? "password" : "text"}
-                value={form.env[f.name] ?? ""}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    env: { ...prev.env, [f.name]: e.target.value },
-                  }))
-                }
-                placeholder={f.placeholder}
-                className="font-mono text-sm"
-              />
+              {f.type === "select" ? (
+                <Select
+                  value={form.env[f.name] ?? ""}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      env: { ...prev.env, [f.name]: value ?? "" },
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full font-mono text-sm">
+                    <SelectValue placeholder={f.placeholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(f.options ?? []).map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : f.secret ? (
+                <div className="relative">
+                  <Input
+                    type={isSecretRevealed(f.name) ? "text" : "password"}
+                    value={form.env[f.name] ?? ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        env: { ...prev.env, [f.name]: e.target.value },
+                      }))
+                    }
+                    placeholder={f.placeholder}
+                    className="pr-8 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleSingleField(f.name)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                  >
+                    {isSecretRevealed(f.name) ? (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <Input
+                  type={f.type === "number" ? "number" : "text"}
+                  min={f.type === "number" ? 0 : undefined}
+                  step={f.type === "number" ? 1 : undefined}
+                  value={form.env[f.name] ?? ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      env: { ...prev.env, [f.name]: e.target.value },
+                    }))
+                  }
+                  placeholder={f.placeholder}
+                  className="font-mono text-sm"
+                />
+              )}
               {f.help && (
                 <div className="mt-1 text-xs text-muted-foreground">{f.help}</div>
               )}

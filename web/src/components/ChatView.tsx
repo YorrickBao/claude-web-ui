@@ -107,7 +107,7 @@ function Header({
   onProfileChange: (id: string | null) => void;
 }) {
   return (
-    <div className="flex shrink-0 flex-col gap-1 border-b border-border px-4 py-2">
+    <div className="flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-4 py-2.5 backdrop-blur">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-foreground">
@@ -126,9 +126,9 @@ function Header({
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {stats && (
             <>
-              <Badge variant="secondary">{stats.numTurns} 轮</Badge>
-              <Badge variant="secondary">${stats.costUsd.toFixed(4)}</Badge>
-              <Badge variant="secondary">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4">{stats.numTurns} 轮</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4">${stats.costUsd.toFixed(4)}</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
             </>
           )}
         </div>

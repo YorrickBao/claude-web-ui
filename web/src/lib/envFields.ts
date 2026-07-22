@@ -18,6 +18,10 @@ export interface EnvFieldMeta {
   help?: string;
   /** 取值示例/枚举 */
   examples?: string[];
+  /** 输入控件类型：默认 text */
+  type?: "text" | "select" | "number";
+  /** select 类型的下拉选项 */
+  options?: string[];
 }
 
 /**
@@ -45,6 +49,12 @@ export const ENV_FIELDS: readonly EnvFieldMeta[] = [
     help: "默认使用的主模型。",
   },
   {
+    name: "CLAUDE_CODE_SUBAGENT_MODEL",
+    label: "子 Agent 模型",
+    placeholder: "如 haiku",
+    help: "子 agent（Task 工具）使用的模型。",
+  },
+  {
     name: "ANTHROPIC_DEFAULT_OPUS_MODEL",
     label: "Opus 模型",
     placeholder: "留空使用 CLI 默认",
@@ -65,21 +75,17 @@ export const ENV_FIELDS: readonly EnvFieldMeta[] = [
   {
     name: "CLAUDE_CODE_EFFORT_LEVEL",
     label: "思考深度",
-    placeholder: "low / medium / high / xhigh / max",
-    examples: ["low", "medium", "high", "xhigh", "max"],
+    placeholder: "选择思考强度",
+    type: "select",
+    options: ["low", "medium", "high", "xhigh", "max"],
     help: "思考强度。会话级强制覆盖（高于 /effort 命令）。",
   },
   {
     name: "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
     label: "自动压缩窗口",
     placeholder: "如 100000（token 数）",
+    type: "number",
     help: "上下文达到此 token 数时触发自动压缩。留空用 CLI 默认。",
-  },
-  {
-    name: "CLAUDE_CODE_SUBAGENT_MODEL",
-    label: "子 Agent 模型",
-    placeholder: "如 haiku",
-    help: "子 agent（Task 工具）使用的模型。",
   },
 ] as const;
 

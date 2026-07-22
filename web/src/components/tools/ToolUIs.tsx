@@ -40,7 +40,7 @@ export function ToolCardShell({
   const isRunning = status.type === "running";
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-card/60">
+    <div className="my-2 rounded-xl border border-border/50 bg-card/40 transition-colors hover:border-border">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50"
@@ -109,7 +109,7 @@ function JsonView({ value }: { value: unknown }) {
     text = String(value);
   }
   return (
-    <pre className="max-h-80 overflow-auto rounded bg-black/40 p-2 text-xs text-muted-foreground">
+    <pre className="max-h-80 overflow-auto rounded-md bg-black/30 p-2 text-xs text-muted-foreground">
       {text}
     </pre>
   );
@@ -146,7 +146,7 @@ export function BashToolUI(props: ToolUIProps) {
       isError={props.isError}
     >
       <Section title="命令">
-        <pre className="overflow-auto rounded bg-black/40 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
+        <pre className="overflow-auto rounded-md bg-black/30 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
           {command}
         </pre>
       </Section>
@@ -183,13 +183,13 @@ export function EditToolUI(props: ToolUIProps) {
       </div>
       <div>
         <div className="mb-1 text-xs text-red-400">- 旧</div>
-        <pre className="rounded bg-red-950/30 p-2 text-xs text-red-300 whitespace-pre-wrap">
+        <pre className="rounded-md bg-red-950/30 p-2 text-xs text-red-300 whitespace-pre-wrap">
           {a?.old_string}
         </pre>
       </div>
       <div>
         <div className="mb-1 text-xs text-green-400">+ 新</div>
-        <pre className="rounded bg-green-950/30 p-2 text-xs text-green-300 whitespace-pre-wrap">
+        <pre className="rounded-md bg-green-950/30 p-2 text-xs text-green-300 whitespace-pre-wrap">
           {a?.new_string}
         </pre>
       </div>

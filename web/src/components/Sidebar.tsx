@@ -196,7 +196,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
           variant="outline"
           onClick={() => navigate("/new")}
           className={cn(
-            "flex w-full items-center gap-2",
+            "flex w-full items-center gap-2 border-dashed hover:border-accent/50 hover:text-accent",
             isCollapsed && "justify-center px-2"
           )}
         >
@@ -244,9 +244,9 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                   to={`/c/${s.sessionId}`}
                   className={({ isActive }) =>
                     cn(
-                      "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm",
+                      "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                       isActive
-                        ? "bg-muted text-foreground"
+                        ? "bg-accent/10 text-foreground"
                         : "text-muted-foreground hover:bg-card"
                     )
                   }
@@ -263,7 +263,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
               const isCollapsedGroup = collapsedGroups.has(group.cwd);
               return (
                 <div key={group.cwd} className="group">
-                  <div className="flex items-center gap-1.5 px-2">
+                  <div className="flex items-center gap-1.5 border-l-2 border-l-border/40 px-2 pl-1.5">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
                       className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-muted-foreground hover:text-muted-foreground"
@@ -289,6 +289,15 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => navigate(`/new?cwd=${encodeURIComponent(group.cwd)}`)}
+                      title="在此目录新建会话"
+                      className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => handleBatchDelete(group.sessions, group.cwd)}
                       title="批量删除"
                       className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
@@ -304,10 +313,10 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             to={`/c/${s.sessionId}`}
                             className={({ isActive }) =>
                               cn(
-                                "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm",
+                                "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
                                 isActive
-                                  ? "bg-muted text-foreground"
-                                  : "text-muted-foreground hover:bg-card"
+                                  ? "border-l-accent bg-accent/10 text-foreground"
+                                  : "border-l-transparent text-muted-foreground hover:bg-card"
                               )
                             }
                           >

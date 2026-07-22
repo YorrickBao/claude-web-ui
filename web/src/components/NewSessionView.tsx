@@ -1,29 +1,30 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Folder, ArrowRight } from "lucide-react";
 import { browse } from "@/lib/api";
 import type { DirEntry } from "@/lib/types";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * 新建会话视图：选工作目录 + 选 profile + 输入第一条消息。
+ * 新建会话视图：选工作目录 + 选 profile。
  */
 export function NewSessionView() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [cwd, setCwd] = useState<string>("");
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
+  
   const [profileId, setProfileId] = useState<string | null>(null);
 
-  // 初次加载：尝试 home 目录
+  // 初次加载：如果 URL 带了 cwd 参数则直接进入该目录，否则尝试 home
   useEffect(() => {
-    void doBrowse("");
+    const initialCwd = searchParams.get("cwd");
+    void doBrowse(initialCwd ?? "");
   }, []);
 
   async function doBrowse(path: string) {
@@ -56,12 +57,12 @@ export function NewSessionView() {
     if (!cwd) return;
     // 跳到一个"待创建"的聊天页：sessionId=null，首条消息通过 ChatView 触发后端创建
     navigate("/pending", {
-      state: { cwd, firstMessage: message, profileId },
+      state: { cwd, profileId },
     });
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col px-4 py-8">
+    <div className="mx-auto flex h-full w-full max-w-4xl flex-col px-4 py-8">
       <h1 className="mb-1 text-2xl font-semibold text-foreground">
         新建会话
       </h1>
@@ -142,18 +143,6 @@ export function NewSessionView() {
       <div className="mb-6">
         <ProfileSelect value={profileId} onChange={setProfileId} />
       </div>
-
-      {/* 首条消息（可选） */}
-      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        首条消息（可选，留空则进入会话再发）
-      </Label>
-      <Textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        rows={2}
-        placeholder="想让 Claude 做什么？"
-        className="mb-6"
-      />
 
       <Button
         onClick={start}

@@ -25,7 +25,7 @@ export function AppShell() {
   // ── /pending：新会话草稿态 ──
   if (path === "/pending") {
     const state = location.state as
-      | { cwd?: string; firstMessage?: string; profileId?: string | null }
+      | { cwd?: string; profileId?: string | null }
       | null;
     const cwd = state?.cwd ?? null;
     if (!cwd) {
@@ -153,10 +153,10 @@ function Shell({ children }: { children: React.ReactNode }) {
       {!isCollapsed && (
         <div
           className={cn(
-            "shrink-0 w-[5px] -ml-[5px] cursor-col-resize transition-colors",
+            "shrink-0 w-[3px] -ml-[3px] cursor-col-resize transition-colors",
             isDragging
-              ? "bg-accent/30"
-              : "bg-transparent hover:bg-accent/15"
+              ? "bg-accent/40"
+              : "bg-transparent hover:bg-accent/12"
           )}
           onMouseDown={handleMouseDown}
         />
