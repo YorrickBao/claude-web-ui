@@ -1,7 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, resolveSessionEnv, resolveProfileEnv, setSessionProfile, } from "../lib/store.js";
-import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
+import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions, listSubagents } from "../lib/sdk.js";
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
@@ -409,13 +409,26 @@ export async function apiRoutes(app) {
         if (ctrl && !ctrl.signal.aborted)
             ctrl.abort();
         clearInflight(sessionId);
-        // 真删 CLI 转录文件
+        // 真删 CLI 转录文件（含子代理）
         if (rec?.cwd) {
+            // 先查子代理列表，逐个删除子代理转录
+            try {
+                const childIds = await listSubagents(sessionId, { dir: rec.cwd });
+                await Promise.all(childIds.map((childId) => deleteSession(childId, { dir: rec.cwd }).catch((err) => {
+                    const code = err?.code;
+                    if (code !== "ENOENT") {
+                        app.log.warn({ err }, `failed to delete subagent session ${childId}`);
+                    }
+                })));
+            }
+            catch (err) {
+                app.log.warn({ err }, `listSubagents failed during delete for ${sessionId}`);
+            }
+            // 再删主会话转录
             try {
                 await deleteSession(sessionId, { dir: rec.cwd });
             }
             catch (err) {
-                // 文件可能已不存在，不阻塞
                 const code = err?.code;
                 if (code !== "ENOENT") {
                     app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
