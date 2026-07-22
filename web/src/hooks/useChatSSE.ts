@@ -178,6 +178,8 @@ export function useChatSSE({
         );
         break;
       case "error":
+        // 用户主动中止（"aborted"）不是错误，不显示
+        if (evt.message === "aborted") break;
         setError(evt.message);
         setMessages((prev) =>
           appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),

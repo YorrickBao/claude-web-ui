@@ -53,11 +53,17 @@ export async function runQueryToBus(sessionId, params) {
         }
     }
     catch (err) {
-        const message = err instanceof Error ? err.message : "unknown error";
-        emitSessionEvent(sessionId, {
-            type: "error",
-            message: err instanceof Error && err.name === "AbortError" ? "aborted" : message,
-        });
+        // 用户主动中止不是错误，不推 error 事件到前端
+        if (err instanceof Error && err.name === "AbortError") {
+            // 什么都不做，直接进入 finally
+        }
+        else {
+            const message = err instanceof Error ? err.message : "unknown error";
+            emitSessionEvent(sessionId, {
+                type: "error",
+                message,
+            });
+        }
     }
     finally {
         finalizeSession(sessionId);

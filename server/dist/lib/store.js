@@ -305,7 +305,7 @@ export async function syncAndListSessions() {
             createdAt: sdk.createdAt ?? sdk.lastModified ?? Date.now(),
             lastModified: sdk.lastModified,
             profileId: localRec?.profileId ?? null,
-            permissionMode: localRec?.permissionMode ?? "bypassPermissions",
+            permissionMode: localRec?.permissionMode ?? "default",
             effortLevel: localRec?.effortLevel ?? "default",
             inputTokens: localRec?.inputTokens ?? 0,
             outputTokens: localRec?.outputTokens ?? 0,

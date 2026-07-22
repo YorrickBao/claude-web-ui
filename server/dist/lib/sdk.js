@@ -45,7 +45,7 @@ export async function* runQuery(params) {
     const childEnv = params.env && Object.keys(params.env).length > 0
         ? { ...process.env, ...params.env }
         : undefined;
-    const mode = params.permissionMode ?? "bypassPermissions";
+    const mode = params.permissionMode ?? "default";
     const isPlanMode = mode === "plan";
     const needsPermissionHook = mode !== "bypassPermissions";
     // 在 plan 模式下累积计划文本，conversation_reset 时发送给前端

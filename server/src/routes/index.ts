@@ -361,23 +361,24 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         }
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "unknown error";
-      const errorEvent: { type: "error"; message: string } = {
-        type: "error",
-        message: err instanceof Error && err.name === "AbortError"
-          ? "aborted"
-          : message,
-      };
-      if (sessionId) {
-        emitSessionEvent(sessionId, errorEvent);
-        // 如果总线订阅未建立（error 发生在 register 期间），
-        // 需要直接发给 POST 客户端，否则 bus 订阅已负责转发
-        if (!unsubBusEvents) {
+      // 用户主动中止不是错误，不推 error 事件到前端
+      if (!(err instanceof Error && err.name === "AbortError")) {
+        const message =
+          err instanceof Error ? err.message : "unknown error";
+        const errorEvent: { type: "error"; message: string } = {
+          type: "error",
+          message,
+        };
+        if (sessionId) {
+          emitSessionEvent(sessionId, errorEvent);
+          // 如果总线订阅未建立（error 发生在 register 期间），
+          // 需要直接发给 POST 客户端，否则 bus 订阅已负责转发
+          if (!unsubBusEvents) {
+            sendSSE(reply, errorEvent);
+          }
+        } else {
           sendSSE(reply, errorEvent);
         }
-      } else {
-        sendSSE(reply, errorEvent);
       }
     } finally {
       if (unsubBusEvents) unsubBusEvents();
