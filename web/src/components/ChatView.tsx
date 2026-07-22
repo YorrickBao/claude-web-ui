@@ -187,8 +187,8 @@ function Header({
   const canEdit = sessionId !== null;
 
   return (
-    <div className="flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-4 py-2.5 backdrop-blur">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-3 py-2 pl-11 md:pl-4 md:py-2.5 backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           {isEditing ? (
             <input

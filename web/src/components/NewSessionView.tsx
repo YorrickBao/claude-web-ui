@@ -87,8 +87,8 @@ export function NewSessionView() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-4xl flex-col px-4 py-8">
-      <h1 className="mb-1 text-2xl font-semibold text-foreground">
+    <div className="mx-auto flex h-full w-full max-w-4xl flex-col px-4 py-6 pt-14 md:px-4 md:py-8">
+      <h1 className="mb-1 text-xl font-semibold text-foreground md:text-2xl">
         新建会话
       </h1>
       <p className="mb-6 text-sm text-muted-foreground">
@@ -124,7 +124,7 @@ export function NewSessionView() {
           ↑ 上级
         </Button>
       </div>
-      <div className="mb-6 max-h-72 flex-1 overflow-y-auto rounded-lg border border-border bg-card/50">
+      <div className="mb-6 max-h-48 flex-1 overflow-y-auto rounded-lg border border-border bg-card/50 md:max-h-72">
         {entries === null ? (
           <div className="flex flex-col gap-1.5 p-3">
             {Array.from({ length: 6 }).map((_, i) => (

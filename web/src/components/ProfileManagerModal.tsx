@@ -136,7 +136,7 @@ export function ProfileManagerModal({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-h-[90vh] sm:max-w-4xl">
+        <DialogContent className="max-h-[95vh] max-w-[calc(100%-0.5rem)] sm:max-w-2xl md:max-w-4xl">
         <DialogHeader>
           <DialogTitle>环境变量配置</DialogTitle>
         </DialogHeader>
@@ -193,7 +193,7 @@ function ListView({
       <div className="border-b border-border bg-card/50 px-5 py-2 text-xs text-muted-foreground">
         新建会话时从这里选一套。空 profile（字段都留空）= 完全用 CLI 默认。
       </div>
-      <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
+      <div className="max-h-[40vh] overflow-y-auto px-3 py-3 md:max-h-[60vh]">
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -315,7 +315,7 @@ function EditView({
       <div className="border-b border-border bg-card/50 px-5 py-2 text-xs text-muted-foreground">
         {isNew ? "新建配置" : "编辑配置"}
       </div>
-      <div className="max-h-[55vh] overflow-y-auto px-5 py-4">
+      <div className="max-h-[35vh] overflow-y-auto px-5 py-4 md:max-h-[55vh]">
         {/* 配置名 */}
         <div className="mb-4">
           <Label className="mb-1 block text-sm font-medium text-foreground">

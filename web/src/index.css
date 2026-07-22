@@ -13,6 +13,8 @@ html,
 body,
 #root {
   height: 100%;
+  /* 移动端：使用 dvh 动态视口高度，防止 iOS Safari 地址栏遮挡 */
+  height: 100dvh;
   margin: 0;
   font-family:
     ui-sans-serif,
@@ -23,6 +25,19 @@ body,
     "Helvetica Neue",
     Arial,
     sans-serif;
+  /* 防止移动端橡皮筋效果导致页面空白 */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 全局移动端触控优化：禁止双击缩放，提升响应速度 */
+a, button, input, select, textarea, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* 移动端安全区域：底部 composer 需要避开 Home Indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* 滚动条 */
@@ -42,6 +57,24 @@ body,
 ::selection {
   background: rgba(217, 119, 87, 0.3);
   color: #fff;
+}
+
+/* ── 移动端：粗指针设备下，hover 改为 active 触发 ── */
+@media (pointer: coarse) {
+  /* 侧栏操作按钮始终半透明可见，点击时全显 */
+  .hover-show-on-desktop {
+    opacity: 0.3;
+  }
+  .hover-show-on-desktop:active {
+    opacity: 1;
+  }
+}
+
+/* ── 移动端：更紧凑的字号 ── */
+@media (max-width: 767px) {
+  html {
+    font-size: 15px;
+  }
 }
 
 /* highlight.js 基础深色（rehype-highlight 需要） */

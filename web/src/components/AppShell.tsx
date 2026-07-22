@@ -1,9 +1,11 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
 import { ChatView } from "@/components/ChatView";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
@@ -15,6 +17,9 @@ import type { SessionView } from "@/lib/types";
  *   /new          → 新建会话（选 cwd）
  *   /pending      → 新会话待创建（cwd 来自 location.state，首条消息触发后端创建）
  *   /c/:sessionId → 已有会话
+ *
+ * 移动端（<768px）：侧栏变成叠加抽屉，通过汉堡菜单按钮打开，带背景遮罩。
+ * 桌面端（≥768px）：保持可拖拽调整宽度的侧栏。
  */
 export function AppShell() {
   const location = useLocation();
@@ -29,7 +34,6 @@ export function AppShell() {
       | null;
     const cwd = state?.cwd ?? null;
     if (!cwd) {
-      // 没有 cwd 就回 /new
       navigate("/new", { replace: true });
       return null;
     }
@@ -80,26 +84,55 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
-  // 移动端：默认收起，桌面端：默认展开
+  // ── 移动端检测 ──
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   useEffect(() => {
-    setIsCollapsed(window.innerWidth < 768);
+    const mql = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mql.matches);
+    if (mql.matches) setIsCollapsed(false); // 移动端不走 collapsed 模式
+
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (e.matches) {
+        setIsCollapsed(false);
+        setMobileSidebarOpen(false);
+      }
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
   }, []);
 
-  // 持久化宽度
+  // 桌面端：初始化时判断是否默认收起
   useEffect(() => {
-    if (!isCollapsed) {
+    if (!isMobile) {
+      setIsCollapsed(window.innerWidth < 768);
+    }
+  }, [isMobile]);
+
+  // 走新路由时自动关闭移动端侧栏
+  const location = useLocation();
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
+  // 持久化宽度（仅桌面端）
+  useEffect(() => {
+    if (!isMobile && !isCollapsed) {
       try {
         localStorage.setItem("sidebarWidth", String(sidebarWidth));
       } catch { /* noop */ }
     }
-  }, [sidebarWidth, isCollapsed]);
+  }, [sidebarWidth, isCollapsed, isMobile]);
 
-  // ── 拖拽逻辑 ──
-  const handleMouseDown = (e: React.MouseEvent) => {
+  // ── 拖拽逻辑（仅桌面端） ──
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return;
     e.preventDefault();
     setIsDragging(true);
     dragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
-  };
+  }, [isMobile, sidebarWidth]);
 
   useEffect(() => {
     if (!isDragging || !dragRef.current) return;
@@ -125,16 +158,21 @@ function Shell({ children }: { children: React.ReactNode }) {
   }, [isDragging]);
 
   function handleToggleCollapse() {
+    if (isMobile) {
+      setMobileSidebarOpen(!mobileSidebarOpen);
+      return;
+    }
     if (isCollapsed) {
-      // 展开
       setIsCollapsed(false);
     } else {
-      // 收起
       setIsCollapsed(true);
     }
   }
 
-  const effectiveWidth = isCollapsed ? 64 : sidebarWidth;
+  const openSidebar = () => setMobileSidebarOpen(true);
+  const closeSidebar = () => setMobileSidebarOpen(false);
+
+  const effectiveWidth = isMobile ? undefined : (isCollapsed ? 64 : sidebarWidth);
 
   return (
     <div
@@ -143,15 +181,28 @@ function Shell({ children }: { children: React.ReactNode }) {
         isDragging && "select-none"
       )}
     >
+      {/* ── 移动端背景遮罩 ── */}
+      {isMobile && mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-200"
+          onClick={closeSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ── 侧栏 ── */}
       <Sidebar
         width={effectiveWidth}
-        isCollapsed={isCollapsed}
+        isCollapsed={isMobile ? false : isCollapsed}
         onToggleCollapse={handleToggleCollapse}
         noTransition={isDragging}
+        isMobile={isMobile}
+        isOverlayOpen={mobileSidebarOpen}
+        onOverlayClose={closeSidebar}
       />
 
-      {/* 拖拽手柄 —— 与侧栏右边框重叠， hover/拖拽时可见 */}
-      {!isCollapsed && (
+      {/* ── 桌面端拖拽手柄 ── */}
+      {!isMobile && !isCollapsed && (
         <div
           className={cn(
             "shrink-0 w-[3px] -ml-[3px] cursor-col-resize transition-colors",
@@ -163,12 +214,28 @@ function Shell({ children }: { children: React.ReactNode }) {
         />
       )}
 
+      {/* ── 主内容区 ── */}
       <main
         className={cn(
-          "flex min-w-0 flex-1 flex-col",
+          "relative flex min-w-0 flex-1 flex-col",
           isDragging && "pointer-events-none"
         )}
       >
+        {/* ── 移动端汉堡菜单按钮 ── */}
+        {isMobile && (
+          <div className="absolute top-0 left-0 z-20 p-2" style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top, 0px))", paddingLeft: "max(0.5rem, env(safe-area-inset-left, 0px))" }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openSidebar}
+              className="h-9 w-9 rounded-lg bg-background/60 backdrop-blur shadow-sm ring-1 ring-border/40"
+              aria-label="打开菜单"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         {children}
       </main>
     </div>

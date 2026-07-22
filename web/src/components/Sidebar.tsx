@@ -14,8 +14,9 @@ import {
   FolderOpen,
   Sun,
   Moon,
+  X,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
@@ -60,9 +61,23 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
   /** 禁用过渡动画（拖拽中） */
   noTransition?: boolean;
+  /** 移动端模式 */
+  isMobile?: boolean;
+  /** 移动端悬浮抽屉是否打开 */
+  isOverlayOpen?: boolean;
+  /** 移动端关闭抽屉回调 */
+  onOverlayClose?: () => void;
 }
 
-export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleCollapse, noTransition }: SidebarProps = {}) {
+export function Sidebar({
+  width,
+  isCollapsed: controlledCollapsed,
+  onToggleCollapse,
+  noTransition,
+  isMobile = false,
+  isOverlayOpen = false,
+  onOverlayClose,
+}: SidebarProps = {}) {
   const { sessions, loading, error, refresh } = useSessions();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
@@ -73,6 +88,33 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
+
+  // ── 移动端滑动手势 ──
+  const sidebarRef = useRef<HTMLElement>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    // 仅当水平滑动超过垂直滑动时，才认为是关抽屉手势
+    if (Math.abs(dx) > Math.abs(dy) && dx < -40) {
+      onOverlayClose?.();
+      touchStartX.current = null;
+      touchStartY.current = null;
+    }
+  }, [onOverlayClose]);
+
+  const handleTouchEnd = useCallback(() => {
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }, []);
 
   function toggleGroup(cwd: string) {
     setCollapsedGroups((prev) => {
@@ -92,12 +134,12 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     setCollapsedGroups(new Set(groups.map((g) => g.cwd)));
   }
 
-  // 移动端：默认收起，桌面端：默认展开（仅非受控模式生效）
+  // 桌面端：默认收起（仅非受控模式生效）
   useEffect(() => {
-    if (controlledCollapsed === undefined) {
+    if (!isMobile && controlledCollapsed === undefined) {
       setInternalCollapsed(window.innerWidth < 768);
     }
-  }, [controlledCollapsed]);
+  }, [isMobile, controlledCollapsed]);
 
   // 加载第一个 profile 作为分组新建会话的默认选择
   useEffect(() => {
@@ -107,7 +149,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   }, []);
 
   async function handleDelete(s: SessionView, e: React.MouseEvent) {
-    // 阻止 NavLink 跳转
     e.preventDefault();
     e.stopPropagation();
     if (!confirm(`确定删除会话「${s.title}」？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`)) {
@@ -116,7 +157,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     setDeletingId(s.sessionId);
     try {
       await deleteSessionApi(s.sessionId);
-      // 如果删的是当前正在看的会话，跳回 /new
       if (location.pathname === `/c/${s.sessionId}`) {
         navigate("/new");
       }
@@ -145,58 +185,104 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     await refresh();
   }
 
+  function handleNavigate(to: string) {
+    navigate(to);
+    // 移动端导航后关闭抽屉
+    onOverlayClose?.();
+  }
+
+  // ── 移动端悬浮抽屉的样式 ──
+  const mobileOverlayClasses = isMobile
+    ? cn(
+        "fixed left-0 top-0 z-40 h-full shadow-2xl shadow-black/30",
+        "transition-transform duration-300 ease-in-out",
+        isOverlayOpen ? "translate-x-0" : "-translate-x-full"
+      )
+    : "";
+
+  // ── 桌面端 sidebar 的宽度样式 ──
+  const desktopWidthClasses = !isMobile
+    ? cn(
+        width === undefined && "transition-all duration-300",
+        width === undefined && (isCollapsed ? "w-16" : "w-64")
+      )
+    : "";
+
+  const inlineStyle = !isMobile && width !== undefined
+    ? { width: `${width}px`, transition: noTransition ? "none" : undefined }
+    : isMobile
+      ? { width: "min(85vw, 320px)" }
+      : undefined;
+
   return (
     <aside
+      ref={sidebarRef}
       className={cn(
         "flex flex-col border-r border-border bg-background",
-        width === undefined &&
-          "transition-all duration-300",
-        width === undefined && (isCollapsed ? "w-16" : "w-64")
+        desktopWidthClasses,
+        mobileOverlayClasses
       )}
-      style={width !== undefined ? { width: `${width}px`, transition: noTransition ? "none" : undefined } : undefined}
+      style={inlineStyle}
+      onTouchStart={isMobile ? handleTouchStart : undefined}
+      onTouchMove={isMobile ? handleTouchMove : undefined}
+      onTouchEnd={isMobile ? handleTouchEnd : undefined}
     >
+      {/* ── 顶部栏 ── */}
       <div className="flex items-center justify-between px-3 py-3">
         <span
           className={cn(
             "text-sm font-semibold text-foreground transition-opacity",
-            isCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
+            (!isMobile && isCollapsed) ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
           )}
         >
           Claude WebUI
         </span>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (onToggleCollapse) onToggleCollapse();
-              else setInternalCollapsed(!internalCollapsed);
-            }}
-            title={isCollapsed ? "展开菜单" : "收起菜单"}
-          >
-            {isCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
-          </Button>
+          {isMobile ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOverlayClose}
+              title="关闭菜单"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (onToggleCollapse) onToggleCollapse();
+                else setInternalCollapsed(!internalCollapsed);
+              }}
+              title={isCollapsed ? "展开菜单" : "收起菜单"}
+            >
+              {isCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+            </Button>
+          )}
         </div>
       </div>
 
+      {/* ── 新建会话按钮 ── */}
       <div className="px-2">
         <Button
           variant="outline"
-          onClick={() => navigate("/new")}
+          onClick={() => handleNavigate("/new")}
           className={cn(
             "flex w-full items-center gap-2 border-dashed hover:border-accent/50 hover:text-accent",
-            isCollapsed && "justify-center px-2"
+            (!isMobile && isCollapsed) && "justify-center px-2"
           )}
         >
-          {!isCollapsed && <Plus className="h-4 w-4" />}
-          {!isCollapsed && "新建会话"}
+          {(!isMobile && isCollapsed) ? null : <Plus className="h-4 w-4" />}
+          {(!isMobile && isCollapsed) ? null : "新建会话"}
         </Button>
       </div>
 
+      {/* ── 会话列表 ── */}
       <div className="mt-3 flex-1 overflow-y-auto px-2 pb-2">
         <div className={cn(
           "mb-1 flex items-center justify-between px-2",
-          isCollapsed && "hidden"
+          (!isMobile && isCollapsed) && "hidden"
         )}>
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             历史
@@ -223,8 +309,8 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         {!loading && sessions.length === 0 && (
           <div className="px-2 py-2 text-sm text-muted-foreground">暂无会话</div>
         )}
-        {isCollapsed ? (
-          /* 收起状态：平铺，只显示图标 */
+        {(!isMobile && isCollapsed) ? (
+          /* 桌面端收起状态：平铺，只显示图标 */
           <ul className="space-y-0.5">
             {sessions.map((s) => (
               <li key={s.sessionId}>
@@ -251,16 +337,16 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             ))}
           </ul>
         ) : (
-          /* 展开状态：按 cwd 分组 */
+          /* 展开状态（桌面+移动端）：按 cwd 分组 */
           <div className="space-y-3">
             {groupByCwd(sessions).map((group) => {
               const isCollapsedGroup = collapsedGroups.has(group.cwd);
               return (
-                  <div key={group.cwd} className="group/grp">
+                <div key={group.cwd} className="group/grp">
                   <div className="flex items-center gap-1.5 px-2">
                     <button
                       onClick={() => toggleGroup(group.cwd)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded text-xs font-medium text-muted-foreground"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded py-1 text-xs font-medium text-muted-foreground"
                       title={group.cwd}
                     >
                       {isCollapsedGroup ? (
@@ -276,9 +362,12 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => navigate("/pending", { state: { cwd: group.cwd, profileId: firstProfileId } })}
+                      onClick={() => {
+                        navigate("/pending", { state: { cwd: group.cwd, profileId: firstProfileId } });
+                        onOverlayClose?.();
+                      }}
                       title="在此目录新建会话"
-                      className="shrink-0 opacity-0 transition-opacity hover:text-accent group-hover/grp:opacity-100"
+                      className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-accent group-hover/grp:opacity-100"
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
@@ -287,7 +376,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                       size="icon"
                       onClick={() => handleBatchDelete(group.sessions, group.cwd)}
                       title="批量删除"
-                      className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/grp:opacity-100"
+                      className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/grp:opacity-100"
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -298,9 +387,10 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                         <li key={s.sessionId}>
                           <NavLink
                             to={`/c/${s.sessionId}`}
+                            onClick={() => onOverlayClose?.()}
                             className={({ isActive }) =>
                               cn(
-                                "group/item flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
+                                "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                                 isActive
                                   ? "bg-accent/10 text-foreground"
                                   : "text-foreground hover:bg-card"
@@ -323,7 +413,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                               onClick={(e) => void handleDelete(s, e)}
                               disabled={deletingId === s.sessionId}
                               title="删除会话"
-                              className="shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100 disabled:opacity-50"
+                              className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100 disabled:opacity-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -339,9 +429,10 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         )}
       </div>
 
+      {/* ── 底部栏 ── */}
       <div className={cn(
         "border-t border-border px-2 py-2",
-        isCollapsed && "px-1"
+        (!isMobile && isCollapsed) && "px-1"
       )}>
         <div className="flex items-center gap-1">
           <Button
@@ -349,11 +440,11 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             onClick={() => setEnvOpen(true)}
             className={cn(
               "flex flex-1 items-center gap-2",
-              isCollapsed && "justify-center px-1"
+              (!isMobile && isCollapsed) && "justify-center px-1"
             )}
           >
             <Settings className="h-3.5 w-3.5" />
-            {!isCollapsed && "配置管理"}
+            {(!isMobile && isCollapsed) ? null : "配置管理"}
           </Button>
           <Button
             variant="ghost"
@@ -375,7 +466,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         onClose={() => setEnvOpen(false)}
         onChanged={refresh}
       />
-
     </aside>
   );
 }
