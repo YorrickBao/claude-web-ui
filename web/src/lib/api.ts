@@ -48,6 +48,16 @@ export async function updateSessionTitle(
   await res.json();
 }
 
+import type { SlashCommand } from "@/lib/types";
+
+/** 获取当前项目可用的斜杠命令列表（前端缓存，5 分钟内不重复请求） */
+export async function fetchSlashCommands(cwd: string): Promise<SlashCommand[]> {
+  const res = await fetch(`/api/slash-commands?cwd=${encodeURIComponent(cwd)}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { commands: SlashCommand[] };
+  return data.commands;
+}
+
 /** 列目录 */
 export async function browse(path: string): Promise<BrowseResult> {
   const res = await fetch(

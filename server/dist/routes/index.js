@@ -570,6 +570,15 @@ export async function apiRoutes(app) {
         }
     });
     // ───────────────────────────────────────────────────────────
+    // GET /api/slash-commands —— 获取当前项目可用的斜杠命令
+    // ───────────────────────────────────────────────────────────
+    app.get("/api/slash-commands", async (req, reply) => {
+        const cwd = req.query.cwd || process.cwd();
+        const { resolveSlashCommands } = await import("../lib/slashCommands.js");
+        const commands = await resolveSlashCommands(cwd);
+        return reply.send({ commands });
+    });
+    // ───────────────────────────────────────────────────────────
     // Feishu 渠道 API
     // ───────────────────────────────────────────────────────────
     const FEISHU_CONFIG_FILE = path.join(DATA_DIR, "feishu-config.json");

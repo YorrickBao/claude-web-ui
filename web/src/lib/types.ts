@@ -63,6 +63,13 @@ export interface EnvProfile {
   updatedAt: number;
 }
 
+/** 斜杠命令定义 */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
 /** /api/browse 返回的目录项 */
 export interface DirEntry {
   name: string;

@@ -13,9 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listProfiles } from "@/lib/api";
 import type { EnvProfile } from "@/lib/types";
+import { SlashCommandPopup } from "@/components/SlashCommandPopup";
 import {
   BashToolUI,
   EditToolUI,
@@ -30,6 +31,8 @@ import {
  * 使用 shadcn/ui (Base UI) Button。
  */
 interface ChatThreadProps {
+  /** 当前会话的工作目录，用于获取项目特定的斜杠命令 */
+  cwd: string | null;
   profileId: string | null;
   permissionMode: string;
   effortLevel: string;
@@ -40,6 +43,7 @@ interface ChatThreadProps {
 }
 
 export function ChatThread({
+  cwd,
   profileId,
   permissionMode,
   effortLevel,
@@ -49,6 +53,7 @@ export function ChatThread({
   onEffortLevelChange,
 }: ChatThreadProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     listProfiles()
@@ -110,14 +115,19 @@ export function ChatThread({
 
       <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pt-8 pb-safe md:px-4">
         <div className="mx-auto max-w-3xl">
-          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20">
+          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
               <ComposerPrimitive.Input
-                placeholder="输入消息… (Enter 发送 · Shift+Enter 换行)"
+                ref={textareaRef}
+                placeholder="输入消息… (Enter 发送 · Shift+Enter 换行 · / 命令)"
                 submitMode="enter"
                 className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
               />
             </div>
+            <SlashCommandPopup
+              cwd={cwd}
+              textareaRef={textareaRef}
+            />
             <div className="flex items-center gap-1.5 px-3 py-1.5">
               <Select
                 items={permissionItems}

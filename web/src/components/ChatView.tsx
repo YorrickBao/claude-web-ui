@@ -250,6 +250,7 @@ export function ChatView({
             />
           )}
           <ChatThread
+            cwd={cwd}
             profileId={profileId}
             permissionMode={permissionMode}
             effortLevel={effortLevel}

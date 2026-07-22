@@ -674,6 +674,19 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ───────────────────────────────────────────────────────────
+  // GET /api/slash-commands —— 获取当前项目可用的斜杠命令
+  // ───────────────────────────────────────────────────────────
+  app.get<{ Querystring: { cwd?: string } }>(
+    "/api/slash-commands",
+    async (req, reply) => {
+      const cwd = req.query.cwd || process.cwd();
+      const { resolveSlashCommands } = await import("../lib/slashCommands.js");
+      const commands = await resolveSlashCommands(cwd);
+      return reply.send({ commands });
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
   // Feishu 渠道 API
   // ───────────────────────────────────────────────────────────
 
