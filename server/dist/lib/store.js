@@ -2,7 +2,7 @@ import fsp from "node:fs/promises";
 import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 import { getInflight } from "./inflight.js";
-import { listSessions as sdkListSessions } from "./sdk.js";
+import { listSessions as sdkListSessions, listSubagents } from "./sdk.js";
 const EMPTY_SESSIONS = { sessions: [] };
 const EMPTY_PROFILES = { profiles: [] };
 /** 确保数据目录 + 文件存在 */
@@ -197,9 +197,24 @@ export async function syncAndListSessions() {
     const localMap = new Map(local.sessions.map((s) => [s.sessionId, s]));
     // SDK 扫描所有项目的会话转录
     const sdkSessions = await sdkListSessions();
+    // 收集所有子代理 session id，用于过滤
+    const subagentIds = new Set();
+    await Promise.all(sdkSessions.map(async (sdk) => {
+        try {
+            const ids = await listSubagents(sdk.sessionId, { dir: sdk.cwd ?? undefined });
+            for (const id of ids)
+                subagentIds.add(id);
+        }
+        catch {
+            // listSubagents 可能因文件系统问题失败，忽略
+        }
+    }));
     let changed = false;
     const merged = [];
     for (const sdk of sdkSessions) {
+        // 跳过子代理会话（子代理的 sessionId 会出现在父会话的 listSubagents 结果中）
+        if (subagentIds.has(sdk.sessionId))
+            continue;
         const localRec = localMap.get(sdk.sessionId);
         const record = {
             sessionId: sdk.sessionId,
@@ -223,6 +238,9 @@ export async function syncAndListSessions() {
     }
     // 保留 sessions.json 中有但 SDK 没扫到的（仅在 inflight 中的新会话）
     for (const [id, rec] of localMap) {
+        // 同样跳过已知的子代理会话
+        if (subagentIds.has(id))
+            continue;
         if (getInflight(id)) {
             merged.push(rec);
         }
