@@ -34,6 +34,8 @@ import type {
   EffortLevel,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
+import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
+import { DATA_DIR } from "../env.js";
 
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk: { customTitle?: string; summary?: string }): string {
@@ -488,4 +490,106 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  // ───────────────────────────────────────────────────────────
+  // Feishu 渠道 API
+  // ───────────────────────────────────────────────────────────
+
+  const FEISHU_CONFIG_FILE = path.join(DATA_DIR, "feishu-config.json");
+
+  async function saveFeishuConfig(config: { appId: string; appSecret: string; domain: "feishu" | "lark" }): Promise<void> {
+    await fsp.writeFile(FEISHU_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  }
+
+  async function loadFeishuConfig(): Promise<{ appId: string; appSecret: string; domain: "feishu" | "lark" } | null> {
+    try {
+      const content = await fsp.readFile(FEISHU_CONFIG_FILE, "utf-8");
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+
+  app.get("/api/feishu/status", async (_req, reply) => {
+    const config = await loadFeishuConfig();
+    if (!config) {
+      return reply.send({ connected: false });
+    }
+    const valid = await validateFeishuCredentials(config.appId, config.appSecret).catch(() => false);
+    return reply.send({ connected: valid, appId: config.appId, domain: config.domain });
+  });
+
+  app.post("/api/feishu/connect", async (_req, reply) => {
+    initSSE(reply);
+    const ctrl = new AbortController();
+
+    function sendFeishuEvent(type: string, data: Record<string, unknown>): void {
+      reply.raw.write(`event: ${type}\n`);
+      reply.raw.write(`data: ${JSON.stringify({ ...data, type })}\n\n`);
+    }
+
+    try {
+      const result = await connectViaQRCode({
+        onQRCode: (url) => {
+          sendFeishuEvent("qr_code", { url });
+        },
+        onStatus: (status) => {
+          if (status.phase === "waiting_for_scan") {
+            sendFeishuEvent("waiting_for_scan", { qrUrl: status.qrUrl, expiresIn: status.expiresIn });
+          } else if (status.phase === "success") {
+            sendFeishuEvent("connected", { appId: status.appId, domain: status.domain });
+          } else if (status.phase === "expired") {
+            sendFeishuEvent("error", { message: "二维码已过期" });
+          } else if (status.phase === "denied") {
+            sendFeishuEvent("error", { message: "用户拒绝授权" });
+          } else if (status.phase === "error") {
+            sendFeishuEvent("error", { message: status.message });
+          }
+        },
+        signal: ctrl.signal,
+      });
+
+      await saveFeishuConfig({
+        appId: result.appId,
+        appSecret: result.appSecret,
+        domain: result.domain,
+      });
+
+      sendFeishuEvent("success", { appId: result.appId, domain: result.domain });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        sendFeishuEvent("error", { message: "已取消" });
+      } else {
+        sendFeishuEvent("error", { message: err instanceof Error ? err.message : "连接失败" });
+      }
+    } finally {
+      endSSE(reply);
+    }
+  });
+
+  app.post("/api/feishu/disconnect", async (_req, reply) => {
+    try {
+      await fsp.unlink(FEISHU_CONFIG_FILE);
+      return reply.send({ ok: true });
+    } catch {
+      return reply.send({ ok: true });
+    }
+  });
+
+  app.post<{
+    Body: { appId: string; appSecret: string; domain?: "feishu" | "lark" };
+  }>("/api/feishu/manual", async (req, reply) => {
+    const { appId, appSecret, domain = "feishu" } = req.body;
+    if (!appId || !appSecret) {
+      return reply.code(400).send({ error: "appId 和 appSecret 不能为空" });
+    }
+
+    const valid = await validateFeishuCredentials(appId, appSecret).catch(() => false);
+    if (!valid) {
+      return reply.code(400).send({ error: "凭证无效，请检查 App ID 和 App Secret" });
+    }
+
+    await saveFeishuConfig({ appId, appSecret, domain });
+    return reply.send({ ok: true, appId, domain });
+  });
 }

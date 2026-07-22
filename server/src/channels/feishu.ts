@@ -1,4 +1,5 @@
 import * as Lark from "@larksuiteoapi/node-sdk";
+import { connectFeishuBot, validateCredentials } from "connect-feishu-bot";
 import { runQuery } from "../lib/sdk.js";
 import type { SSEEvent } from "../lib/types.js";
 import { resolveProfileEnv } from "../lib/store.js";
@@ -12,10 +13,25 @@ export interface FeishuConfig {
   defaultProfileId?: string | null;
 }
 
-export interface FeishuContext {
-  chatId: string;
-  openId: string;
-  messageId: string;
+export interface ConnectOptions {
+  onQRCode?: (url: string) => void;
+  onStatus?: (status: RegistrationStatus) => void;
+  signal?: AbortSignal;
+}
+
+export type RegistrationStatus =
+  | { phase: "initializing" }
+  | { phase: "waiting_for_scan"; qrUrl: string; expiresIn: number }
+  | { phase: "success"; appId: string; appSecret: string; userOpenId?: string; domain: "feishu" | "lark" }
+  | { phase: "denied" }
+  | { phase: "expired" }
+  | { phase: "error"; message: string };
+
+export interface ConnectResult {
+  appId: string;
+  appSecret: string;
+  userOpenId?: string;
+  domain: "feishu" | "lark";
 }
 
 const sessionMap = new Map<string, string>();
@@ -49,7 +65,6 @@ async function handleMessage(
     event: {
       message: {
         chat_id: string;
-        message_id: string;
         content: string;
         chat_type: string;
       };
@@ -171,4 +186,16 @@ export async function startFeishuChannel(config: FeishuConfig): Promise<void> {
     console.error("[feishu] failed to start channel:", err);
     throw err;
   }
+}
+
+export async function connectViaQRCode(options?: ConnectOptions): Promise<ConnectResult> {
+  return connectFeishuBot({
+    onQRCode: options?.onQRCode,
+    onStatus: options?.onStatus,
+    signal: options?.signal,
+  });
+}
+
+export async function validateFeishuCredentials(appId: string, appSecret: string): Promise<boolean> {
+  return validateCredentials(appId, appSecret);
 }
