@@ -50,6 +50,17 @@ export function ChatThread({
       .catch(() => setProfiles([]));
   }, []);
 
+  // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
+  const profileItems: Record<string, string> = {
+    "": "默认",
+    ...Object.fromEntries(profiles.map((p) => [p.id, p.name])),
+  };
+  const permissionItems: Record<string, string> = {
+    bypassPermissions: "完全访问",
+    default: "标准模式",
+    acceptEdits: "自动编辑",
+  };
+
   return (
     <ThreadPrimitive.Root className="flex h-full flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -97,32 +108,35 @@ export function ChatThread({
           {/* 简化选择器：无 label，无管理按钮 */}
           <div className="mt-2 flex items-center gap-2">
             <Select
+              items={profileItems}
               value={profileId ?? ""}
               onValueChange={(v) => onProfileChange(v || null)}
-            >
-              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
-                <SelectValue placeholder="profile" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">默认</SelectItem>
-                {profiles.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={permissionMode}
-              onValueChange={(v) => v && onPermissionModeChange(v)}
             >
               <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bypassPermissions">完全访问</SelectItem>
-                <SelectItem value="default">标准模式</SelectItem>
-                <SelectItem value="acceptEdits">自动编辑</SelectItem>
+                {Object.entries(profileItems).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              items={permissionItems}
+              value={permissionMode}
+              onValueChange={(v) => { if (v) onPermissionModeChange(v); }}
+            >
+              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(permissionItems).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

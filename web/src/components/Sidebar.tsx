@@ -368,11 +368,6 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
             )}
           </Button>
         </div>
-        {!isCollapsed && (
-          <div className="mt-1 px-2 text-[10px] text-muted-foreground">
-            bypassPermissions 模式 · 仅本地
-          </div>
-        )}
       </div>
 
       <ProfileManagerModal

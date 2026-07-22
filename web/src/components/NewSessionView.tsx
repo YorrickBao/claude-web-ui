@@ -29,6 +29,17 @@ export function NewSessionView() {
   const [permissionMode, setPermissionMode] = useState<string>("bypassPermissions");
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
 
+  // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
+  const profileItems: Record<string, string> = {
+    "": "默认",
+    ...Object.fromEntries(profiles.map((p) => [p.id, p.name])),
+  };
+  const permissionItems: Record<string, string> = {
+    bypassPermissions: "完全访问",
+    default: "标准模式",
+    acceptEdits: "自动编辑",
+  };
+
   // 初次加载：如果 URL 带了 cwd 参数则直接进入该目录，否则尝试 home
   useEffect(() => {
     const initialCwd = searchParams.get("cwd");
@@ -150,29 +161,35 @@ export function NewSessionView() {
       {/* 简化选择器：无 label，无管理按钮 */}
       <div className="mb-6 flex items-center gap-2">
         <Select
+          items={profileItems}
           value={profileId ?? ""}
           onValueChange={(v) => setProfileId(v || null)}
         >
           <SelectTrigger className="h-9 min-w-0 flex-1 text-sm">
-            <SelectValue placeholder="profile（默认）" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">默认</SelectItem>
-            {profiles.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
+            {Object.entries(profileItems).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={permissionMode} onValueChange={(v) => v && setPermissionMode(v)}>
+        <Select
+          items={permissionItems}
+          value={permissionMode}
+          onValueChange={(v) => { if (v) setPermissionMode(v); }}
+        >
           <SelectTrigger className="h-9 min-w-0 flex-1 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="bypassPermissions">完全访问</SelectItem>
-            <SelectItem value="default">标准模式</SelectItem>
-            <SelectItem value="acceptEdits">自动编辑</SelectItem>
+            {Object.entries(permissionItems).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
