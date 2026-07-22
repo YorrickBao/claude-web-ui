@@ -62,8 +62,10 @@ export function ChatThread({
   /** 取 profile 的简要描述信息 */
   function profileDesc(p: EnvProfile): string {
     const baseUrl = p.env.ANTHROPIC_BASE_URL || "默认 URL";
-    const model = p.env.ANTHROPIC_MODEL || p.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
-    return model ? `${baseUrl} · ${model}` : baseUrl;
+    return baseUrl;
+  }
+  function profileModel(p: EnvProfile): string {
+    return p.env.ANTHROPIC_MODEL || p.env.ANTHROPIC_DEFAULT_OPUS_MODEL || "";
   }
   const permissionItems: Record<string, string> = {
     bypassPermissions: "完全访问",
@@ -189,14 +191,17 @@ export function ChatThread({
                     <span className="text-[10px] text-muted-foreground">使用 CLI 默认环境变量</span>
                   </span>
                 </SelectItem>
-                {profiles.map((p) => (
+                {profiles.map((p) => {
+                    const model = profileModel(p);
+                    return (
                   <SelectItem key={p.id} value={p.id}>
                     <span className="flex flex-col">
-                      <span>{p.name}</span>
+                      <span>{p.name}{model ? <span className="text-muted-foreground"> · {model}</span> : null}</span>
                       <span className="text-[10px] text-muted-foreground">{profileDesc(p)}</span>
                     </span>
                   </SelectItem>
-                ))}
+                    );
+                  })}
               </SelectContent>
             </Select>
             <Select
