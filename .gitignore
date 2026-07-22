@@ -9,11 +9,6 @@ dist/
 web/dist/
 *.tsbuildinfo
 
-# 不要把 web/src 下误生成的 .js 编译产物提交进仓库（前端走 vite，源码只用 .ts/.tsx）
-web/src/**/*.js
-web/src/**/*.d.ts
-web/src/**/*.js.map
-
 # data
 server/data/sessions.json
 server/data/env-defaults.json

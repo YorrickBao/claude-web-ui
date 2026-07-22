@@ -46,13 +46,25 @@ function groupByCwd(sessions: SessionView[]): { cwd: string; sessions: SessionVi
     });
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  /** 侧栏宽度（px）。不传时使用 Tailwind 默认宽度 w-64 / w-16 */
+  width?: number;
+  /** 是否收起（受控）。不传时使用内部状态 */
+  isCollapsed?: boolean;
+  /** 切换收起回调 */
+  onToggleCollapse?: () => void;
+  /** 禁用过渡动画（拖拽中） */
+  noTransition?: boolean;
+}
+
+export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleCollapse, noTransition }: SidebarProps = {}) {
   const { sessions, loading, error, refresh } = useSessions();
   const navigate = useNavigate();
   const location = useLocation();
   const [envOpen, setEnvOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -72,18 +84,18 @@ export function Sidebar() {
     });
   }
 
-  function toggleAllGroups() {
+  function collapseAllGroups() {
     const groups = groupByCwd(sessions);
     if (groups.length === 0) return;
-    const allCollapsed = groups.every((g) => collapsedGroups.has(g.cwd));
-    setCollapsedGroups(new Set(allCollapsed ? [] : groups.map((g) => g.cwd)));
+    setCollapsedGroups(new Set(groups.map((g) => g.cwd)));
   }
 
-  // 移动端：默认收起，桌面端：默认展开
+  // 移动端：默认收起，桌面端：默认展开（仅非受控模式生效）
   useEffect(() => {
-    const isMobile = window.innerWidth < 768;
-    setIsCollapsed(isMobile);
-  }, []);
+    if (controlledCollapsed === undefined) {
+      setInternalCollapsed(window.innerWidth < 768);
+    }
+  }, [controlledCollapsed]);
 
   async function handleDelete(s: SessionView, e: React.MouseEvent) {
     // 阻止 NavLink 跳转
@@ -150,9 +162,12 @@ export function Sidebar() {
   return (
     <aside
       className={clsx(
-        "flex flex-col border-r border-neutral-800 bg-neutral-950 transition-all duration-300",
-        isCollapsed ? "w-16" : "w-64"
+        "flex flex-col border-r border-neutral-800 bg-neutral-950",
+        width === undefined &&
+          "transition-all duration-300",
+        width === undefined && (isCollapsed ? "w-16" : "w-64")
       )}
+      style={width !== undefined ? { width: `${width}px`, transition: noTransition ? "none" : undefined } : undefined}
     >
       <div className="flex items-center justify-between px-3 py-3">
         <span
@@ -172,7 +187,10 @@ export function Sidebar() {
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={() => {
+              if (onToggleCollapse) onToggleCollapse();
+              else setInternalCollapsed(!internalCollapsed);
+            }}
             className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
             title={isCollapsed ? "展开菜单" : "收起菜单"}
           >
@@ -213,7 +231,7 @@ export function Sidebar() {
             历史
           </span>
           <button
-            onClick={toggleAllGroups}
+            onClick={collapseAllGroups}
             className="rounded p-0.5 text-neutral-600 hover:bg-neutral-800 hover:text-neutral-400"
             title="全部折叠"
           >

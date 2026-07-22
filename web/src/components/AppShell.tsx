@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { clsx } from "clsx";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
 import { ChatView } from "@/components/ChatView";
@@ -64,10 +65,116 @@ export function AppShell() {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem("sidebarWidth");
+      return saved ? Math.max(160, Math.min(parseInt(saved, 10), 600)) : 256;
+    } catch {
+      return 256;
+    }
+  });
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // 移动端：默认收起，桌面端：默认展开
+  useEffect(() => {
+    setIsCollapsed(window.innerWidth < 768);
+  }, []);
+
+  // 持久化宽度
+  useEffect(() => {
+    if (!isCollapsed) {
+      try {
+        localStorage.setItem("sidebarWidth", String(sidebarWidth));
+      } catch { /* noop */ }
+    }
+  }, [sidebarWidth, isCollapsed]);
+
+  // ── 拖拽逻辑 ──
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+  };
+
+  useEffect(() => {
+    if (!isDragging || !dragRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const delta = e.clientX - dragRef.current.startX;
+      const newWidth = Math.max(160, Math.min(dragRef.current.startWidth + delta, 600));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
+  function handleToggleCollapse() {
+    if (isCollapsed) {
+      // 展开
+      setIsCollapsed(false);
+    } else {
+      // 收起
+      setIsCollapsed(true);
+    }
+  }
+
+  const effectiveWidth = isCollapsed ? 64 : sidebarWidth;
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-neutral-950">
-      <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+    <div
+      className={clsx(
+        "flex h-screen w-screen overflow-hidden bg-neutral-950",
+        isDragging && "select-none"
+      )}
+    >
+      <Sidebar
+        width={effectiveWidth}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+        noTransition={isDragging}
+      />
+
+      {/* 拖拽手柄 */}
+      {!isCollapsed && (
+        <div
+          className={clsx(
+            "group relative shrink-0 cursor-col-resize",
+            "w-[5px]" // 5px 点击区域
+          )}
+          onMouseDown={handleMouseDown}
+        >
+          <div
+            className={clsx(
+              "absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 transition-colors",
+              isDragging
+                ? "bg-accent"
+                : "bg-neutral-700 group-hover:bg-accent/60"
+            )}
+          />
+        </div>
+      )}
+
+      <main
+        className={clsx(
+          "flex min-w-0 flex-1 flex-col",
+          isDragging && "pointer-events-none"
+        )}
+      >
+        {children}
+      </main>
     </div>
   );
 }
