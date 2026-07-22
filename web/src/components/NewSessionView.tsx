@@ -169,11 +169,9 @@ export function NewSessionView() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(permissionItems).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
+            <SelectItem value="bypassPermissions">完全访问 · bypassPermissions</SelectItem>
+            <SelectItem value="default">标准模式 · default</SelectItem>
+            <SelectItem value="acceptEdits">自动编辑 · acceptEdits</SelectItem>
           </SelectContent>
         </Select>
         <Select
