@@ -16,6 +16,8 @@ export interface SessionRecord {
   createdAt: number;
   /** 最后活跃时间（ms） */
   lastModified: number;
+  /** 会话级 env override（覆盖全局默认）。可为空对象。 */
+  envOverrides?: Record<string, string>;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后） */

@@ -13,11 +13,24 @@ export interface RunQueryParams {
   resume?: string;
   /** 取消信号 */
   abortController: AbortController;
+  /**
+   * 会话生效的 env override（已合并全局默认 + 会话级）。
+   * SDK 的 env 字段一旦传就完全替换子进程环境，所以这里必须
+   * spread process.env 再覆盖。
+   */
+  env?: Record<string, string>;
 }
 
 export async function* runQuery(
   params: RunQueryParams,
 ): AsyncGenerator<SSEEvent> {
+  // SDK 的 env 是"完全替换"，所以必须 spread process.env 再合 override，
+  // 否则 PATH/HOME 等基础变量会丢，子进程直接挂掉
+  const childEnv =
+    params.env && Object.keys(params.env).length > 0
+      ? { ...process.env, ...params.env }
+      : undefined;
+
   const stream = query({
     prompt: params.prompt,
     options: {
@@ -38,6 +51,8 @@ export async function* runQuery(
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       abortController: params.abortController,
+      // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
+      ...(childEnv ? { env: childEnv } : {}),
     },
   });
 

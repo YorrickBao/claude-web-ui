@@ -1,7 +1,17 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { getSession, listSessions, upsertSession, touchSession } from "../lib/store.js";
+import {
+  getSession,
+  listSessions,
+  upsertSession,
+  touchSession,
+  getEnvDefaults,
+  setEnvDefaults,
+  getGlobalEnv,
+  resolveSessionEnv,
+  setSessionEnvOverrides,
+} from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
@@ -15,6 +25,10 @@ import type {
   SessionView,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
+import { normalizeEnvValues } from "../lib/envFields.js";
+
+/** 返回给前端时补全所有白名单键（空值给空串，方便表单回填） */
+const normalizeForClient = normalizeEnvValues;
 
 async function resolveTitle(
   title: string | undefined,
@@ -111,6 +125,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         cwd: body.cwd,
         prompt: body.message,
         abortController: ctrl,
+        // 新会话：env 用全局默认（会话还没建立，没有 session 级 override）
+        env: await getGlobalEnv(),
       });
 
       // 新会话要等拿到 session_created 才能登记 inflight + store
@@ -185,6 +201,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         prompt: body.message,
         resume: sessionId,
         abortController: ctrl,
+        // 已有会话：env = 全局默认 + 会话级 override
+        env: await resolveSessionEnv(sessionId),
       });
       for await (const evt of stream) {
         sendSSE(reply, evt);
@@ -219,6 +237,52 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ ok: true });
     },
   );
+
+  // ───────────────────────────────────────────────────────────
+  // GET/PUT /api/env-defaults —— 全局 env 默认值
+  // ───────────────────────────────────────────────────────────
+  app.get("/api/env-defaults", async (_req, reply) => {
+    return reply.send({ env: await getEnvDefaults() });
+  });
+
+  app.put<{
+    Body: { env?: Record<string, unknown> };
+  }>("/api/env-defaults", async (req, reply) => {
+    const env = await setEnvDefaults(req.body?.env);
+    return reply.send({ env });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // GET/PUT /api/sessions/:id/env —— 会话级 env override
+  // 返回时合并全局默认（前端展示用），保存时只存 override 差异
+  // ───────────────────────────────────────────────────────────
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/env",
+    async (req, reply) => {
+      const rec = await getSession(req.params.id);
+      if (!rec) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+      // 返回"合并后的生效值"（全局 + 会话级），前端展示用
+      const merged = await resolveSessionEnv(req.params.id);
+      return reply.send({ env: normalizeForClient(merged) });
+    },
+  );
+
+  app.put<{
+    Params: { id: string };
+    Body: { env?: Record<string, unknown> };
+  }>("/api/sessions/:id/env", async (req, reply) => {
+    try {
+      const env = await setSessionEnvOverrides(
+        req.params.id,
+        req.body?.env,
+      );
+      return reply.send({ env });
+    } catch {
+      return reply.code(404).send({ error: "session not found" });
+    }
+  });
 
   // ───────────────────────────────────────────────────────────
   // GET /api/browse?path=xxx —— 列目录（供前端选 cwd）

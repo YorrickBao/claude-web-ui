@@ -114,13 +114,42 @@ web/                 Vite + React + assistant-ui 前端
 
 ## 配置
 
+### 后端进程
+
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `5174` | 后端端口 |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `NODE_ENV` | — | `production` 时关闭 pino-pretty |
 
-数据文件：`server/data/sessions.json`（会话元信息，已 gitignore）。
+### Claude 子进程（UI 里配）
+
+在 UI 里可配置传给 `claude` 子进程的环境变量。**两层结构**：全局默认（所有新会话初始值）+ 会话级 override（覆盖全局）。两种都在 Sidebar 底部"环境变量"按钮 / 会话头部滑块按钮里编辑。
+
+支持的字段（CLI 真实认的，已从二进制核实）：
+
+| 环境变量 | 说明 |
+|---|---|
+| `ANTHROPIC_BASE_URL` | API 接入地址（反代/第三方网关改这里） |
+| `ANTHROPIC_AUTH_TOKEN` | 认证 token（敏感，密码框） |
+| `ANTHROPIC_MODEL` | 主模型 |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | "opus"别名指向的实际模型 |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | "sonnet"别名指向的实际模型 |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | "haiku"别名指向的实际模型（后台任务用） |
+| `CLAUDE_CODE_EFFORT_LEVEL` | 思考深度（low/medium/high/xhigh/max），会话级强制覆盖 |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | 自动压缩触发 token 数 |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | 子 agent 模型 |
+
+**实现**：
+- 后端 `query()` 调用时传 `env: { ...process.env, ...overrides }`（SDK 的 env 是完全替换，必须 spread process.env）。
+- 存储：全局默认在 `server/data/env-defaults.json`，会话级在 `sessions.json` 每条记录的 `envOverrides` 字段。两个文件都已 gitignore（含 token）。
+- 会话级 modal 展示的是"全局 + 会话 override 合并后的生效值"，保存时整体写回会话级。**取舍**：一旦会话自定义过 env，后续改全局默认它不再感知（它的 override 已固化）。
+
+数据文件：
+- `server/data/sessions.json` —— 会话元信息 + 会话级 env override
+- `server/data/env-defaults.json` —— 全局 env 默认值
+
+两个都已 gitignore（可能含 token）。
 
 ## 已知限制 / 后续可做
 

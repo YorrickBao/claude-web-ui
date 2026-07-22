@@ -1,11 +1,14 @@
 import { clsx } from "clsx";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Plus, MessageSquare, RefreshCw } from "lucide-react";
+import { Plus, MessageSquare, RefreshCw, Settings } from "lucide-react";
+import { useState } from "react";
 import { useSessions } from "@/hooks/useSessions";
+import { EnvSettingsModal } from "@/components/EnvSettingsModal";
 
 export function Sidebar() {
   const { sessions, loading, error, refresh } = useSessions();
   const navigate = useNavigate();
+  const [envOpen, setEnvOpen] = useState(false);
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-800 bg-neutral-950">
@@ -75,9 +78,24 @@ export function Sidebar() {
         </ul>
       </div>
 
-      <div className="border-t border-neutral-800 px-3 py-2 text-xs text-neutral-600">
-        bypassPermissions 模式 · 仅本地
+      <div className="border-t border-neutral-800 px-2 py-2">
+        <button
+          onClick={() => setEnvOpen(true)}
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          环境变量
+        </button>
+        <div className="mt-1 px-2 text-[10px] text-neutral-600">
+          bypassPermissions 模式 · 仅本地
+        </div>
       </div>
+
+      <EnvSettingsModal
+        open={envOpen}
+        onClose={() => setEnvOpen(false)}
+        scope="global"
+      />
     </aside>
   );
 }

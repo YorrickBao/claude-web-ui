@@ -72,3 +72,54 @@ export function createSession(
 function id(s: string): string {
   return encodeURIComponent(s);
 }
+
+// ─────────────────────────────────────────────────────────────
+// env 配置
+// ─────────────────────────────────────────────────────────────
+
+/** 读取全局 env 默认值 */
+export async function getEnvDefaults(): Promise<Record<string, string>> {
+  const res = await fetch("/api/env-defaults");
+  if (!res.ok) throw new Error(`getEnvDefaults: ${res.status}`);
+  const data = (await res.json()) as { env: Record<string, string> };
+  return data.env;
+}
+
+/** 写全局 env 默认值 */
+export async function setEnvDefaults(
+  env: Record<string, string>,
+): Promise<Record<string, string>> {
+  const res = await fetch("/api/env-defaults", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ env }),
+  });
+  if (!res.ok) throw new Error(`setEnvDefaults: ${res.status}`);
+  const data = (await res.json()) as { env: Record<string, string> };
+  return data.env;
+}
+
+/** 读取某会话生效的 env（已合并全局默认 + 会话级 override） */
+export async function getSessionEnv(
+  sessionId: string,
+): Promise<Record<string, string>> {
+  const res = await fetch(`/api/sessions/${id(sessionId)}/env`);
+  if (!res.ok) throw new Error(`getSessionEnv: ${res.status}`);
+  const data = (await res.json()) as { env: Record<string, string> };
+  return data.env;
+}
+
+/** 写某会话的 env override（整体替换会话级） */
+export async function setSessionEnv(
+  sessionId: string,
+  env: Record<string, string>,
+): Promise<Record<string, string>> {
+  const res = await fetch(`/api/sessions/${id(sessionId)}/env`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ env }),
+  });
+  if (!res.ok) throw new Error(`setSessionEnv: ${res.status}`);
+  const data = (await res.json()) as { env: Record<string, string> };
+  return data.env;
+}
