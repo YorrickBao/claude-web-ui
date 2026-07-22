@@ -7,6 +7,13 @@ import { ProfileSelect } from "@/components/ProfileSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
@@ -20,6 +27,7 @@ export function NewSessionView() {
   const [browseError, setBrowseError] = useState<string | null>(null);
   
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [permissionMode, setPermissionMode] = useState<string>("bypassPermissions");
 
   // 初次加载：如果 URL 带了 cwd 参数则直接进入该目录，否则尝试 home
   useEffect(() => {
@@ -57,7 +65,7 @@ export function NewSessionView() {
     if (!cwd) return;
     // 跳到一个"待创建"的聊天页：sessionId=null，首条消息通过 ChatView 触发后端创建
     navigate("/pending", {
-      state: { cwd, profileId },
+      state: { cwd, profileId, permissionMode },
     });
   }
 
@@ -140,8 +148,31 @@ export function NewSessionView() {
       <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         环境变量配置（profile）
       </Label>
-      <div className="mb-6">
+      <div className="mb-4">
         <ProfileSelect value={profileId} onChange={setProfileId} />
+      </div>
+
+      {/* 权限模式 */}
+      <Label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        权限模式
+      </Label>
+      <div className="mb-6">
+        <Select value={permissionMode} onValueChange={(v) => v && setPermissionMode(v)}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="bypassPermissions">
+              完全访问 — 跳过所有权限检查
+            </SelectItem>
+            <SelectItem value="default">
+              标准模式 — 危险操作需确认
+            </SelectItem>
+            <SelectItem value="acceptEdits">
+              自动编辑 — 文件编辑自动放行，其余需确认
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Button

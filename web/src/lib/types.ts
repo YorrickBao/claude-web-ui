@@ -30,6 +30,8 @@ export interface SessionView {
   profileId: string | null;
   /** 会话运行状态 */
   runningStatus: "idle" | "running" | "waiting";
+  /** 权限模式 */
+  permissionMode: "bypassPermissions" | "default" | "acceptEdits";
 }
 
 /** 一套环境变量配置 */

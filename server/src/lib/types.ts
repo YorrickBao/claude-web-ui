@@ -2,6 +2,9 @@
  * 共享类型定义 —— 后端内部 + SSE 线缆（前后端共有）
  */
 
+/** SDK 权限模式 */
+export type PermissionMode = "bypassPermissions" | "default" | "acceptEdits";
+
 /** 一套环境变量配置（profile） */
 export interface EnvProfile {
   /** 唯一 id（前端生成的 uuid） */
@@ -32,6 +35,8 @@ export interface SessionRecord {
   lastModified: number;
   /** 当前绑定的 profile id（null = 不绑定，纯用 CLI 默认） */
   profileId: string | null;
+  /** 权限模式（默认完全放行兼容旧数据） */
+  permissionMode: PermissionMode;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后） */
@@ -46,6 +51,8 @@ export interface SessionView {
   profileId: string | null;
   /** 会话运行状态 */
   runningStatus: "idle" | "running" | "waiting";
+  /** 权限模式 */
+  permissionMode: PermissionMode;
 }
 
 /** sessions.json 文件结构 */
@@ -85,6 +92,8 @@ export interface CreateSessionRequest {
   message: string;
   /** 启动时绑定的 profile id（null/缺省 = 不绑定） */
   profileId?: string | null;
+  /** 权限模式（缺省 = bypassPermissions 兼容旧客户端） */
+  permissionMode?: PermissionMode;
 }
 
 /** 发消息请求 */

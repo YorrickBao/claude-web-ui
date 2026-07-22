@@ -33,6 +33,8 @@ export interface UseChatSSEOptions {
   cwd: string | null;
   /** 新建会话时使用的 profile id */
   profileId?: string | null;
+  /** 新建会话时使用的权限模式 */
+  permissionMode?: string;
   onSessionCreated?: (sessionId: string) => void;
 }
 
@@ -40,6 +42,7 @@ export function useChatSSE({
   sessionId,
   cwd,
   profileId,
+  permissionMode,
   onSessionCreated,
 }: UseChatSSEOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -58,6 +61,9 @@ export function useChatSSE({
   // profileId 用 ref，避免 ExternalStoreRuntime 缓存 onNew 闭包导致拿到旧值
   const profileIdRef = useRef<string | null>(profileId ?? null);
   profileIdRef.current = profileId ?? null;
+  // permissionMode 同样用 ref
+  const permissionModeRef = useRef<string>(permissionMode ?? "bypassPermissions");
+  permissionModeRef.current = permissionMode ?? "bypassPermissions";
   // 暴露给 UI 的"当前生效 sessionId"——session_created 时更新，
   // 这样 pending → 真实会话过渡时组件能感知（按钮显示等）
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
@@ -110,7 +116,10 @@ export function useChatSSE({
           : await createSession(
               cwd ?? "",
               text,
-              { profileId: profileIdRef.current },
+              {
+                profileId: profileIdRef.current,
+                permissionMode: permissionModeRef.current,
+              },
               ctrl.signal,
             );
 

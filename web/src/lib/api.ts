@@ -81,7 +81,7 @@ export function sendMessage(
 export function createSession(
   cwd: string,
   message: string,
-  opts: { title?: string; profileId?: string | null } = {},
+  opts: { title?: string; profileId?: string | null; permissionMode?: string } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
   return fetch("/api/sessions", {
@@ -92,6 +92,7 @@ export function createSession(
       message,
       title: opts.title,
       profileId: opts.profileId ?? null,
+      permissionMode: opts.permissionMode ?? "bypassPermissions",
     }),
     signal,
   });
@@ -161,4 +162,17 @@ export async function setSessionProfile(
     body: JSON.stringify({ profileId }),
   });
   if (!res.ok) throw new Error(`setSessionProfile: ${res.status}`);
+}
+
+/** 切换会话的权限模式 */
+export async function setSessionPermissionMode(
+  sessionId: string,
+  permissionMode: string,
+): Promise<void> {
+  const res = await fetch(`/api/sessions/${id(sessionId)}/permission-mode`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permissionMode }),
+  });
+  if (!res.ok) throw new Error(`setSessionPermissionMode: ${res.status}`);
 }

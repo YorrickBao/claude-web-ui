@@ -3,10 +3,17 @@ import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
 import { ChatThread } from "@/components/ChatThread";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { Badge } from "@/components/ui/badge";
-import { setSessionProfile as setSessionProfileApi, updateSessionTitle } from "@/lib/api";
+import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, updateSessionTitle } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export interface ChatViewProps {
   sessionId: string | null;
@@ -16,6 +23,8 @@ export interface ChatViewProps {
   initialMessages?: ThreadMessageLike[];
   /** 会话初始绑定的 profile id（新建会话从 location.state 来；已有会话从后端来） */
   initialProfileId?: string | null;
+  /** 会话初始权限模式 */
+  initialPermissionMode?: string;
 }
 
 export function ChatView({
@@ -25,12 +34,14 @@ export function ChatView({
   subtitle,
   initialMessages,
   initialProfileId,
+  initialPermissionMode,
 }: ChatViewProps) {
   const { runtime, error, stats, loadHistory, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
       cwd,
       profileId: initialProfileId ?? null,
+      permissionMode: initialPermissionMode,
       onSessionCreated: (id) => {
         // 静默替换 URL（不触发组件重挂，对话状态不丢）
         window.history.replaceState(null, "", `/c/${id}`);
@@ -45,6 +56,14 @@ export function ChatView({
   useEffect(() => {
     setProfileId(initialProfileId ?? null);
   }, [initialProfileId]);
+
+  // 当前生效的权限模式：初始值来自 prop；切换时本地更新
+  const [permissionMode, setPermissionMode] = useState<string>(
+    initialPermissionMode ?? "bypassPermissions",
+  );
+  useEffect(() => {
+    setPermissionMode(initialPermissionMode ?? "bypassPermissions");
+  }, [initialPermissionMode]);
 
   // 已有会话：挂载时载入历史
   useEffect(() => {
@@ -71,6 +90,18 @@ export function ChatView({
     }
   }
 
+  // 切换权限模式
+  async function handleChangePermissionMode(mode: string) {
+    setPermissionMode(mode);
+    if (!activeSessionId) return; // pending 态只更新本地
+    try {
+      await setSessionPermissionMode(activeSessionId, mode);
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+    } catch {
+      setPermissionMode(permissionMode);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <Header
@@ -80,7 +111,9 @@ export function ChatView({
         stats={stats}
         error={error}
         profileId={profileId}
+        permissionMode={permissionMode}
         onProfileChange={handleChangeProfile}
+        onPermissionModeChange={handleChangePermissionMode}
       />
       <div className="min-h-0 flex-1">
         <AssistantRuntimeProvider runtime={runtime}>
@@ -98,7 +131,9 @@ function Header({
   stats,
   error,
   profileId,
+  permissionMode,
   onProfileChange,
+  onPermissionModeChange,
 }: {
   sessionId: string | null;
   title?: string;
@@ -106,7 +141,9 @@ function Header({
   stats: { costUsd: number; numTurns: number; durationMs: number } | null;
   error: string | null;
   profileId: string | null;
+  permissionMode: string;
   onProfileChange: (id: string | null) => void;
+  onPermissionModeChange: (mode: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -225,6 +262,21 @@ function Header({
           onChange={onProfileChange}
           noneLabel="不绑定 · CLI 默认"
         />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+          权限
+        </span>
+        <Select value={permissionMode} onValueChange={(v) => v && onPermissionModeChange(v)}>
+          <SelectTrigger className="h-7 min-w-0 flex-1 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="bypassPermissions">完全访问</SelectItem>
+            <SelectItem value="default">标准模式</SelectItem>
+            <SelectItem value="acceptEdits">自动编辑</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

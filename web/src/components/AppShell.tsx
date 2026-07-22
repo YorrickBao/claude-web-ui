@@ -25,7 +25,7 @@ export function AppShell() {
   // ── /pending：新会话草稿态 ──
   if (path === "/pending") {
     const state = location.state as
-      | { cwd?: string; profileId?: string | null }
+      | { cwd?: string; profileId?: string | null; permissionMode?: string }
       | null;
     const cwd = state?.cwd ?? null;
     if (!cwd) {
@@ -42,6 +42,7 @@ export function AppShell() {
           title="新会话"
           subtitle={cwd}
           initialProfileId={state?.profileId ?? null}
+          initialPermissionMode={state?.permissionMode}
         />
       </Shell>
     );
@@ -181,6 +182,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     cwd: string;
     messages: ThreadMessageLike[];
     profileId: string | null;
+    permissionMode: string;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -204,6 +206,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
           cwd: data.cwd ?? "",
           messages: data.messages ?? [],
           profileId: data.profileId ?? null,
+          permissionMode: data.permissionMode ?? "bypassPermissions",
         });
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
@@ -243,6 +246,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
       subtitle={meta.cwd}
       initialMessages={meta.messages}
       initialProfileId={meta.profileId}
+      initialPermissionMode={meta.permissionMode}
     />
   );
 }

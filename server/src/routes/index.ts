@@ -57,6 +57,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       lastModified: r.lastModified,
       profileId: r.profileId ?? null,
       runningStatus: getInflightStatus(r.sessionId) ?? "idle",
+      permissionMode: r.permissionMode ?? "bypassPermissions",
     }));
     return reply.send({ sessions: views });
   });
@@ -90,6 +91,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         createdAt: rec.createdAt,
         lastModified: rec.lastModified,
         profileId: rec.profileId ?? null,
+        permissionMode: rec.permissionMode ?? "bypassPermissions",
         messages: history,
       });
     },
@@ -126,12 +128,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const ctrl = new AbortController();
     let sessionId: string | undefined;
     const profileId = body.profileId ?? null;
+    const permissionMode = body.permissionMode ?? "bypassPermissions";
 
     try {
       const stream = runQuery({
         cwd: body.cwd,
         prompt: body.message,
         abortController: ctrl,
+        permissionMode,
         // 新会话：env 来自用户选的 profile（可能为空）
         env: await resolveProfileEnv(profileId),
       });
@@ -153,6 +157,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           createdAt: Date.now(),
           lastModified: Date.now(),
           profileId,
+          permissionMode,
         });
         registered = true;
       };
@@ -220,6 +225,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         prompt: body.message,
         resume: sessionId,
         abortController: ctrl,
+        permissionMode: rec.permissionMode ?? "bypassPermissions",
         // 已有会话：env = 全局默认 + 会话级 override
         env: await resolveSessionEnv(sessionId),
       });
@@ -379,6 +385,30 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const profileId = req.body?.profileId ?? null;
     await setSessionProfile(req.params.id, profileId);
     return reply.send({ ok: true, profileId });
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // PUT /api/sessions/:id/permission-mode —— 切换权限模式
+  // body: { permissionMode: PermissionMode }
+  // ───────────────────────────────────────────────────────────
+  app.put<{
+    Params: { id: string };
+    Body: { permissionMode?: string };
+  }>("/api/sessions/:id/permission-mode", async (req, reply) => {
+    const rec = await getSession(req.params.id);
+    if (!rec) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const mode = req.body?.permissionMode;
+    if (
+      mode !== "bypassPermissions" &&
+      mode !== "default" &&
+      mode !== "acceptEdits"
+    ) {
+      return reply.code(400).send({ error: "invalid permissionMode" });
+    }
+    await touchSession(req.params.id, { permissionMode: mode });
+    return reply.send({ ok: true, permissionMode: mode });
   });
 
   // ───────────────────────────────────────────────────────────
