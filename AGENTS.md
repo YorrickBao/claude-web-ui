@@ -13,16 +13,7 @@
 
 ## UI 组件库
 
-- 使用 **Base UI**（`@base-ui/react`），不是 Radix UI
-- `Select.Root` 的 `onValueChange` 签名为 `(value: string | null, eventDetails) => void`，value 可能为 null
-- **Base UI 的 `SelectValue` 不会自动从 `SelectItem` children 解析显示文本**，必须通过 `Select.Root` 的 `items` prop 传入 `Record<string, string>` 映射值→标签：
-  ```tsx
-  <Select items={{ val1: "标签1", val2: "标签2" }} value={...} onValueChange={...}>
-    <SelectTrigger><SelectValue /></SelectTrigger>
-    <SelectContent>
-      {Object.entries(items).map(([v, label]) => (
-        <SelectItem key={v} value={v}>{label}</SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
-  ```
+- 使用 **shadcn/ui**（底层引擎为 `@base-ui/react`，不是 Radix UI）
+- shadcn/ui 组件位于 `web/src/components/ui/`，是对 Base UI 原语的封装
+- `Select` 组件的 `onValueChange` 签名为 `(value: string | null, eventDetails) => void`
+- **`SelectValue` 不会自动从 `SelectItem` children 提取显示文本**（这是 Base UI 的设计），必须给 `Select.Root` 传 `items` prop（`Record<string, string>`）告诉它值→标签的映射
