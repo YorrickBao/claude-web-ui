@@ -458,6 +458,156 @@ export async function scanClaudeSessions(): Promise<SessionRecord[]> {
   return claudeSessions;
 }
 
+// ─────────────────────────────────────────────────────────────
+// 实时同步：sessions.json 作为 CLI 磁盘状态的镜像缓存
+// ─────────────────────────────────────────────────────────────
+
+/** 快速扫描 CLI 磁盘，收集所有会话 id（不解析 jsonl 内容，轻量） */
+async function collectCliSessionIds(): Promise<
+  Map<string, { cwd: string; lastModified: number }>
+> {
+  const result = new Map<string, { cwd: string; lastModified: number }>();
+  const projectsDir = path.join(HOME_DIR, ".claude", "projects");
+  const transcriptsDir = path.join(HOME_DIR, ".claude", "transcripts");
+
+  // ── projects/ 目录 ──
+  try {
+    const dirs = await fsp.readdir(projectsDir, { withFileTypes: true });
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue;
+      const dp = path.join(projectsDir, d.name);
+
+      // 优先读 sessions-index.json（轻量，带时间戳）
+      try {
+        const raw = await fsp.readFile(
+          path.join(dp, "sessions-index.json"),
+          "utf8",
+        );
+        const idx = JSON.parse(raw);
+        if (Array.isArray(idx.entries)) {
+          for (const e of idx.entries) {
+            if (!e.sessionId || result.has(e.sessionId)) continue;
+            result.set(e.sessionId, {
+              cwd: e.projectPath || "",
+              lastModified: e.modified
+                ? new Date(e.modified).getTime()
+                : Date.now(),
+            });
+          }
+        }
+      } catch {
+        /* 无 index 则回退到直接扫描 jsonl */
+      }
+
+      // 回退：直接扫 *.jsonl
+      try {
+        const files = await fsp.readdir(dp);
+        for (const f of files) {
+          if (!f.endsWith(".jsonl")) continue;
+          const sid = f.replace(".jsonl", "");
+          if (result.has(sid)) continue;
+          let mtime = Date.now();
+          try {
+            const st = await fsp.stat(path.join(dp, f));
+            mtime = st.mtimeMs;
+          } catch {
+            /* stat 失败用当前时间 */
+          }
+          result.set(sid, { cwd: "", lastModified: mtime });
+        }
+      } catch {
+        /* 目录不可读，跳过 */
+      }
+    }
+  } catch {
+    /* ~/.claude/projects 不存在 */
+  }
+
+  // ── transcripts/ 目录（兼容旧格式） ──
+  try {
+    const files = await fsp.readdir(transcriptsDir);
+    for (const f of files) {
+      if (!f.endsWith(".jsonl")) continue;
+      const sid = f.replace(".jsonl", "").replace(/^ses_/, "");
+      if (result.has(sid)) continue;
+      let mtime = Date.now();
+      try {
+        const st = await fsp.stat(path.join(transcriptsDir, f));
+        mtime = st.mtimeMs;
+      } catch {
+        /* stat 失败用当前时间 */
+      }
+      result.set(sid, { cwd: "", lastModified: mtime });
+    }
+  } catch {
+    /* transcripts 目录不存在 */
+  }
+
+  return result;
+}
+
+/**
+ * 列出所有会话——先与 CLI 磁盘同步再返回。
+ *
+ * 同步规则：
+ *  ① CLI 磁盘上有但 sessions.json 里没有 → 自动导入
+ *  ② sessions.json 里有但 CLI 磁盘上已不存在 → 移除（被 CLI 端删掉了）
+ *  ③ 两边都有 → 保留 sessions.json 的 title/profileId，时间戳取最新
+ *
+ * 这是个写操作：同步后的结果会原子写回 sessions.json。
+ */
+export async function syncAndListSessions(): Promise<SessionRecord[]> {
+  const local = await readAllSessions();
+  const cliMap = await collectCliSessionIds();
+  const cliIds = new Set(cliMap.keys());
+
+  let changed = false;
+  const kept: SessionRecord[] = [];
+
+  // ① + ③：遍历 sessions.json，保留 CLI 磁盘上仍存在的
+  for (const s of local.sessions) {
+    if (cliIds.has(s.sessionId)) {
+      const cliInfo = cliMap.get(s.sessionId)!;
+      if (cliInfo.lastModified > s.lastModified) {
+        s.lastModified = cliInfo.lastModified;
+        changed = true;
+      }
+      kept.push(s);
+    } else {
+      changed = true; // 被 CLI 端删除 → 移除
+    }
+  }
+
+  // ②：CLI 磁盘上有但 sessions.json 里没有 → 自动导入
+  const keptIds = new Set(kept.map((s) => s.sessionId));
+  const newIds = [...cliIds].filter((id) => !keptIds.has(id));
+
+  if (newIds.length > 0) {
+    // 新会话需要 firstPrompt（作兜底标题），调用完整扫描获取元数据
+    const fullScan = await scanClaudeSessions();
+    for (const cs of fullScan) {
+      if (newIds.includes(cs.sessionId)) {
+        kept.push({
+          sessionId: cs.sessionId,
+          cwd: cs.cwd,
+          title: cs.title,
+          firstPrompt: cs.firstPrompt,
+          createdAt: cs.createdAt,
+          lastModified: cs.lastModified,
+          profileId: null,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    await writeSessions({ sessions: kept });
+  }
+
+  return [...kept].sort((a, b) => b.lastModified - a.lastModified);
+}
+
 /**
  * 计算某会话当前生效的 env：
  *   - 绑定 profile → 该 profile 的 env（pruned）

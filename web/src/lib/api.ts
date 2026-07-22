@@ -43,7 +43,7 @@ export async function abortSession(id: string): Promise<void> {
   });
 }
 
-/** 删除会话（记录 + SDK transcript + 中止进行中的） */
+/** 删除会话（CLI 转录文件 + sessions.json 记录 + 中止进行中的） */
 export async function deleteSessionApi(id: string): Promise<void> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: "DELETE",

@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import {
   getSession,
-  listSessions,
+  syncAndListSessions,
   upsertSession,
   touchSession,
   deleteSessionRecord,
@@ -17,7 +17,7 @@ import {
   scanClaudeSessions,
 } from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
-import { sessionStore } from "../lib/sessionStore.js";
+import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
   setInflight,
@@ -42,10 +42,10 @@ async function resolveTitle(
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // ───────────────────────────────────────────────────────────
-  // GET /api/sessions —— 列出所有会话
+  // GET /api/sessions —— 列出所有会话（实时同步 CLI 磁盘）
   // ───────────────────────────────────────────────────────────
   app.get("/api/sessions", async (_req, reply) => {
-    const records = await listSessions();
+    const records = await syncAndListSessions();
     const views: SessionView[] = records.map((r) => ({
       sessionId: r.sessionId,
       cwd: r.cwd,
@@ -302,28 +302,38 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // DELETE /api/sessions/:id —— 删除会话
-  // 清理：① sessions.json 记录 ② ~/.claude-webui transcript 备份 ③ 中止进行中的 query
-  // 注意：不删 Claude CLI 的 ~/.claude/projects/ 目录
+  // ① 中止进行中的 query ② 删 ~/.claude/projects/ 转录
+  // ③ 删 sessions.json 记录
   // ───────────────────────────────────────────────────────────
   app.delete<{ Params: { id: string } }>(
     "/api/sessions/:id",
     async (req, reply) => {
       const sessionId = req.params.id;
-      // 先中止进行中的（如果有）
+
+      // 先拿记录（需要 cwd 给 SDK deleteSession）
+      const rec = await getSession(sessionId);
+
+      // 中止进行中的（如果有）
       const ctrl = getInflight(sessionId);
       if (ctrl && !ctrl.signal.aborted) ctrl.abort();
       clearInflight(sessionId);
 
+      // 真删 CLI 转录文件
+      if (rec?.cwd) {
+        try {
+          await deleteSession(sessionId, { dir: rec.cwd });
+        } catch (err: unknown) {
+          // 文件可能已不存在，不阻塞
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code !== "ENOENT") {
+            app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
+          }
+        }
+      }
+
       const removed = await deleteSessionRecord(sessionId);
       if (!removed) {
         return reply.code(404).send({ error: "session not found" });
-      }
-
-      // 删 ~/.claude-webui 下的 transcript 备份（失败不致命）
-      try {
-        await sessionStore.delete({ sessionId, projectKey: removed.cwd });
-      } catch (err) {
-        app.log.warn({ err }, `sessionStore.delete failed for ${sessionId}`);
       }
 
       return reply.send({ ok: true });

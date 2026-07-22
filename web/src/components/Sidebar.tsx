@@ -13,8 +13,11 @@ import {
   Folder,
   FolderOpen,
   Edit2,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 import { ImportClaudeSessionsDialog } from "@/components/ImportClaudeSessionsDialog";
@@ -63,6 +66,7 @@ interface SidebarProps {
 
 export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleCollapse, noTransition }: SidebarProps = {}) {
   const { sessions, loading, error, refresh } = useSessions();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [envOpen, setEnvOpen] = useState(false);
@@ -105,7 +109,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
     // 阻止 NavLink 跳转
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`确定删除会话「${s.title}」？\n\n此操作会同时删除 SDK 历史记录，不可恢复。`)) {
+    if (!confirm(`确定删除会话「${s.title}」？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`)) {
       return;
     }
     setDeletingId(s.sessionId);
@@ -124,7 +128,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   }
 
   async function handleBatchDelete(sessions: SessionView[], groupDir: string) {
-    if (!confirm(`确定删除目录「${getDirName(groupDir)}」下的所有会话（共 ${sessions.length} 个）？\n\n此操作会同时删除 SDK 历史记录，不可恢复。`)) {
+    if (!confirm(`确定删除目录「${getDirName(groupDir)}」下的所有会话（共 ${sessions.length} 个）？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`)) {
       return;
     }
     for (const s of sessions) {
@@ -183,7 +187,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-neutral-800 bg-neutral-950",
+        "flex flex-col border-r border-neutral-800 bg-background",
         width === undefined &&
           "transition-all duration-300",
         width === undefined && (isCollapsed ? "w-16" : "w-64")
@@ -289,7 +293,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                       "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm",
                       isActive
                         ? "bg-neutral-800 text-neutral-100"
-                        : "text-neutral-300 hover:bg-neutral-900"
+                        : "text-neutral-300 hover:bg-card"
                     )
                   }
                 >
@@ -349,7 +353,7 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                                 "group flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm",
                                 isActive
                                   ? "bg-neutral-800 text-neutral-100"
-                                  : "text-neutral-300 hover:bg-neutral-900"
+                                  : "text-neutral-300 hover:bg-card"
                               )
                             }
                           >
@@ -393,17 +397,31 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
         "border-t border-neutral-800 px-2 py-2",
         isCollapsed && "px-1"
       )}>
-        <Button
-          variant="ghost"
-          onClick={() => setEnvOpen(true)}
-          className={cn(
-            "flex w-full items-center gap-2",
-            isCollapsed && "justify-center px-1"
-          )}
-        >
-          <Settings className="h-3.5 w-3.5" />
-          {!isCollapsed && "配置管理"}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            onClick={() => setEnvOpen(true)}
+            className={cn(
+              "flex flex-1 items-center gap-2",
+              isCollapsed && "justify-center px-1"
+            )}
+          >
+            <Settings className="h-3.5 w-3.5" />
+            {!isCollapsed && "配置管理"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "切换亮色模式" : "切换暗色模式"}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-3.5 w-3.5" />
+            ) : (
+              <Moon className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
         {!isCollapsed && (
           <div className="mt-1 px-2 text-[10px] text-neutral-600">
             bypassPermissions 模式 · 仅本地
