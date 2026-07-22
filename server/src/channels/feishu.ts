@@ -51,7 +51,7 @@ async function buildReplyContent(events: SSEEvent[]): Promise<string> {
     } else if (evt.type === "error") {
       parts.push(`❌ ${evt.message}`);
     } else if (evt.type === "done") {
-      parts.push(`\n---\n完成 | 耗时 ${(evt.durationMs / 1000).toFixed(1)}s | 花费 $${evt.costUsd.toFixed(4)}`);
+      parts.push(`\n---\n完成 | 耗时 ${(evt.durationMs / 1000).toFixed(1)}s | input ${evt.inputTokens} tokens | output ${evt.outputTokens} tokens`);
     }
   }
   return parts.join("\n");

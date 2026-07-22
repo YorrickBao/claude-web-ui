@@ -6,6 +6,8 @@ import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import { setInflight, setInflightWaiting, setInflightRunning, clearInflight, getInflight, getInflightStatus, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
+import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
+import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
 function resolveSdkTitle(sdk) {
@@ -75,12 +77,11 @@ export async function apiRoutes(app) {
     // ───────────────────────────────────────────────────────────
     // GET /api/sessions/:id/stream —— 订阅会话实时 SSE 流
     //
-    // 先 replay 全部历史消息（history 事件），如果会话正在运行则
-    // 通过 EventBus 订阅后续实时事件，实现"切回正在运行的会话时续流"。
+    // 先 replay 全部历史消息，然后通过 EventBus 订阅后续实时事件。
     //
-    // 关键：必须在 replay 之前订阅 bus，否则 replay 期间的
-    // 新事件会丢失。订阅后用 historySent 标记过滤掉早于
-    // history 的事件（它们已包含在 history 里）。
+    // 为避免 replay 期间的事件丢失，订阅后先将事件暂存到缓冲区，
+    // replay 完成后对缓冲区事件去重（工具事件按 ID，文本增量按累
+    // 计长度），再切换到实时转发模式。
     // ───────────────────────────────────────────────────────────
     app.get("/api/sessions/:id/stream", async (req, reply) => {
         const sessionId = req.params.id;
@@ -102,14 +103,18 @@ export async function apiRoutes(app) {
             }
             catch { /* 可能已经 close */ }
         }, TIMEOUT_MS);
-        // 订阅 bus（在 replay 之前！），用标记过滤早期事件
-        let historySent = false;
-        const unsubEvent = onSessionEvent(sessionId, (evt) => {
-            if (historySent) {
+        // 阶段1：订阅 bus，暂存所有事件到缓冲区（不丢弃）
+        const buffer = [];
+        let buffering = true;
+        const onEvent = (evt) => {
+            if (buffering) {
+                buffer.push(evt);
+            }
+            else {
                 sendSSE(reply, evt);
             }
-            // historySent === false 时的事件已在 history 中包含，跳过
-        });
+        };
+        const unsubEvent = onSessionEvent(sessionId, onEvent);
         let unsubEnd;
         const cleanup = () => {
             clearTimeout(timeout);
@@ -125,28 +130,68 @@ export async function apiRoutes(app) {
         });
         // 客户端正常断开时清理（仅注册一次）
         req.raw.on("close", cleanup);
-        // 发送当前全部历史消息
+        // 阶段2：回放历史，收集去重依据
         try {
             const history = await replaySession(sessionId, rec.cwd);
-            // 如果在 replay 期间已超时关闭，不再发后续事件
             if (timedOut)
                 return;
+            // 从 history 提取：工具 ID 集合 + 最后一条 assistant 消息文本长度
+            const historyToolIds = new Set();
+            let lastTextLen = 0;
+            for (let i = history.length - 1; i >= 0; i--) {
+                if (history[i].role === "assistant") {
+                    for (const part of history[i].content) {
+                        if (part.type === "tool-call") {
+                            historyToolIds.add(part.toolCallId);
+                        }
+                        else if (part.type === "text") {
+                            lastTextLen += part.text.length;
+                        }
+                    }
+                    break;
+                }
+            }
             sendSSE(reply, { type: "history", messages: history });
-            historySent = true;
+            // 阶段3：去重转发缓冲区事件，然后切到实时模式
+            buffering = false;
+            let textAccum = 0;
+            for (const evt of buffer) {
+                // 工具事件：按 ID 去重
+                if ((evt.type === "tool_use" || evt.type === "tool_result") &&
+                    historyToolIds.has(evt.id)) {
+                    continue;
+                }
+                // 文本增量：累计长度 ≤ lastTextLen 说明已包含在 history 中
+                if (evt.type === "text") {
+                    textAccum += evt.text.length;
+                    if (textAccum <= lastTextLen)
+                        continue;
+                    // 跨边界 delta：截掉已在 history 中的前缀部分
+                    if (textAccum - evt.text.length < lastTextLen) {
+                        const overlap = lastTextLen - (textAccum - evt.text.length);
+                        const newPart = evt.text.slice(overlap);
+                        if (newPart)
+                            sendSSE(reply, { type: "text", text: newPart });
+                        continue;
+                    }
+                }
+                sendSSE(reply, evt);
+            }
+            // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
+            if (!getInflight(sessionId)) {
+                cleanup();
+                try {
+                    endSSE(reply);
+                }
+                catch { /* 可能已经 close */ }
+                return;
+            }
         }
         catch (err) {
             app.log.warn({ err }, `replaySession failed in stream for ${sessionId}`);
-            if (!timedOut)
+            if (!timedOut) {
                 sendSSE(reply, { type: "error", message: `replay failed: ${err}` });
-            cleanup();
-            try {
-                endSSE(reply);
             }
-            catch { /* 可能已经 close */ }
-            return;
-        }
-        // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
-        if (!getInflight(sessionId)) {
             cleanup();
             try {
                 endSSE(reply);
@@ -527,5 +572,112 @@ export async function apiRoutes(app) {
         catch {
             return reply.code(404).send({ error: "cannot read directory" });
         }
+    });
+    // ───────────────────────────────────────────────────────────
+    // Feishu 渠道 API
+    // ───────────────────────────────────────────────────────────
+    const FEISHU_CONFIG_FILE = path.join(DATA_DIR, "feishu-config.json");
+    async function saveFeishuConfig(config) {
+        await fsp.writeFile(FEISHU_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+    }
+    async function loadFeishuConfig() {
+        try {
+            const content = await fsp.readFile(FEISHU_CONFIG_FILE, "utf-8");
+            return JSON.parse(content);
+        }
+        catch {
+            return null;
+        }
+    }
+    app.get("/api/feishu/status", async (_req, reply) => {
+        const config = await loadFeishuConfig();
+        if (!config) {
+            return reply.send({ connected: false });
+        }
+        const valid = await validateFeishuCredentials(config.appId, config.appSecret).catch(() => false);
+        return reply.send({ connected: valid, appId: config.appId, domain: config.domain });
+    });
+    app.post("/api/feishu/connect", async (_req, reply) => {
+        console.log("[feishu] connect request received");
+        initSSE(reply);
+        const ctrl = new AbortController();
+        function sendFeishuEvent(type, data) {
+            reply.raw.write(`event: ${type}\n`);
+            reply.raw.write(`data: ${JSON.stringify({ ...data, type })}\n\n`);
+            const raw = reply.raw;
+            if (raw.flush) {
+                raw.flush();
+            }
+        }
+        try {
+            const result = await connectViaQRCode({
+                onQRCode: (url) => {
+                    sendFeishuEvent("qr_code", { url });
+                },
+                onStatus: (status) => {
+                    if (status.phase === "waiting_for_scan") {
+                        sendFeishuEvent("waiting_for_scan", { qrUrl: status.qrUrl, expiresIn: status.expiresIn });
+                    }
+                    else if (status.phase === "success") {
+                        sendFeishuEvent("connected", { appId: status.appId, domain: status.domain });
+                    }
+                    else if (status.phase === "expired") {
+                        sendFeishuEvent("error", { message: "二维码已过期" });
+                    }
+                    else if (status.phase === "denied") {
+                        sendFeishuEvent("error", { message: "用户拒绝授权" });
+                    }
+                    else if (status.phase === "error") {
+                        sendFeishuEvent("error", { message: status.message });
+                    }
+                },
+                signal: ctrl.signal,
+            });
+            await saveFeishuConfig({
+                appId: result.appId,
+                appSecret: result.appSecret,
+                domain: result.domain,
+            });
+            sendFeishuEvent("success", { appId: result.appId, domain: result.domain });
+            const channelConfig = {
+                enabled: true,
+                appId: result.appId,
+                appSecret: result.appSecret,
+                domain: result.domain,
+            };
+            await globalThis.__feishuChannelStarter?.(channelConfig);
+        }
+        catch (err) {
+            if (err instanceof Error && err.name === "AbortError") {
+                sendFeishuEvent("error", { message: "已取消" });
+            }
+            else {
+                sendFeishuEvent("error", { message: err instanceof Error ? err.message : "连接失败" });
+            }
+        }
+        finally {
+            endSSE(reply);
+        }
+    });
+    app.post("/api/feishu/disconnect", async (_req, reply) => {
+        try {
+            await fsp.unlink(FEISHU_CONFIG_FILE);
+            return reply.send({ ok: true });
+        }
+        catch {
+            return reply.send({ ok: true });
+        }
+    });
+    app.post("/api/feishu/manual", async (req, reply) => {
+        const { appId, appSecret, domain = "feishu" } = req.body;
+        if (!appId || !appSecret) {
+            return reply.code(400).send({ error: "appId 和 appSecret 不能为空" });
+        }
+        const valid = await validateFeishuCredentials(appId, appSecret).catch(() => false);
+        if (!valid) {
+            return reply.code(400).send({ error: "凭证无效，请检查 App ID 和 App Secret" });
+        }
+        await saveFeishuConfig({ appId, appSecret, domain });
+        return reply.send({ ok: true, appId, domain });
     });
 }

@@ -1,9 +1,11 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fsp from "node:fs/promises";
+import path from "node:path";
 import { spawn } from "node:child_process";
-import { HOST, START_PORT, WEB_DIST_DIR } from "./env.js";
+import { HOST, START_PORT, WEB_DIST_DIR, DATA_DIR } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
+import { startFeishuChannel } from "./channels/feishu.js";
 /** 尝试监听端口，占用则 +1 重试（最多试 100 个） */
 async function tryListen(app, host, startPort) {
     for (let port = startPort; port < startPort + 100; port++) {
@@ -78,6 +80,47 @@ async function main() {
         app.log.error(err);
         process.exit(1);
     }
+    const FEISHU_CONFIG_FILE = path.join(DATA_DIR, "feishu-config.json");
+    let savedFeishuConfig = null;
+    try {
+        const content = await fsp.readFile(FEISHU_CONFIG_FILE, "utf-8");
+        savedFeishuConfig = JSON.parse(content);
+        app.log.info("[feishu] loaded saved config");
+    }
+    catch {
+        savedFeishuConfig = null;
+    }
+    const feishuConfig = {
+        enabled: process.env.FEISHU_ENABLED === "true" || !!savedFeishuConfig,
+        appId: process.env.FEISHU_APP_ID || savedFeishuConfig?.appId || "",
+        appSecret: process.env.FEISHU_APP_SECRET || savedFeishuConfig?.appSecret || "",
+        domain: process.env.FEISHU_DOMAIN === "lark" ? "lark" : savedFeishuConfig?.domain || "feishu",
+        defaultCwd: process.env.FEISHU_DEFAULT_CWD || process.cwd(),
+        defaultProfileId: process.env.FEISHU_DEFAULT_PROFILE_ID || null,
+    };
+    let feishuChannelStarted = false;
+    async function startFeishuChannelIfNeeded(config) {
+        if (feishuChannelStarted) {
+            console.info("[feishu] channel already started, skipping");
+            return;
+        }
+        if (!config.enabled || !config.appId || !config.appSecret) {
+            console.info("[feishu] channel disabled or missing credentials");
+            return;
+        }
+        try {
+            await startFeishuChannel(config);
+            feishuChannelStarted = true;
+            console.info("[feishu] channel started");
+        }
+        catch (err) {
+            console.error("[feishu] channel startup failed:", err);
+        }
+    }
+    startFeishuChannelIfNeeded(feishuConfig).catch((err) => {
+        app.log.error({ err: err instanceof Error ? err.message : err }, "[feishu] channel startup failed");
+    });
+    globalThis.__feishuChannelStarter = startFeishuChannelIfNeeded;
 }
 main().catch((err) => {
     console.error("fatal:", err);
