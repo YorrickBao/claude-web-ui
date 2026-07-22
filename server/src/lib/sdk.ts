@@ -6,12 +6,60 @@ import {
   type SDKMessage,
   type SubagentStartHookInput,
   type SubagentStopHookInput,
+  type PermissionRequestHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SSEEvent, PermissionMode, EffortLevel } from "./types.js";
 import { registerStart, registerStop } from "./agentRegistry.js";
+import { createPendingPermission } from "./inflight.js";
+import { emitSessionEvent } from "./eventBus.js";
 
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
 export { listSessions, getSessionInfo, renameSession };
+
+// PermissionRequest hook 的回调返回类型与泛型 HookJSONOutput 不兼容
+// （SDK 类型系统尚未完全统一），单独构建此 hook 的闭包后用 any 注入
+function buildPermissionRequestHook(sessionIdRef: { current: string | undefined }) {
+  return async (input: PermissionRequestHookInput) => {
+    const sid = sessionIdRef.current;
+    if (!sid) {
+      return {
+        hookEventName: "PermissionRequest" as const,
+        decision: { behavior: "deny" as const, message: "Session not initialized" },
+      };
+    }
+
+    const { requestId, promise } = createPendingPermission(
+      sid,
+      input.tool_name,
+      input.tool_input,
+    );
+
+    emitSessionEvent(sid, {
+      type: "permission_request",
+      requestId,
+      toolName: input.tool_name,
+      toolInput: input.tool_input,
+      decisionReason:
+        (input as Record<string, unknown>).decision_reason as string | undefined,
+    });
+
+    const decision = await promise;
+
+    if (decision.behavior === "deny") {
+      return {
+        hookEventName: "PermissionRequest" as const,
+        decision: {
+          behavior: "deny" as const,
+          message: decision.message ?? "User denied the operation",
+        },
+      };
+    }
+    return {
+      hookEventName: "PermissionRequest" as const,
+      decision: { behavior: "allow" as const },
+    };
+  };
+}
 
 /**
  * 运行一次 Claude Agent SDK 的 query()，把 SDKMessage 流翻译成 SSEEvent 流。
@@ -47,12 +95,25 @@ export async function* runQuery(
       ? { ...process.env, ...params.env }
       : undefined;
 
-    const mode = params.permissionMode ?? "bypassPermissions";
-    const stream = query({
+  const mode = params.permissionMode ?? "bypassPermissions";
+  const isPlanMode = mode === "plan";
+  const needsPermissionHook = mode !== "bypassPermissions";
+
+  // 在 plan 模式下累积计划文本，conversation_reset 时发送给前端
+  let planTextBuffer = "";
+
+  // SessionId 的引用对象，供 buildPermissionRequestHook 闭包捕获
+  const sessionIdRef = { current: undefined as string | undefined };
+
+  // 预构建 PermissionRequest hook（只构建一次，避免每次 query 都创建闭包）
+  const permissionRequestHook = needsPermissionHook
+    ? buildPermissionRequestHook(sessionIdRef)
+    : undefined;
+
+  const stream = query({
     prompt: params.prompt,
     options: {
       cwd: params.cwd,
-      // 新会话不 resume；老会话传 resume
       ...(params.resume ? { resume: params.resume } : {}),
       allowedTools: [
         "Bash",
@@ -66,29 +127,29 @@ export async function* runQuery(
       ],
       permissionMode: mode,
       allowDangerouslySkipPermissions: mode === "bypassPermissions",
-      // disabled → thinking: { type: 'disabled' }
-      // default/未指定 → 不传 effort，让 SDK 用环境变量 CLAUDE_CODE_EFFORT_LEVEL
-      // 其余 → effort 参数
       ...(params.effortLevel === "disabled"
         ? { thinking: { type: "disabled" as const } }
         : (params.effortLevel === "default" || !params.effortLevel)
           ? {}
           : { effort: params.effortLevel as Exclude<EffortLevel, "disabled" | "default"> }),
       abortController: params.abortController,
-      // 只在有 override 时才传，避免无谓替换（让 SDK 走默认继承 process.env）
       ...(childEnv ? { env: childEnv } : {}),
-      // 子代理生命周期追踪：SubagentStart/Stop hook → agentRegistry
       hooks: {
+        // PermissionRequest: HITL 权限审批（非 bypass 模式）
+        ...(permissionRequestHook
+          ? {
+              PermissionRequest: [
+                { matcher: "*", hooks: [permissionRequestHook as any] },
+              ],
+            }
+          : {}),
+        // 子代理生命周期追踪
         SubagentStart: [
           {
             matcher: "*",
             hooks: [
               async (input) => {
-                try {
-                  registerStart(input as SubagentStartHookInput);
-                } catch {
-                  // 追踪失败不阻塞 agent 执行
-                }
+                try { registerStart(input as SubagentStartHookInput); } catch { /* noop */ }
                 return { continue: true };
               },
             ],
@@ -99,11 +160,7 @@ export async function* runQuery(
             matcher: "*",
             hooks: [
               async (input) => {
-                try {
-                  await registerStop(input as SubagentStopHookInput);
-                } catch {
-                  // 追踪失败不阻塞 agent 执行
-                }
+                try { await registerStop(input as SubagentStopHookInput); } catch { /* noop */ }
                 return { continue: true };
               },
             ],
@@ -117,13 +174,26 @@ export async function* runQuery(
     switch (msg.type) {
       case "system": {
         if (msg.subtype === "init") {
+          sessionIdRef.current = msg.session_id;
           yield { type: "session_created", sessionId: msg.session_id };
         } else if (msg.subtype === "session_state_changed") {
-          // SDK 会话状态变更：idle / running / requires_action（HITL 等待用户决策）
+          // SDK 会话状态变更：idle / running / requires_action
           const stateMsg = msg as { state: string };
           if (stateMsg.state === "requires_action") {
             yield { type: "waiting_for_user" };
           }
+        }
+        break;
+      }
+
+      // Plan mode 退出：session 重置，准备进入执行阶段
+      case "conversation_reset": {
+        if (isPlanMode && planTextBuffer) {
+          yield {
+            type: "plan_proposed",
+            planContent: planTextBuffer,
+          };
+          planTextBuffer = "";
         }
         break;
       }
@@ -140,6 +210,10 @@ export async function* runQuery(
             input?: unknown;
           };
           if (b.type === "text" && typeof b.text === "string") {
+            // Plan 模式下累积计划文本
+            if (isPlanMode) {
+              planTextBuffer += b.text;
+            }
             yield { type: "text", text: b.text };
           } else if (
             b.type === "tool_use" &&
@@ -176,8 +250,6 @@ export async function* runQuery(
             yield {
               type: "tool_result",
               id: b.tool_use_id,
-              // name 会被前端通过之前 tool_use 的 id 映射补上；
-              // 这里先填空串，前端 fallback 到 "工具"
               name: "",
               result: b.content,
               isError: b.is_error === true,
@@ -197,8 +269,6 @@ export async function* runQuery(
             durationMs: msg.duration_ms,
           };
         } else {
-          // error_max_turns / error_during_execution / ...
-          // 即使在错误退出路径上，前面轮次消耗的 token 也是真实数据，先发 done 累加上去
           const e = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultError;
           yield {
             type: "done",

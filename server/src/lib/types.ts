@@ -105,7 +105,19 @@ export type SSEEvent =
   /** 子代理启动（SubagentStart hook 触发） */
   | { type: "subagent_started"; agentId: string; agentType: string }
   /** 子代理结束（SubagentStop hook 触发） */
-  | { type: "subagent_stopped"; agentId: string; agentType: string; phantom: boolean };
+  | { type: "subagent_stopped"; agentId: string; agentType: string; phantom: boolean }
+  /** 工具权限请求：agent 想执行某个操作，需要用户审批 */
+  | {
+      type: "permission_request";
+      requestId: string;
+      toolName: string;
+      toolInput: unknown;
+      decisionReason?: string;
+    }
+  /** Plan mode 退出：LLM 产出了计划，等待用户审批后切到执行模式 */
+  | { type: "plan_proposed"; planContent: string }
+  /** 权限模式已变更 */
+  | { type: "mode_changed"; mode: PermissionMode };
 
 /** 新建会话请求 */
 export interface CreateSessionRequest {
@@ -123,4 +135,29 @@ export interface CreateSessionRequest {
 /** 发消息请求 */
 export interface SendMessageRequest {
   message: string;
+}
+
+/** 前端对 permission_request 的响应 */
+export interface PermissionResponse {
+  /** permission_request 事件的 requestId */
+  requestId: string;
+  /** "allow" 或 "deny" */
+  behavior: "allow" | "deny";
+  /** deny 时的说明信息（可选） */
+  message?: string;
+  /** allow 时是否记住此决定（更新权限规则） */
+  updatedPermissions?: Array<{
+    type: "add";
+    toolName: string;
+    permission: "allow";
+    destination: "session";
+  }>;
+}
+
+/** 前端对 plan_proposed 的审批请求 */
+export interface PlanApprovalRequest {
+  /** "approve" 切到执行模式 | "reject" 取消计划 | "edit" 用户修改了计划文本 */
+  action: "approve" | "reject";
+  /** action 为 "edit" 时的修改后计划文本（可选） */
+  editedPlan?: string;
 }
