@@ -154,10 +154,13 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       };
 
       for await (const evt of stream) {
-        sendSSE(reply, evt);
+        // session_created 必须先完成持久化再推给前端，
+        // 避免侧栏刷新时 syncAndListSessions 发现
+        // 会话不在 CLI 磁盘上而被误删
         if (evt.type === "session_created" && !registered) {
           await register(evt.sessionId);
         }
+        sendSSE(reply, evt);
       }
     } catch (err) {
       const message =

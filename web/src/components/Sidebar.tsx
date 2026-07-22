@@ -322,14 +322,14 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                             to={`/c/${s.sessionId}`}
                             className={({ isActive }) =>
                               cn(
-                                "group/item flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
+                                "group/item flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors border-l-2",
                                 isActive
                                   ? "border-l-accent bg-accent/10 text-foreground"
-                                  : "border-l-transparent text-muted-foreground hover:bg-card"
+                                  : "border-l-transparent text-foreground hover:bg-card"
                               )
                             }
                           >
-                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
                               <div className="truncate">{s.title}</div>
                             </div>

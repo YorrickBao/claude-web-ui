@@ -3,6 +3,7 @@ import path from "node:path";
 import { DATA_DIR, HOME_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
+import { getInflight } from "./inflight.js";
 
 const EMPTY_SESSIONS: SessionsFile = { sessions: [] };
 const EMPTY_PROFILES: { profiles: EnvProfile[] } = { profiles: [] };
@@ -492,6 +493,9 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
         s.lastModified = cliInfo.lastModified;
         changed = true;
       }
+      kept.push(s);
+    } else if (getInflight(s.sessionId)) {
+      // 正在创建中（SDK 可能尚未落盘 JSONL），保留不删
       kept.push(s);
     } else {
       changed = true; // 被 CLI 端删除 → 移除
