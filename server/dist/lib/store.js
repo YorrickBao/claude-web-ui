@@ -1,4 +1,6 @@
 import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 import { getInflight } from "./inflight.js";
@@ -186,6 +188,60 @@ export async function accumulateTokens(sessionId, inputTokens, outputTokens) {
 // 会话列表（用 SDK listSessions 替代手动扫盘）
 // ─────────────────────────────────────────────────────────────
 /**
+ * 文件系统兜底扫描：遍历 ~/.claude/projects/ 下所有
+ * `subagents/agent-*.jsonl` 文件，提取子代理 ID。
+ *
+ * SDK 的 listSubagents 依赖父会话存在——若父会话已删除，
+ * 其子代理转录仍在磁盘上，但 listSubagents 找不到它们（孤儿子代理）。
+ * 此扫描直接基于文件布局补漏：
+ *
+ *   ~/.claude/projects/<projectKey>/<parentId>/subagents/agent-<childId>.jsonl
+ *
+ * projectKey 是 cwd 绝对路径将 / 替换为 - 并去掉前导 /。
+ */
+async function scanOrphanedSubagents() {
+    const ids = new Set();
+    const projectsDir = path.join(os.homedir(), ".claude", "projects");
+    let projectNames;
+    try {
+        projectNames = await fsp.readdir(projectsDir);
+    }
+    catch {
+        return ids;
+    }
+    for (const projName of projectNames) {
+        const projectPath = path.join(projectsDir, projName);
+        let entries;
+        try {
+            entries = await fsp.readdir(projectPath);
+        }
+        catch {
+            continue;
+        }
+        for (const entry of entries) {
+            // 跳过 .jsonl 文件——子代理只存在于目录内的 subagents/ 下
+            if (entry.endsWith(".jsonl"))
+                continue;
+            const subagentsPath = path.join(projectPath, entry, "subagents");
+            let agentFiles;
+            try {
+                agentFiles = await fsp.readdir(subagentsPath);
+            }
+            catch {
+                // 没有 subagents/ 目录（大部分会话）或 entry 不是目录
+                continue;
+            }
+            for (const file of agentFiles) {
+                // 格式：agent-<uuid>.jsonl
+                if (file.startsWith("agent-") && file.endsWith(".jsonl")) {
+                    ids.add(file.slice(6, -6)); // 去掉 "agent-" 前缀和 ".jsonl" 后缀
+                }
+            }
+        }
+    }
+    return ids;
+}
+/**
  * 与 CLI 磁盘同步并返回所有会话。
  *
  * 同步规则：
@@ -198,9 +254,10 @@ export async function syncAndListSessions() {
     const localMap = new Map(local.sessions.map((s) => [s.sessionId, s]));
     // SDK 扫描所有项目的会话转录
     const sdkSessions = await sdkListSessions();
-    // 收集所有子代理 session id，用于过滤。双重来源：
+    // 收集所有子代理 session id，用于过滤。三重来源：
     //  ① 内存 agent registry（实时，当前进程内 Hook 捕获的子代理）
     //  ② SDK listSubagents（磁盘扫描，覆盖重启后历史子代理）
+    //  ③ 文件系统兜底扫描（捕获孤儿子代理——父会话已删除但转录仍在磁盘上）
     const subagentIds = getAllSubagentIds();
     await Promise.all(sdkSessions.map(async (sdk) => {
         try {
@@ -215,8 +272,23 @@ export async function syncAndListSessions() {
             console.warn(`[store] listSubagents failed for ${sdk.sessionId}:`, err instanceof Error ? err.message : err);
         }
     }));
+    // ③ 文件系统兜底：扫描孤儿子代理（父会话已删除的子代理）
+    let orphanCount = 0;
+    try {
+        const orphans = await scanOrphanedSubagents();
+        for (const id of orphans) {
+            if (!subagentIds.has(id)) {
+                subagentIds.add(id);
+                orphanCount++;
+            }
+        }
+    }
+    catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[store] orphaned subagent scan failed:", err instanceof Error ? err.message : err);
+    }
     // eslint-disable-next-line no-console
-    console.log(`[store] syncAndListSessions: ${sdkSessions.length} SDK sessions, ${subagentIds.size} subagent IDs collected`);
+    console.log(`[store] syncAndListSessions: ${sdkSessions.length} SDK sessions, ${subagentIds.size} subagent IDs collected${orphanCount > 0 ? ` (${orphanCount} orphans)` : ""}`);
     let changed = false;
     const merged = [];
     for (const sdk of sdkSessions) {
