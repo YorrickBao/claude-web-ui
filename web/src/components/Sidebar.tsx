@@ -271,7 +271,7 @@ export function Sidebar({
           variant="outline"
           onClick={() => handleNavigate("/new")}
           className={cn(
-            "flex w-full items-center gap-2 border-dashed hover:border-accent/50 hover:text-accent",
+            "flex w-full items-center gap-2 border-dashed hover:border-primary/50 hover:text-primary",
             (!isMobile && isCollapsed) && "justify-center px-2"
           )}
         >
@@ -322,7 +322,7 @@ export function Sidebar({
                     cn(
                       "group flex items-start justify-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                       isActive
-                        ? "bg-accent/10 text-foreground"
+                        ? "bg-primary/10 text-foreground"
                         : "text-muted-foreground hover:bg-card"
                     )
                   }
@@ -330,7 +330,7 @@ export function Sidebar({
                   {s.runningStatus === "waiting" ? (
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
                   ) : s.runningStatus === "running" ? (
-                    <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                    <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                   ) : (
                     <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
@@ -388,7 +388,7 @@ export function Sidebar({
                         onOverlayClose?.();
                       }}
                       title="在此目录新建会话"
-                      className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-accent group-hover/grp:opacity-100"
+                      className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-primary group-hover/grp:opacity-100"
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
@@ -413,7 +413,7 @@ export function Sidebar({
                               cn(
                                 "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                                 isActive
-                                  ? "bg-accent/10 text-foreground"
+                                  ? "bg-primary/10 text-foreground"
                                   : "text-foreground hover:bg-card"
                               )
                             }
@@ -421,7 +421,7 @@ export function Sidebar({
                             {s.runningStatus === "waiting" ? (
                               <AlertCircle className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
                             ) : s.runningStatus === "running" ? (
-                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                             ) : (
                               <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             )}

@@ -55,7 +55,7 @@ a, button, input, select, textarea, [role="button"] {
 
 /* 选中文本高亮 */
 ::selection {
-  background: rgba(217, 119, 87, 0.3);
+  background: rgba(100, 130, 180, 0.3);
   color: #fff;
 }
 
@@ -104,14 +104,14 @@ a, button, input, select, textarea, [role="button"] {
     --font-sans: 'Geist Variable', sans-serif;
   }
   :root {
-    /* 亮色主题（默认），热橙 accent 映射到 primary */
+    /* 亮色主题（默认），低调蓝灰 accent 映射到 primary */
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.55 0.13 40);
+    --primary: oklch(0.48 0.05 255);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
@@ -123,7 +123,7 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.55 0.13 40);
+    --ring: oklch(0.48 0.05 255);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -132,22 +132,22 @@ a, button, input, select, textarea, [role="button"] {
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.55 0.13 40);
+    --sidebar-primary: oklch(0.48 0.05 255);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.55 0.13 40);
+    --sidebar-ring: oklch(0.48 0.05 255);
   }
   .dark {
-    /* 暗色主题，热橙 accent 映射到 primary */
+    /* 暗色主题，低调蓝灰 accent 映射到 primary */
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.65 0.12 40);
+    --primary: oklch(0.58 0.07 255);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
@@ -159,7 +159,7 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.65 0.12 40);
+    --ring: oklch(0.58 0.07 255);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -167,12 +167,12 @@ a, button, input, select, textarea, [role="button"] {
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.145 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.65 0.12 40);
+    --sidebar-primary: oklch(0.58 0.07 255);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.205 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.65 0.12 40);
+    --sidebar-ring: oklch(0.58 0.07 255);
   }
   * {
     @apply border-border;

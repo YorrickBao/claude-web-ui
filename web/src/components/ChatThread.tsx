@@ -3,7 +3,7 @@ import {
   MessagePrimitive,
   ComposerPrimitive,
 } from "@assistant-ui/react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Brain, Square } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,59 +108,42 @@ export function ChatThread({
 
       <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pb-4 pt-8 md:px-4 pb-safe">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-end gap-1.5 rounded-2xl border border-border/60 bg-card px-2 py-1 shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-accent/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-accent/20 md:gap-2 md:px-3 md:py-1.5">
-            <ComposerPrimitive.Input
-              placeholder="输入消息… (Enter 发送 · Shift+Enter 换行)"
-              submitMode="enter"
-              className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
-            />
-            {isRunning ? (
-              <ComposerPrimitive.Cancel
-                render={
-                  <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground/60 hover:text-foreground md:h-8 md:w-8" aria-label="停止生成">
-                    <Square className="size-4 md:size-3.5" />
-                  </Button>
-                }
+          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20">
+            <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
+              <ComposerPrimitive.Input
+                placeholder="输入消息… (Enter 发送 · Shift+Enter 换行)"
+                submitMode="enter"
+                className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
               />
-            ) : (
-              <ComposerPrimitive.Send
-                render={
-                  <Button size="icon" className="h-10 w-10 shrink-0 rounded-lg md:h-8 md:w-8" aria-label="发送消息">
-                    <ArrowUp className="size-5 md:size-4" />
-                  </Button>
-                }
-              />
-            )}
-          </div>
-          {/* 简化选择器：无 label，无管理按钮 */}
-          <div className="mt-2 flex items-center gap-2">
-            <Select
-              items={permissionItems}
-              value={permissionMode}
-              onValueChange={(v) => { if (v) onPermissionModeChange(v); }}
-            >
-              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bypassPermissions">
-                  <span className="flex flex-col">
-                    <span>完全访问 · bypassPermissions</span>
-                    <span className="text-[10px] text-muted-foreground">跳过所有权限检查，allowDangerouslySkipPermissions</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="default">
-                  <span className="flex flex-col">
-                    <span>标准模式 · default</span>
-                    <span className="text-[10px] text-muted-foreground">危险操作弹窗确认</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="acceptEdits">
-                  <span className="flex flex-col">
-                    <span>自动编辑 · acceptEdits</span>
-                    <span className="text-[10px] text-muted-foreground">文件编辑自动放行，其余弹窗确认</span>
-                  </span>
-                </SelectItem>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5">
+              <Select
+                items={permissionItems}
+                value={permissionMode}
+                onValueChange={(v) => { if (v) onPermissionModeChange(v); }}
+              >
+                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bypassPermissions">
+                    <span className="flex flex-col">
+                      <span>完全访问 · bypassPermissions</span>
+                      <span className="text-[10px] text-muted-foreground">跳过所有权限检查，allowDangerouslySkipPermissions</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="default">
+                    <span className="flex flex-col">
+                      <span>标准模式 · default</span>
+                      <span className="text-[10px] text-muted-foreground">危险操作弹窗确认</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="acceptEdits">
+                    <span className="flex flex-col">
+                      <span>自动编辑 · acceptEdits</span>
+                      <span className="text-[10px] text-muted-foreground">文件编辑自动放行，其余弹窗确认</span>
+                    </span>
+                  </SelectItem>
                 <SelectItem value="plan">
                   <span className="flex flex-col">
                     <span>仅规划 · plan</span>
@@ -181,12 +164,13 @@ export function ChatThread({
                 </SelectItem>
               </SelectContent>
             </Select>
+            <div className="flex-1" />
             <Select
               items={profileItems}
               value={profileId ?? ""}
               onValueChange={(v) => onProfileChange(v || null)}
             >
-              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+              <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -209,47 +193,66 @@ export function ChatThread({
                   })}
               </SelectContent>
             </Select>
-            <Select
-              items={effortItems}
-              value={effortLevel}
-              onValueChange={(v) => { if (v) onEffortLevelChange(v); }}
-            >
-              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="low">
-                  <span className="flex flex-col">
-                    <span>低 · low</span>
-                    <span className="text-[10px] text-muted-foreground">最少思考，最快响应</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="medium">
-                  <span className="flex flex-col">
-                    <span>中 · medium</span>
-                    <span className="text-[10px] text-muted-foreground">适度思考</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="high">
-                  <span className="flex flex-col">
-                    <span>高 · high</span>
-                    <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="xhigh">
-                  <span className="flex flex-col">
-                    <span>极高 · xhigh</span>
-                    <span className="text-[10px] text-muted-foreground">更深层推理</span>
-                  </span>
-                </SelectItem>
-                <SelectItem value="disabled">
-                  <span className="flex flex-col">
-                    <span>关闭 · disabled</span>
-                    <span className="text-[10px] text-muted-foreground">关闭扩展思考 · thinking: disabled</span>
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+              <Select
+                items={effortItems}
+                value={effortLevel}
+                onValueChange={(v) => { if (v) onEffortLevelChange(v); }}
+              >
+                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
+                  <Brain className="mr-1 h-3 w-3 shrink-0 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">
+                    <span className="flex flex-col">
+                      <span>低 · low</span>
+                      <span className="text-[10px] text-muted-foreground">最少思考，最快响应</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="medium">
+                    <span className="flex flex-col">
+                      <span>中 · medium</span>
+                      <span className="text-[10px] text-muted-foreground">适度思考</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="high">
+                    <span className="flex flex-col">
+                      <span>高 · high</span>
+                      <span className="text-[10px] text-muted-foreground">深度推理（默认）</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="xhigh">
+                    <span className="flex flex-col">
+                      <span>极高 · xhigh</span>
+                      <span className="text-[10px] text-muted-foreground">更深层推理</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="disabled">
+                    <span className="flex flex-col">
+                      <span>关闭 · disabled</span>
+                      <span className="text-[10px] text-muted-foreground">关闭扩展思考 · thinking: disabled</span>
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {isRunning ? (
+                <ComposerPrimitive.Cancel
+                  render={
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 rounded-md text-muted-foreground/60 hover:text-foreground" aria-label="停止生成">
+                      <Square className="size-3.5" />
+                    </Button>
+                  }
+                />
+              ) : (
+                <ComposerPrimitive.Send
+                  render={
+                    <Button size="icon" className="h-7 w-7 shrink-0 rounded-md" aria-label="发送消息">
+                      <ArrowUp className="size-3.5" />
+                    </Button>
+                  }
+                />
+              )}
+          </div>
           </div>
         </div>
       </ComposerPrimitive.Root>
