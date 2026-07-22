@@ -133,7 +133,7 @@ export interface CreateSessionRequest {
   message: string;
   /** 启动时绑定的 profile id（null/缺省 = 不绑定） */
   profileId?: string | null;
-  /** 权限模式（缺省 = bypassPermissions 兼容旧客户端） */
+  /** 权限模式（缺省 = default，仅"完全访问"用 bypassPermissions） */
   permissionMode?: PermissionMode;
   /** 思考级别（缺省 = high） */
   effortLevel?: EffortLevel;

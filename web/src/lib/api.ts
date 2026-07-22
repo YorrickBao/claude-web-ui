@@ -102,7 +102,7 @@ export function createSession(
       message,
       title: opts.title,
       profileId: opts.profileId ?? null,
-      permissionMode: opts.permissionMode ?? "bypassPermissions",
+      permissionMode: opts.permissionMode ?? "default",
       effortLevel: opts.effortLevel ?? "default",
     }),
     signal,

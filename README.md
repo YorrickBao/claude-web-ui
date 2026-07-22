@@ -1,5 +1,9 @@
 # Claude WebUI
 
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)](https://nodejs.org/)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/YorrickBao/claude-web-ui)
+[![pnpm](https://img.shields.io/badge/pnpm-10.31-orange)](https://pnpm.io/)
+
 基于 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/typescript) (`@anthropic-ai/claude-agent-sdk`) 的浏览器聊天界面。在网页里用 Claude Code 的全部能力（工具调用、文件编辑、Bash 等），支持多会话、工作目录选择、历史回放。
 
 前端用 [assistant-ui](https://www.assistant-ui.com/) 的 headless Primitive（`ThreadPrimitive` / `MessagePrimitive` / `ComposerPrimitive`）+ Tailwind 自定义样式，**不依赖 shadcn**。

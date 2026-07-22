@@ -294,7 +294,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
           cwd: data.cwd ?? "",
           messages: data.messages ?? [],
           profileId: data.profileId ?? null,
-          permissionMode: data.permissionMode ?? "bypassPermissions",
+          permissionMode: data.permissionMode ?? "default",
           effortLevel: data.effortLevel ?? "default",
           runningStatus: data.runningStatus ?? "idle",
           inputTokens: data.inputTokens ?? 0,

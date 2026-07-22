@@ -26,7 +26,7 @@ export function NewSessionView() {
   const [browseError, setBrowseError] = useState<string | null>(null);
   
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [permissionMode, setPermissionMode] = useState<string>("bypassPermissions");
+  const [permissionMode, setPermissionMode] = useState<string>("default");
   const [effortLevel, setEffortLevel] = useState<string>("default");
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
 

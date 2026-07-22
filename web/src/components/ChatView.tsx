@@ -152,10 +152,10 @@ export function ChatView({
 
   // 当前生效的权限模式：初始值来自 prop；切换时本地更新
   const [permissionMode, setPermissionMode] = useState<string>(
-    initialPermissionMode ?? "bypassPermissions",
+    initialPermissionMode ?? "default",
   );
   useEffect(() => {
-    setPermissionMode(initialPermissionMode ?? "bypassPermissions");
+    setPermissionMode(initialPermissionMode ?? "default");
   }, [initialPermissionMode]);
 
   // 当前生效的思考级别：初始值来自 prop；切换时本地更新

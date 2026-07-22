@@ -89,8 +89,8 @@ export function useChatSSE({
   onModeRef.current = onModeChanged;
   const profileIdRef = useRef<string | null>(profileId ?? null);
   profileIdRef.current = profileId ?? null;
-  const permissionModeRef = useRef<string>(permissionMode ?? "bypassPermissions");
-  permissionModeRef.current = permissionMode ?? "bypassPermissions";
+  const permissionModeRef = useRef<string>(permissionMode ?? "default");
+  permissionModeRef.current = permissionMode ?? "default";
   const effortLevelRef = useRef<string>(effortLevel ?? "default");
   effortLevelRef.current = effortLevel ?? "default";
   const [activeSessionId, setActiveSessionId] = useState<string | null>(

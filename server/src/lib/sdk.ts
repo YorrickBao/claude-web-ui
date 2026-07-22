@@ -80,7 +80,7 @@ export interface RunQueryParams {
    * spread process.env 再覆盖。
    */
   env?: Record<string, string>;
-  /** 权限模式（缺省 = bypassPermissions 兼容旧调用） */
+  /** 权限模式（缺省 = default，仅"完全访问"用 bypassPermissions） */
   permissionMode?: PermissionMode;
   /** 思考级别（缺省 = high） */
   effortLevel?: EffortLevel;
@@ -96,7 +96,7 @@ export async function* runQuery(
       ? { ...process.env, ...params.env }
       : undefined;
 
-  const mode = params.permissionMode ?? "bypassPermissions";
+  const mode = params.permissionMode ?? "default";
   const isPlanMode = mode === "plan";
   const needsPermissionHook = mode !== "bypassPermissions";
 

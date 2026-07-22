@@ -73,7 +73,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           ((r.inputTokens ?? 0) + (r.outputTokens ?? 0) > 0
             ? "completed"
             : "idle"),
-        permissionMode: r.permissionMode ?? "bypassPermissions",
+        permissionMode: r.permissionMode ?? "default",
         effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
@@ -114,7 +114,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         createdAt: rec.createdAt,
         lastModified: rec.lastModified,
         profileId: rec.profileId ?? null,
-        permissionMode: rec.permissionMode ?? "bypassPermissions",
+        permissionMode: rec.permissionMode ?? "default",
         effortLevel: rec.effortLevel ?? "default",
         runningStatus:
           getInflightStatus(rec.sessionId) ??
@@ -290,7 +290,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const ctrl = new AbortController();
     let sessionId: string | undefined;
     const profileId = body.profileId ?? null;
-    const permissionMode = body.permissionMode ?? "bypassPermissions";
+    const permissionMode = body.permissionMode ?? "default";
     const effortLevel = body.effortLevel ?? "default";
     /** 总线订阅取消函数（session_created 后赋值，finally 中清理） */
     let unsubBusEvents: (() => void) | null = null;
@@ -434,7 +434,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         prompt: body.message,
         resume: sessionId,
         abortController: ctrl,
-        permissionMode: rec.permissionMode ?? "bypassPermissions",
+        permissionMode: rec.permissionMode ?? "default",
         effortLevel: rec.effortLevel ?? "default",
         env: await resolveSessionEnv(sessionId),
       });
@@ -614,7 +614,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found" });
     }
     const mode = req.body?.permissionMode;
-    const validModes = ["bypassPermissions", "default", "acceptEdits", "plan", "dontAsk", "auto"];
+    const validModes = ["default", "acceptEdits", "plan", "dontAsk", "auto", "bypassPermissions"];
     if (!validModes.includes(mode as string)) {
       return reply.code(400).send({ error: "invalid permissionMode" });
     }
