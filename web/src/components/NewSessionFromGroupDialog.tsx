@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Folder, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +36,7 @@ export function NewSessionFromGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5 text-primary" />
@@ -44,27 +44,8 @@ export function NewSessionFromGroupDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* 工作目录（只读） */}
-          <div>
-            <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-              工作目录
-            </span>
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-foreground">
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate" title={cwd ?? ""}>
-                {cwd ?? "—"}
-              </span>
-            </div>
-          </div>
-
-          {/* Profile 选择 */}
-          <div>
-            <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-              环境变量配置（profile）
-            </span>
-            <ProfileSelect value={profileId} onChange={setProfileId} />
-          </div>
+        <div className="py-2">
+          <ProfileSelect value={profileId} onChange={setProfileId} />
         </div>
 
         <DialogFooter>
