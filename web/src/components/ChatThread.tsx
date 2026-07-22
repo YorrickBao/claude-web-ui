@@ -7,6 +7,16 @@ import { ArrowUp, Square } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useEffect, useState } from "react";
+import { listProfiles } from "@/lib/api";
+import type { EnvProfile } from "@/lib/types";
+import {
   BashToolUI,
   EditToolUI,
   WriteToolUI,
@@ -19,7 +29,27 @@ import {
  * assistant-ui Primitive 搭 Tailwind 的 Thread。
  * 使用 shadcn/ui (Base UI) Button。
  */
-export function ChatThread() {
+interface ChatThreadProps {
+  profileId: string | null;
+  permissionMode: string;
+  onProfileChange: (id: string | null) => void;
+  onPermissionModeChange: (mode: string) => void;
+}
+
+export function ChatThread({
+  profileId,
+  permissionMode,
+  onProfileChange,
+  onPermissionModeChange,
+}: ChatThreadProps) {
+  const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+
+  useEffect(() => {
+    listProfiles()
+      .then(setProfiles)
+      .catch(() => setProfiles([]));
+  }, []);
+
   return (
     <ThreadPrimitive.Root className="flex h-full flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -63,6 +93,38 @@ export function ChatThread() {
                 </Button>
               }
             />
+          </div>
+          {/* 简化选择器：无 label，无管理按钮 */}
+          <div className="mt-2 flex items-center gap-2">
+            <Select
+              value={profileId ?? ""}
+              onValueChange={(v) => onProfileChange(v || null)}
+            >
+              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+                <SelectValue placeholder="profile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">默认</SelectItem>
+                {profiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={permissionMode}
+              onValueChange={(v) => v && onPermissionModeChange(v)}
+            >
+              <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px] text-muted-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bypassPermissions">完全访问</SelectItem>
+                <SelectItem value="default">标准模式</SelectItem>
+                <SelectItem value="acceptEdits">自动编辑</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <p className="mt-2 text-center text-[0.7rem] text-muted-foreground/35">
             Enter 发送  ·  Shift + Enter 换行
