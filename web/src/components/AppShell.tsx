@@ -21,7 +21,7 @@ export function AppShell() {
   // ── /pending：新会话草稿态 ──
   if (path === "/pending") {
     const state = location.state as
-      | { cwd?: string; firstMessage?: string }
+      | { cwd?: string; firstMessage?: string; profileId?: string | null }
       | null;
     const cwd = state?.cwd ?? null;
     if (!cwd) {
@@ -37,6 +37,7 @@ export function AppShell() {
           cwd={cwd}
           title="新会话"
           subtitle={cwd}
+          initialProfileId={state?.profileId ?? null}
         />
       </Shell>
     );
@@ -76,6 +77,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     title: string;
     cwd: string;
     messages: ThreadMessageLike[];
+    profileId: string | null;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -94,6 +96,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
           title: data.title ?? sessionId,
           cwd: data.cwd ?? "",
           messages: (data.messages ?? []) as ThreadMessageLike[],
+          profileId: data.profileId ?? null,
         });
       })
       .catch((e) => {
@@ -126,6 +129,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
       title={meta.title}
       subtitle={meta.cwd}
       initialMessages={meta.messages}
+      initialProfileId={meta.profileId}
     />
   );
 }

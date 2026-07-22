@@ -15,6 +15,7 @@ web/src/**/*.js.map
 # data
 server/data/sessions.json
 server/data/env-defaults.json
+server/data/profiles.json
 server/data/*.log
 
 # env

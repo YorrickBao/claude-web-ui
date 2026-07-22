@@ -32,12 +32,15 @@ type AnyPart = { type: string; [k: string]: unknown };
 export interface UseChatSSEOptions {
   sessionId: string | null;
   cwd: string | null;
+  /** 新建会话时使用的 profile id */
+  profileId?: string | null;
   onSessionCreated?: (sessionId: string) => void;
 }
 
 export function useChatSSE({
   sessionId,
   cwd,
+  profileId,
   onSessionCreated,
 }: UseChatSSEOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -53,6 +56,9 @@ export function useChatSSE({
   const sessionIdRef = useRef<string | null>(sessionId);
   const onCreatedRef = useRef(onSessionCreated);
   onCreatedRef.current = onSessionCreated;
+  // profileId 用 ref，避免 ExternalStoreRuntime 缓存 onNew 闭包导致拿到旧值
+  const profileIdRef = useRef<string | null>(profileId ?? null);
+  profileIdRef.current = profileId ?? null;
   // 暴露给 UI 的"当前生效 sessionId"——session_created 时更新，
   // 这样 pending → 真实会话过渡时组件能感知（按钮显示等）
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
@@ -100,7 +106,12 @@ export function useChatSSE({
       try {
         const res = sessionIdRef.current
           ? await sendMessage(sessionIdRef.current, text, ctrl.signal)
-          : await createSession(cwd ?? "", text, {}, ctrl.signal);
+          : await createSession(
+              cwd ?? "",
+              text,
+              { profileId: profileIdRef.current },
+              ctrl.signal,
+            );
 
         if (!res.ok || !res.body) {
           const errText = await res.text().catch(() => "");

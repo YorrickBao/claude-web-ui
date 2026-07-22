@@ -1,69 +1,81 @@
 import fsp from "node:fs/promises";
-import { DATA_DIR, ENV_DEFAULTS_FILE, SESSIONS_FILE } from "../env.js";
-import type { SessionRecord, SessionsFile } from "./types.js";
+import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
+import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 
-const EMPTY: SessionsFile = { sessions: [] };
+const EMPTY_SESSIONS: SessionsFile = { sessions: [] };
+const EMPTY_PROFILES: { profiles: EnvProfile[] } = { profiles: [] };
 
 /** 确保数据目录 + 文件存在 */
-async function ensureFile(): Promise<void> {
+async function ensureFiles(): Promise<void> {
   await fsp.mkdir(DATA_DIR, { recursive: true });
+  await Promise.all([
+    ensureFile(SESSIONS_FILE, JSON.stringify(EMPTY_SESSIONS)),
+    ensureFile(PROFILES_FILE, JSON.stringify(EMPTY_PROFILES)),
+  ]);
+}
+
+async function ensureFile(p: string, defaultContent: string): Promise<void> {
   try {
-    await fsp.access(SESSIONS_FILE);
+    await fsp.access(p);
   } catch {
-    await writeRaw(EMPTY);
+    await fsp.writeFile(p, defaultContent, "utf8");
   }
 }
 
-/** 原子写：写到 .tmp 再 rename */
-async function writeRaw(data: SessionsFile): Promise<void> {
-  const tmp = SESSIONS_FILE + ".tmp";
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
-  await fsp.rename(tmp, SESSIONS_FILE);
+/** 原子写 */
+async function writeFile_atomic(p: string, content: string): Promise<void> {
+  const tmp = p + ".tmp";
+  await fsp.writeFile(tmp, content, "utf8");
+  await fsp.rename(tmp, p);
 }
 
-/** 读全部（单用户场景并发量低，简单读即可） */
-async function readAll(): Promise<SessionsFile> {
-  await ensureFile();
+// ─────────────────────────────────────────────────────────────
+// sessions.json
+// ─────────────────────────────────────────────────────────────
+
+async function readAllSessions(): Promise<SessionsFile> {
+  await ensureFiles();
   try {
     const raw = await fsp.readFile(SESSIONS_FILE, "utf8");
     return JSON.parse(raw) as SessionsFile;
   } catch {
-    return EMPTY;
+    return EMPTY_SESSIONS;
   }
 }
 
+async function writeSessions(data: SessionsFile): Promise<void> {
+  await writeFile_atomic(SESSIONS_FILE, JSON.stringify(data, null, 2));
+}
+
 export async function listSessions(): Promise<SessionRecord[]> {
-  const data = await readAll();
+  const data = await readAllSessions();
   return [...data.sessions].sort((a, b) => b.lastModified - a.lastModified);
 }
 
 export async function getSession(
   sessionId: string,
 ): Promise<SessionRecord | undefined> {
-  const data = await readAll();
+  const data = await readAllSessions();
   return data.sessions.find((s) => s.sessionId === sessionId);
 }
 
 export async function upsertSession(record: SessionRecord): Promise<void> {
-  const data = await readAll();
-  const idx = data.sessions.findIndex(
-    (s) => s.sessionId === record.sessionId,
-  );
+  const data = await readAllSessions();
+  const idx = data.sessions.findIndex((s) => s.sessionId === record.sessionId);
   if (idx >= 0) {
     data.sessions[idx] = { ...data.sessions[idx], ...record };
   } else {
     data.sessions.push(record);
   }
-  await writeRaw(data);
+  await writeSessions(data);
 }
 
-/** 标记会话最近活跃时间 */
 export async function touchSession(
   sessionId: string,
   patch: Partial<SessionRecord> = {},
 ): Promise<void> {
-  const data = await readAll();
+  const data = await readAllSessions();
   const idx = data.sessions.findIndex((s) => s.sessionId === sessionId);
   if (idx < 0) return;
   data.sessions[idx] = {
@@ -71,78 +83,127 @@ export async function touchSession(
     ...patch,
     lastModified: Date.now(),
   };
-  await writeRaw(data);
+  await writeSessions(data);
 }
 
 // ─────────────────────────────────────────────────────────────
-// env 默认值（全局）：env-defaults.json
+// profiles.json
 // ─────────────────────────────────────────────────────────────
 
-async function readEnvDefaultsRaw(): Promise<Record<string, string>> {
-  await ensureFile();
+async function readAllProfiles(): Promise<{ profiles: EnvProfile[] }> {
+  await ensureFiles();
   try {
-    const raw = await fsp.readFile(ENV_DEFAULTS_FILE, "utf8");
-    return JSON.parse(raw) as Record<string, string>;
+    const raw = await fsp.readFile(PROFILES_FILE, "utf8");
+    return JSON.parse(raw) as { profiles: EnvProfile[] };
   } catch {
-    return {};
+    return EMPTY_PROFILES;
   }
 }
 
-async function writeEnvDefaultsRaw(values: Record<string, string>): Promise<void> {
-  const tmp = ENV_DEFAULTS_FILE + ".tmp";
-  await fsp.writeFile(tmp, JSON.stringify(values, null, 2), "utf8");
-  await fsp.rename(tmp, ENV_DEFAULTS_FILE);
+async function writeProfiles(data: { profiles: EnvProfile[] }): Promise<void> {
+  await writeFile_atomic(PROFILES_FILE, JSON.stringify(data, null, 2));
 }
 
-/** 读取全局 env 默认值（带白名单 + 补全所有键，给前端表单用） */
-export async function getEnvDefaults(): Promise<Record<string, string>> {
-  return normalizeEnvValues(await readEnvDefaultsRaw());
+export async function listProfiles(): Promise<EnvProfile[]> {
+  const data = await readAllProfiles();
+  return [...data.profiles].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/** 写全局 env 默认值（输入先 prune 过滤白名单/空值） */
-export async function setEnvDefaults(
-  input: unknown,
-): Promise<Record<string, string>> {
-  const pruned = pruneEnvValues(input);
-  await writeEnvDefaultsRaw(pruned);
-  return normalizeEnvValues(pruned);
+export async function getProfile(id: string): Promise<EnvProfile | undefined> {
+  const data = await readAllProfiles();
+  return data.profiles.find((p) => p.id === id);
 }
 
-/** 只读全局默认（pruned，不带补全空键）—— 用于新建会话场景 */
-export async function getGlobalEnv(): Promise<Record<string, string>> {
-  return pruneEnvValues(await readEnvDefaultsRaw());
+export async function createProfile(
+  name: string,
+  envInput: unknown,
+): Promise<EnvProfile> {
+  const data = await readAllProfiles();
+  const profile: EnvProfile = {
+    id: crypto.randomUUID(),
+    name: name.trim() || "未命名",
+    env: normalizeEnvValues(envInput),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  data.profiles.push(profile);
+  await writeProfiles(data);
+  return profile;
+}
+
+export async function updateProfile(
+  id: string,
+  patch: { name?: string; env?: unknown },
+): Promise<EnvProfile | undefined> {
+  const data = await readAllProfiles();
+  const idx = data.profiles.findIndex((p) => p.id === id);
+  if (idx < 0) return undefined;
+  const cur = data.profiles[idx];
+  const updated: EnvProfile = {
+    ...cur,
+    ...(patch.name !== undefined ? { name: patch.name.trim() || cur.name } : {}),
+    ...(patch.env !== undefined ? { env: normalizeEnvValues(patch.env) } : {}),
+    updatedAt: Date.now(),
+  };
+  data.profiles[idx] = updated;
+  await writeProfiles(data);
+  return updated;
+}
+
+export async function deleteProfile(id: string): Promise<boolean> {
+  const data = await readAllProfiles();
+  const before = data.profiles.length;
+  data.profiles = data.profiles.filter((p) => p.id !== id);
+  if (data.profiles.length === before) return false;
+  await writeProfiles(data);
+
+  // 同步清理引用了这个 profile 的会话（解绑）
+  const sessions = await readAllSessions();
+  let changed = false;
+  for (const s of sessions.sessions) {
+    if (s.profileId === id) {
+      s.profileId = null;
+      changed = true;
+    }
+  }
+  if (changed) await writeSessions(sessions);
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 会话 ↔ profile 绑定
+// ─────────────────────────────────────────────────────────────
+
+/** 设置会话当前使用的 profile（null = 解绑，纯 CLI 默认） */
+export async function setSessionProfile(
+  sessionId: string,
+  profileId: string | null,
+): Promise<void> {
+  await touchSession(sessionId, { profileId });
 }
 
 /**
- * 计算某会话最终生效的 env：
- *   { ...prune(env-defaults), ...prune(session.envOverrides) }
- * 会话级覆盖全局。
+ * 计算某会话当前生效的 env：
+ *   - 绑定 profile → 该 profile 的 env（pruned）
+ *   - 未绑定 / profile 不存在 → 空（用 CLI 默认）
  */
 export async function resolveSessionEnv(
   sessionId: string,
 ): Promise<Record<string, string>> {
-  const base = pruneEnvValues(await readEnvDefaultsRaw());
   const session = await getSession(sessionId);
-  const overrides = pruneEnvValues(session?.envOverrides);
-  return { ...base, ...overrides };
+  if (!session?.profileId) return {};
+  return resolveProfileEnv(session.profileId);
 }
 
-/** 更新某会话的 env override（整体替换，只动 envOverrides 字段） */
-export async function setSessionEnvOverrides(
-  sessionId: string,
-  input: unknown,
+/**
+ * 按 profileId 直接拿 env（不经过会话，用于新建会话场景）。
+ * profileId 为 null/undefined/不存在 → 返回空。
+ */
+export async function resolveProfileEnv(
+  profileId: string | null | undefined,
 ): Promise<Record<string, string>> {
-  const pruned = pruneEnvValues(input);
-  const data = await readAll();
-  const idx = data.sessions.findIndex((s) => s.sessionId === sessionId);
-  if (idx < 0) {
-    throw new Error(`session not found: ${sessionId}`);
-  }
-  data.sessions[idx] = {
-    ...data.sessions[idx],
-    envOverrides: pruned,
-    lastModified: Date.now(),
-  };
-  await writeRaw(data);
-  return normalizeEnvValues(pruned);
+  if (!profileId) return {};
+  const profile = await getProfile(profileId);
+  if (!profile) return {};
+  return pruneEnvValues(profile.env);
 }

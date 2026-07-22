@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Plus, MessageSquare, RefreshCw, Settings } from "lucide-react";
 import { useState } from "react";
 import { useSessions } from "@/hooks/useSessions";
-import { EnvSettingsModal } from "@/components/EnvSettingsModal";
+import { ProfileManagerModal } from "@/components/ProfileManagerModal";
 
 export function Sidebar() {
   const { sessions, loading, error, refresh } = useSessions();
@@ -84,17 +84,17 @@ export function Sidebar() {
           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
         >
           <Settings className="h-3.5 w-3.5" />
-          环境变量
+          配置管理
         </button>
         <div className="mt-1 px-2 text-[10px] text-neutral-600">
           bypassPermissions 模式 · 仅本地
         </div>
       </div>
 
-      <EnvSettingsModal
+      <ProfileManagerModal
         open={envOpen}
         onClose={() => setEnvOpen(false)}
-        scope="global"
+        onChanged={refresh}
       />
     </aside>
   );

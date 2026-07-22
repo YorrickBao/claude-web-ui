@@ -57,13 +57,18 @@ export function sendMessage(
 export function createSession(
   cwd: string,
   message: string,
-  opts: { title?: string } = {},
+  opts: { title?: string; profileId?: string | null } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
   return fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd, message, title: opts.title }),
+    body: JSON.stringify({
+      cwd,
+      message,
+      title: opts.title,
+      profileId: opts.profileId ?? null,
+    }),
     signal,
   });
 }
@@ -74,52 +79,62 @@ function id(s: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────
-// env 配置
+// profiles（环境变量配置）+ 会话绑定
 // ─────────────────────────────────────────────────────────────
 
-/** 读取全局 env 默认值 */
-export async function getEnvDefaults(): Promise<Record<string, string>> {
-  const res = await fetch("/api/env-defaults");
-  if (!res.ok) throw new Error(`getEnvDefaults: ${res.status}`);
-  const data = (await res.json()) as { env: Record<string, string> };
-  return data.env;
+import type { EnvProfile } from "@/lib/types";
+
+export async function listProfiles(): Promise<EnvProfile[]> {
+  const res = await fetch("/api/profiles");
+  if (!res.ok) throw new Error(`listProfiles: ${res.status}`);
+  const data = (await res.json()) as { profiles: EnvProfile[] };
+  return data.profiles;
 }
 
-/** 写全局 env 默认值 */
-export async function setEnvDefaults(
+export async function createProfile(
+  name: string,
   env: Record<string, string>,
-): Promise<Record<string, string>> {
-  const res = await fetch("/api/env-defaults", {
+): Promise<EnvProfile> {
+  const res = await fetch("/api/profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, env }),
+  });
+  if (!res.ok) throw new Error(`createProfile: ${res.status}`);
+  const data = (await res.json()) as { profile: EnvProfile };
+  return data.profile;
+}
+
+export async function updateProfile(
+  profileId: string,
+  patch: { name?: string; env?: Record<string, string> },
+): Promise<EnvProfile> {
+  const res = await fetch(`/api/profiles/${id(profileId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ env }),
+    body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`setEnvDefaults: ${res.status}`);
-  const data = (await res.json()) as { env: Record<string, string> };
-  return data.env;
+  if (!res.ok) throw new Error(`updateProfile: ${res.status}`);
+  const data = (await res.json()) as { profile: EnvProfile };
+  return data.profile;
 }
 
-/** 读取某会话生效的 env（已合并全局默认 + 会话级 override） */
-export async function getSessionEnv(
-  sessionId: string,
-): Promise<Record<string, string>> {
-  const res = await fetch(`/api/sessions/${id(sessionId)}/env`);
-  if (!res.ok) throw new Error(`getSessionEnv: ${res.status}`);
-  const data = (await res.json()) as { env: Record<string, string> };
-  return data.env;
+export async function deleteProfile(profileId: string): Promise<void> {
+  const res = await fetch(`/api/profiles/${id(profileId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`deleteProfile: ${res.status}`);
 }
 
-/** 写某会话的 env override（整体替换会话级） */
-export async function setSessionEnv(
+/** 切换会话绑定的 profile（null = 解绑，纯 CLI 默认） */
+export async function setSessionProfile(
   sessionId: string,
-  env: Record<string, string>,
-): Promise<Record<string, string>> {
-  const res = await fetch(`/api/sessions/${id(sessionId)}/env`, {
+  profileId: string | null,
+): Promise<void> {
+  const res = await fetch(`/api/sessions/${id(sessionId)}/profile`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ env }),
+    body: JSON.stringify({ profileId }),
   });
-  if (!res.ok) throw new Error(`setSessionEnv: ${res.status}`);
-  const data = (await res.json()) as { env: Record<string, string> };
-  return data.env;
+  if (!res.ok) throw new Error(`setSessionProfile: ${res.status}`);
 }

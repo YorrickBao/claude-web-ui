@@ -124,7 +124,13 @@ web/                 Vite + React + assistant-ui 前端
 
 ### Claude 子进程（UI 里配）
 
-在 UI 里可配置传给 `claude` 子进程的环境变量。**两层结构**：全局默认（所有新会话初始值）+ 会话级 override（覆盖全局）。两种都在 Sidebar 底部"环境变量"按钮 / 会话头部滑块按钮里编辑。
+在 UI 里管理多套**环境变量配置（profile）**，新建会话时选一套启动，会话进行中也可切换。
+
+**两个入口**：
+- Sidebar 底部"配置管理"按钮 → 管理 profile（增删改查、复制）
+- 新建会话页 / 会话头部 → 选 profile 下拉 + 旁边齿轮快速管理
+
+**模型**：没 profile = 空 env = 完全用 CLI 默认。会话随时可切换 profile，只影响后续消息（SDK resume 用新 profile 的 env）。
 
 支持的字段（CLI 真实认的，已从二进制核实）：
 
@@ -141,15 +147,9 @@ web/                 Vite + React + assistant-ui 前端
 | `CLAUDE_CODE_SUBAGENT_MODEL` | 子 agent 模型 |
 
 **实现**：
-- 后端 `query()` 调用时传 `env: { ...process.env, ...overrides }`（SDK 的 env 是完全替换，必须 spread process.env）。
-- 存储：全局默认在 `server/data/env-defaults.json`，会话级在 `sessions.json` 每条记录的 `envOverrides` 字段。两个文件都已 gitignore（含 token）。
-- 会话级 modal 展示的是"全局 + 会话 override 合并后的生效值"，保存时整体写回会话级。**取舍**：一旦会话自定义过 env，后续改全局默认它不再感知（它的 override 已固化）。
-
-数据文件：
-- `server/data/sessions.json` —— 会话元信息 + 会话级 env override
-- `server/data/env-defaults.json` —— 全局 env 默认值
-
-两个都已 gitignore（可能含 token）。
+- 后端 `query()` 调用时传 `env: { ...process.env, ...profile.env }`（SDK 的 env 是完全替换，必须 spread process.env）。
+- 存储：profile 在 `server/data/profiles.json`；会话与 profile 的绑定在 `sessions.json` 每条记录的 `profileId` 字段。两个文件都已 gitignore（含 token）。
+- 删除 profile 时，引用它的会话自动解绑（profileId 置 null）。
 
 ## 已知限制 / 后续可做
 

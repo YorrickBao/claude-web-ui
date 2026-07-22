@@ -3,12 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Folder, ArrowRight } from "lucide-react";
 import { browse } from "@/lib/api";
 import type { DirEntry } from "@/lib/types";
+import { ProfileSelect } from "@/components/ProfileSelect";
 
 /**
- * 新建会话视图：选工作目录 + 输入第一条消息。
- *
- * 第一版用"输入框 + 目录建议下拉"。
- * 后续可以升级成完整树形浏览器（DirectoryPicker）。
+ * 新建会话视图：选工作目录 + 选 profile + 输入第一条消息。
  */
 export function NewSessionView() {
   const navigate = useNavigate();
@@ -16,6 +14,7 @@ export function NewSessionView() {
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   // 初次加载：尝试 home 目录
   useEffect(() => {
@@ -53,7 +52,7 @@ export function NewSessionView() {
     if (!cwd) return;
     // 跳到一个"待创建"的聊天页：sessionId=null，首条消息通过 ChatView 触发后端创建
     navigate("/pending", {
-      state: { cwd, firstMessage: message },
+      state: { cwd, firstMessage: message, profileId },
     });
   }
 
@@ -125,6 +124,14 @@ export function NewSessionView() {
             </button>
           ))
         )}
+      </div>
+
+      {/* 环境变量 profile */}
+      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+        环境变量配置（profile）
+      </label>
+      <div className="mb-6">
+        <ProfileSelect value={profileId} onChange={setProfileId} />
       </div>
 
       {/* 首条消息（可选） */}

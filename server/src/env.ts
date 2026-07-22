@@ -15,8 +15,8 @@ export const DATA_DIR = path.join(SERVER_DIR, "data");
 /** sessions.json 路径 */
 export const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 
-/** env 默认值（全局）路径 */
-export const ENV_DEFAULTS_FILE = path.join(DATA_DIR, "env-defaults.json");
+/** profiles.json 路径（所有环境变量配置） */
+export const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 
 /** 前端构建产物（生产模式静态托管） */
 export const WEB_DIST_DIR = path.join(ROOT_DIR, "web", "dist");

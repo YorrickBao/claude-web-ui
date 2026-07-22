@@ -6,11 +6,13 @@ import {
   listSessions,
   upsertSession,
   touchSession,
-  getEnvDefaults,
-  setEnvDefaults,
-  getGlobalEnv,
+  listProfiles,
+  createProfile,
+  updateProfile,
+  deleteProfile,
   resolveSessionEnv,
-  setSessionEnvOverrides,
+  resolveProfileEnv,
+  setSessionProfile,
 } from "../lib/store.js";
 import { runQuery } from "../lib/sdk.js";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
@@ -25,10 +27,6 @@ import type {
   SessionView,
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
-import { normalizeEnvValues } from "../lib/envFields.js";
-
-/** 返回给前端时补全所有白名单键（空值给空串，方便表单回填） */
-const normalizeForClient = normalizeEnvValues;
 
 async function resolveTitle(
   title: string | undefined,
@@ -52,6 +50,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       firstPrompt: r.firstPrompt,
       createdAt: r.createdAt,
       lastModified: r.lastModified,
+      profileId: r.profileId ?? null,
     }));
     return reply.send({ sessions: views });
   });
@@ -84,6 +83,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         firstPrompt: rec.firstPrompt,
         createdAt: rec.createdAt,
         lastModified: rec.lastModified,
+        profileId: rec.profileId ?? null,
         messages: history,
       });
     },
@@ -119,14 +119,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     initSSE(reply);
     const ctrl = new AbortController();
     let sessionId: string | undefined;
+    const profileId = body.profileId ?? null;
 
     try {
       const stream = runQuery({
         cwd: body.cwd,
         prompt: body.message,
         abortController: ctrl,
-        // 新会话：env 用全局默认（会话还没建立，没有 session 级 override）
-        env: await getGlobalEnv(),
+        // 新会话：env 来自用户选的 profile（可能为空）
+        env: await resolveProfileEnv(profileId),
       });
 
       // 新会话要等拿到 session_created 才能登记 inflight + store
@@ -145,6 +146,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           firstPrompt,
           createdAt: Date.now(),
           lastModified: Date.now(),
+          profileId,
         });
         registered = true;
       };
@@ -239,49 +241,55 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ───────────────────────────────────────────────────────────
-  // GET/PUT /api/env-defaults —— 全局 env 默认值
+  // Profiles CRUD: /api/profiles
   // ───────────────────────────────────────────────────────────
-  app.get("/api/env-defaults", async (_req, reply) => {
-    return reply.send({ env: await getEnvDefaults() });
+  app.get("/api/profiles", async (_req, reply) => {
+    return reply.send({ profiles: await listProfiles() });
   });
 
-  app.put<{
-    Body: { env?: Record<string, unknown> };
-  }>("/api/env-defaults", async (req, reply) => {
-    const env = await setEnvDefaults(req.body?.env);
-    return reply.send({ env });
+  app.post<{
+    Body: { name?: string; env?: Record<string, unknown> };
+  }>("/api/profiles", async (req, reply) => {
+    const profile = await createProfile(req.body?.name ?? "新配置", req.body?.env);
+    return reply.send({ profile });
   });
-
-  // ───────────────────────────────────────────────────────────
-  // GET/PUT /api/sessions/:id/env —— 会话级 env override
-  // 返回时合并全局默认（前端展示用），保存时只存 override 差异
-  // ───────────────────────────────────────────────────────────
-  app.get<{ Params: { id: string } }>(
-    "/api/sessions/:id/env",
-    async (req, reply) => {
-      const rec = await getSession(req.params.id);
-      if (!rec) {
-        return reply.code(404).send({ error: "session not found" });
-      }
-      // 返回"合并后的生效值"（全局 + 会话级），前端展示用
-      const merged = await resolveSessionEnv(req.params.id);
-      return reply.send({ env: normalizeForClient(merged) });
-    },
-  );
 
   app.put<{
     Params: { id: string };
-    Body: { env?: Record<string, unknown> };
-  }>("/api/sessions/:id/env", async (req, reply) => {
-    try {
-      const env = await setSessionEnvOverrides(
-        req.params.id,
-        req.body?.env,
-      );
-      return reply.send({ env });
-    } catch {
+    Body: { name?: string; env?: Record<string, unknown> };
+  }>("/api/profiles/:id", async (req, reply) => {
+    const profile = await updateProfile(req.params.id, {
+      name: req.body?.name,
+      env: req.body?.env,
+    });
+    if (!profile) return reply.code(404).send({ error: "profile not found" });
+    return reply.send({ profile });
+  });
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/profiles/:id",
+    async (req, reply) => {
+      const ok = await deleteProfile(req.params.id);
+      if (!ok) return reply.code(404).send({ error: "profile not found" });
+      return reply.send({ ok: true });
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
+  // PUT /api/sessions/:id/profile —— 切换会话绑定的 profile
+  // body: { profileId: string | null }
+  // ───────────────────────────────────────────────────────────
+  app.put<{
+    Params: { id: string };
+    Body: { profileId?: string | null };
+  }>("/api/sessions/:id/profile", async (req, reply) => {
+    const rec = await getSession(req.params.id);
+    if (!rec) {
       return reply.code(404).send({ error: "session not found" });
     }
+    const profileId = req.body?.profileId ?? null;
+    await setSessionProfile(req.params.id, profileId);
+    return reply.send({ ok: true, profileId });
   });
 
   // ───────────────────────────────────────────────────────────

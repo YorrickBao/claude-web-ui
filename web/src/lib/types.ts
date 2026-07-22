@@ -26,6 +26,16 @@ export interface SessionView {
   firstPrompt: string | null;
   createdAt: number;
   lastModified: number;
+  profileId: string | null;
+}
+
+/** 一套环境变量配置 */
+export interface EnvProfile {
+  id: string;
+  name: string;
+  env: Record<string, string>;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** /api/browse 返回的目录项 */
