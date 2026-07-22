@@ -37,7 +37,19 @@ export function setInflightRunning(sessionId: string): void {
   }
 }
 
-export function clearInflight(sessionId: string): void {
+/**
+ * 清理 inflight 记录。
+ *
+ * @param sessionId 会话 ID
+ * @param ctrl      可选：仅当 inflight 中存储的 AbortController === ctrl 时才清除。
+ *                  不传则强制清除（DELETE 路由等场景）。
+ */
+export function clearInflight(sessionId: string, ctrl?: AbortController): void {
+  if (ctrl) {
+    const entry = inflight.get(sessionId);
+    // 只有当控制器匹配时才清除 —— 防止旧请求的 finally 误删新请求的 inflight
+    if (!entry || entry.ctrl !== ctrl) return;
+  }
   // 清理该会话所有 pending permissions
   clearPendingPermissions(sessionId);
   inflight.delete(sessionId);

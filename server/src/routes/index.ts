@@ -376,7 +376,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (sessionId) {
         finalizeSession(sessionId);
         emitSessionEnd(sessionId);
-        clearInflight(sessionId);
+        // 传入当前 AbortController，防止旧请求的 finally
+        // 误删已被新请求 setInflight 覆盖的 inflight 记录
+        clearInflight(sessionId, ctrl);
         await touchSession(sessionId);
       }
       endSSE(reply);
