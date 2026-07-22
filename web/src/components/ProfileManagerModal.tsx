@@ -12,6 +12,7 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { ENV_FIELDS, pruneEnvValues, type EnvValues } from "@/lib/envFields";
 import {
   listProfiles,
@@ -92,56 +93,84 @@ export function ProfileManagerModal({
     setFeishuBindingStatus(null);
 
     try {
-      const res = await fetch("/api/feishu/connect", { method: "POST" });
+      const res = await fetch("/api/feishu/connect", { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
+      let buffer = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value);
-        const lines = text.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            const eventType = line.replace("event: ", "").trim();
-            const nextLine = lines[lines.indexOf(line) + 1];
-            if (nextLine?.startsWith("data: ")) {
+        buffer += decoder.decode(value);
+        
+        while (buffer.includes("\n\n")) {
+          const boundaryIndex = buffer.indexOf("\n\n");
+          const eventBlock = buffer.substring(0, boundaryIndex);
+          buffer = buffer.substring(boundaryIndex + 2);
+
+          const lines = eventBlock.split("\n");
+          let eventType = "";
+          let eventData: Record<string, unknown> = {};
+
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventType = line.replace("event: ", "").trim();
+            } else if (line.startsWith("data: ")) {
               try {
-                const data = JSON.parse(nextLine.replace("data: ", "").trim());
-                if (eventType === "qr_code") {
-                  setFeishuQRCode(data.url);
-                } else if (eventType === "waiting_for_scan") {
-                  setFeishuBindingStatus("waiting");
-                } else if (eventType === "connected") {
-                  setFeishuBindingStatus("connected");
-                  setFeishuStatus({ connected: true, appId: data.appId, domain: data.domain });
-                  setTimeout(() => {
-                    setFeishuBinding(false);
-                    setFeishuQRCode(null);
-                    setFeishuBindingStatus(null);
-                  }, 2000);
-                } else if (eventType === "error") {
-                  setFeishuBindingStatus("error");
-                  setFeishuBinding(false);
-                } else if (eventType === "success") {
-                  setFeishuBindingStatus("success");
-                  setFeishuStatus({ connected: true, appId: data.appId, domain: data.domain });
-                  setTimeout(() => {
-                    setFeishuBinding(false);
-                    setFeishuQRCode(null);
-                    setFeishuBindingStatus(null);
-                  }, 2000);
-                }
+                eventData = JSON.parse(line.replace("data: ", "").trim());
               } catch {
                 // ignore parse errors
               }
             }
           }
+
+          if (eventType === "qr_code" && eventData.url) {
+            setFeishuQRCode(String(eventData.url));
+          } else if (eventType === "waiting_for_scan") {
+            setFeishuBindingStatus("waiting");
+          } else if (eventType === "connected") {
+            setFeishuBindingStatus("connected");
+            setFeishuStatus({ 
+              connected: true, 
+              appId: String(eventData.appId || ""), 
+              domain: String(eventData.domain || "feishu") 
+            });
+            setTimeout(() => {
+              setFeishuBinding(false);
+              setFeishuQRCode(null);
+              setFeishuBindingStatus(null);
+            }, 2000);
+          } else if (eventType === "error") {
+            setFeishuBindingStatus("error");
+            setFeishuBinding(false);
+          } else if (eventType === "success") {
+            setFeishuBindingStatus("success");
+            setFeishuStatus({ 
+              connected: true, 
+              appId: String(eventData.appId || ""), 
+              domain: String(eventData.domain || "feishu") 
+            });
+            setTimeout(() => {
+              setFeishuBinding(false);
+              setFeishuQRCode(null);
+              setFeishuBindingStatus(null);
+            }, 2000);
+          }
         }
       }
     } catch (e) {
+      console.error("Feishu bind error:", e);
       setFeishuBindingStatus("error");
       setFeishuBinding(false);
     }
@@ -253,7 +282,9 @@ export function ProfileManagerModal({
               {feishuQRCode ? (
                 <>
                   <div className="text-sm text-muted-foreground">使用飞书扫码绑定</div>
-                  <img src={feishuQRCode} alt="QR Code" className="h-48 w-48 rounded-lg border border-border" />
+                  <div className="rounded-lg border border-border bg-white p-2">
+                    <QRCodeSVG value={feishuQRCode} size={180} level="H" />
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {feishuBindingStatus === "waiting" && "等待扫码..."}
                     {feishuBindingStatus === "connected" && "✓ 绑定成功！"}
