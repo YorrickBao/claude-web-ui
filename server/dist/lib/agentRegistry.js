@@ -149,6 +149,14 @@ export function getSessionStats(sessionId) {
     }
     return stats;
 }
+/** 获取当前内存中所有已知子代理的 agentId 集合（用于过滤会话列表） */
+export function getAllSubagentIds() {
+    const ids = new Set();
+    for (const [agentId] of registry) {
+        ids.add(agentId);
+    }
+    return ids;
+}
 /** 获取某会话的所有子代理记录 */
 export function getSessionAgents(sessionId) {
     const set = sessionIndex.get(sessionId);

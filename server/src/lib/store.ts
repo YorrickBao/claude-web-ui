@@ -4,6 +4,7 @@ import type { EnvProfile, SessionRecord, SessionsFile } from "./types.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 import { getInflight } from "./inflight.js";
 import { listSessions as sdkListSessions, listSubagents } from "./sdk.js";
+import { getAllSubagentIds } from "./agentRegistry.js";
 
 const EMPTY_SESSIONS: SessionsFile = { sessions: [] };
 const EMPTY_PROFILES: { profiles: EnvProfile[] } = { profiles: [] };
@@ -236,25 +237,38 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
   // SDK 扫描所有项目的会话转录
   const sdkSessions = await sdkListSessions();
 
-  // 收集所有子代理 session id，用于过滤
-  const subagentIds = new Set<string>();
+  // 收集所有子代理 session id，用于过滤。双重来源：
+  //  ① 内存 agent registry（实时，当前进程内 Hook 捕获的子代理）
+  //  ② SDK listSubagents（磁盘扫描，覆盖重启后历史子代理）
+  const subagentIds = getAllSubagentIds();
+
   await Promise.all(
     sdkSessions.map(async (sdk) => {
       try {
-        const ids = await listSubagents(sdk.sessionId, { dir: sdk.cwd ?? undefined });
+        // 仅传有效 cwd，避免空字符串导致 SDK 查错路径
+        const opts = sdk.cwd ? { dir: sdk.cwd } : {};
+        const ids = await listSubagents(sdk.sessionId, opts);
         for (const id of ids) subagentIds.add(id);
-      } catch {
-        // listSubagents 可能因文件系统问题失败，忽略
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[store] listSubagents failed for ${sdk.sessionId}:`, err instanceof Error ? err.message : err);
       }
     }),
   );
+
+  // eslint-disable-next-line no-console
+  console.log(`[store] syncAndListSessions: ${sdkSessions.length} SDK sessions, ${subagentIds.size} subagent IDs collected`);
 
   let changed = false;
   const merged: SessionRecord[] = [];
 
   for (const sdk of sdkSessions) {
     // 跳过子代理会话（子代理的 sessionId 会出现在父会话的 listSubagents 结果中）
-    if (subagentIds.has(sdk.sessionId)) continue;
+    if (subagentIds.has(sdk.sessionId)) {
+      // eslint-disable-next-line no-console
+      console.log(`[store] filtering out subagent session: ${sdk.sessionId}`);
+      continue;
+    }
 
     const localRec = localMap.get(sdk.sessionId);
 
