@@ -2,7 +2,8 @@ import fsp from "node:fs/promises";
 import { DATA_DIR, PROFILES_FILE, SESSIONS_FILE } from "../env.js";
 import { normalizeEnvValues, pruneEnvValues } from "./envFields.js";
 import { getInflight } from "./inflight.js";
-import { listSessions as sdkListSessions } from "./sdk.js";
+import { listSessions as sdkListSessions, listSubagents } from "./sdk.js";
+import { getAllSubagentIds } from "./agentRegistry.js";
 const EMPTY_SESSIONS = { sessions: [] };
 const EMPTY_PROFILES = { profiles: [] };
 /** 确保数据目录 + 文件存在 */
@@ -197,9 +198,34 @@ export async function syncAndListSessions() {
     const localMap = new Map(local.sessions.map((s) => [s.sessionId, s]));
     // SDK 扫描所有项目的会话转录
     const sdkSessions = await sdkListSessions();
+    // 收集所有子代理 session id，用于过滤。双重来源：
+    //  ① 内存 agent registry（实时，当前进程内 Hook 捕获的子代理）
+    //  ② SDK listSubagents（磁盘扫描，覆盖重启后历史子代理）
+    const subagentIds = getAllSubagentIds();
+    await Promise.all(sdkSessions.map(async (sdk) => {
+        try {
+            // 仅传有效 cwd，避免空字符串导致 SDK 查错路径
+            const opts = sdk.cwd ? { dir: sdk.cwd } : {};
+            const ids = await listSubagents(sdk.sessionId, opts);
+            for (const id of ids)
+                subagentIds.add(id);
+        }
+        catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(`[store] listSubagents failed for ${sdk.sessionId}:`, err instanceof Error ? err.message : err);
+        }
+    }));
+    // eslint-disable-next-line no-console
+    console.log(`[store] syncAndListSessions: ${sdkSessions.length} SDK sessions, ${subagentIds.size} subagent IDs collected`);
     let changed = false;
     const merged = [];
     for (const sdk of sdkSessions) {
+        // 跳过子代理会话（子代理的 sessionId 会出现在父会话的 listSubagents 结果中）
+        if (subagentIds.has(sdk.sessionId)) {
+            // eslint-disable-next-line no-console
+            console.log(`[store] filtering out subagent session: ${sdk.sessionId}`);
+            continue;
+        }
         const localRec = localMap.get(sdk.sessionId);
         const record = {
             sessionId: sdk.sessionId,
@@ -223,6 +249,9 @@ export async function syncAndListSessions() {
     }
     // 保留 sessions.json 中有但 SDK 没扫到的（仅在 inflight 中的新会话）
     for (const [id, rec] of localMap) {
+        // 同样跳过已知的子代理会话
+        if (subagentIds.has(id))
+            continue;
         if (getInflight(id)) {
             merged.push(rec);
         }

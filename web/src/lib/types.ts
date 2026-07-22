@@ -13,16 +13,26 @@ export type SSEEvent =
   | { type: "error"; message: string }
   | {
       type: "done";
-      /** 会话累计 input tokens（含本轮） */
       inputTokens: number;
-      /** 会话累计 output tokens（含本轮） */
       outputTokens: number;
-      /** 本轮耗时（ms） */
       durationMs: number;
     }
   | { type: "waiting_for_user" }
-  /** GET /stream 订阅：先发送全部历史消息，再转发现场事件 */
-  | { type: "history"; messages: unknown[] };
+  | { type: "history"; messages: unknown[] }
+  | { type: "subagent_started"; agentId: string; agentType: string }
+  | { type: "subagent_stopped"; agentId: string; agentType: string; phantom: boolean }
+  /** 工具权限请求：agent 想执行某个操作，需要用户审批 */
+  | {
+      type: "permission_request";
+      requestId: string;
+      toolName: string;
+      toolInput: unknown;
+      decisionReason?: string;
+    }
+  /** Plan mode 退出：LLM 产出了计划，等待用户审批 */
+  | { type: "plan_proposed"; planContent: string }
+  /** 权限模式已变更 */
+  | { type: "mode_changed"; mode: string };
 
 /** 会话列表/详情里的单条会话 */
 export interface SessionView {
@@ -51,6 +61,13 @@ export interface EnvProfile {
   env: Record<string, string>;
   createdAt: number;
   updatedAt: number;
+}
+
+/** 斜杠命令定义 */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
 }
 
 /** /api/browse 返回的目录项 */

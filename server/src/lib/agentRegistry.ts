@@ -197,6 +197,15 @@ export function getSessionStats(sessionId: string): SessionAgentStats {
   return stats;
 }
 
+/** 获取当前内存中所有已知子代理的 agentId 集合（用于过滤会话列表） */
+export function getAllSubagentIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const [agentId] of registry) {
+    ids.add(agentId);
+  }
+  return ids;
+}
+
 /** 获取某会话的所有子代理记录 */
 export function getSessionAgents(sessionId: string): AgentRecord[] {
   const set = sessionIndex.get(sessionId);

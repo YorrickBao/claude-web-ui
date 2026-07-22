@@ -13,9 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listProfiles } from "@/lib/api";
 import type { EnvProfile } from "@/lib/types";
+import { SlashCommandPopup } from "@/components/SlashCommandPopup";
+import { ContextUsageRing } from "@/components/ContextUsageRing";
 import {
   BashToolUI,
   EditToolUI,
@@ -30,31 +32,49 @@ import {
  * 使用 shadcn/ui (Base UI) Button。
  */
 interface ChatThreadProps {
+  /** 当前会话的工作目录，用于获取项目特定的斜杠命令 */
+  cwd: string | null;
   profileId: string | null;
   permissionMode: string;
   effortLevel: string;
   isRunning: boolean;
+  /** 当前累计 input tokens（用于上下文占用指示器） */
+  inputTokens?: number;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
 }
 
 export function ChatThread({
+  cwd,
   profileId,
   permissionMode,
   effortLevel,
   isRunning,
+  inputTokens,
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
 }: ChatThreadProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     listProfiles()
       .then(setProfiles)
       .catch(() => setProfiles([]));
   }, []);
+
+  /** 从当前 profile 的 AUTO_COMPACT_WINDOW 推导上下文上限，否则默认 200k */
+  const contextMax = useMemo(() => {
+    const profile = profiles.find((p) => p.id === profileId);
+    const compactWindow = profile?.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    if (compactWindow) {
+      const n = parseInt(compactWindow, 10);
+      if (!isNaN(n) && n > 0) return n;
+    }
+    return 200_000;
+  }, [profileId, profiles]);
 
   // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
   const profileItems: Record<string, string> = {
@@ -110,14 +130,19 @@ export function ChatThread({
 
       <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pt-8 pb-safe md:px-4">
         <div className="mx-auto max-w-3xl">
-          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20">
+          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
               <ComposerPrimitive.Input
-                placeholder="输入消息… (Enter 发送 · Shift+Enter 换行)"
+                ref={textareaRef}
+                placeholder="输入消息… (Enter 发送 · Shift+Enter 换行 · / 命令)"
                 submitMode="enter"
                 className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
               />
             </div>
+            <SlashCommandPopup
+              cwd={cwd}
+              textareaRef={textareaRef}
+            />
             <div className="flex items-center gap-1.5 px-3 py-1.5">
               <Select
                 items={permissionItems}
@@ -167,6 +192,9 @@ export function ChatThread({
               </SelectContent>
             </Select>
             <div className="flex-1" />
+            {inputTokens !== undefined && inputTokens > 0 && (
+              <ContextUsageRing used={inputTokens} max={contextMax} />
+            )}
             <Select
               items={profileItems}
               value={profileId ?? ""}

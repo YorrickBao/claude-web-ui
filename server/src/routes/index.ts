@@ -15,7 +15,7 @@ import {
   resolveProfileEnv,
   setSessionProfile,
 } from "../lib/store.js";
-import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
+import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions, listSubagents } from "../lib/sdk.js";
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
@@ -376,7 +376,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (sessionId) {
         finalizeSession(sessionId);
         emitSessionEnd(sessionId);
-        clearInflight(sessionId);
+        // 传入当前 AbortController，防止旧请求的 finally
+        // 误删已被新请求 setInflight 覆盖的 inflight 记录
+        clearInflight(sessionId, ctrl);
         await touchSession(sessionId);
       }
       endSSE(reply);
@@ -452,7 +454,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // ───────────────────────────────────────────────────────────
   // DELETE /api/sessions/:id —— 删除会话
-  // ① 中止进行中的 query ② 删 ~/.claude/projects/ 转录
+  // ① 中止进行中的 query ② 删 ~/.claude/projects/ 转录（含子代理）
   // ③ 删 sessions.json 记录
   // ───────────────────────────────────────────────────────────
   app.delete<{ Params: { id: string } }>(
@@ -468,23 +470,39 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (ctrl && !ctrl.signal.aborted) ctrl.abort();
       clearInflight(sessionId);
 
-      // 真删 CLI 转录文件
-      if (rec?.cwd) {
-        try {
-          await deleteSession(sessionId, { dir: rec.cwd });
-        } catch (err: unknown) {
-          // 文件可能已不存在，不阻塞
-          const code = (err as NodeJS.ErrnoException)?.code;
-          if (code !== "ENOENT") {
-            app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
-          }
+      // 真删 CLI 转录文件（含子代理）。
+      // 有 cwd 时传 dir 精确删除；无 cwd 时不传 dir，让 SDK 全局搜索。
+      const dirOpt = rec?.cwd ? { dir: rec.cwd } : {};
+
+      // 先查子代理列表，逐个删除子代理转录
+      try {
+        const childIds = await listSubagents(sessionId, dirOpt);
+        await Promise.all(
+          childIds.map((childId) =>
+            deleteSession(childId, dirOpt).catch((err: unknown) => {
+              const code = (err as NodeJS.ErrnoException)?.code;
+              if (code !== "ENOENT") {
+                app.log.warn({ err }, `failed to delete subagent session ${childId}`);
+              }
+            }),
+          ),
+        );
+      } catch (err) {
+        app.log.warn({ err }, `listSubagents failed during delete for ${sessionId}`);
+      }
+
+      // 再删主会话转录
+      try {
+        await deleteSession(sessionId, dirOpt);
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") {
+          app.log.warn({ err }, `SDK deleteSession failed for ${sessionId}`);
         }
       }
 
-      const removed = await deleteSessionRecord(sessionId);
-      if (!removed) {
-        return reply.code(404).send({ error: "session not found" });
-      }
+      // 删 sessions.json 记录（可能不存在，不阻塞）
+      await deleteSessionRecord(sessionId);
 
       // 清理子代理注册记录
       cleanupSession(sessionId);
@@ -651,9 +669,23 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
             return a.name.localeCompare(b.name);
           });
         return reply.send({ path: target, entries: filtered });
-      } catch {
+      } catch (err) {
+        app.log.warn({ err }, `browse failed for ${target}`);
         return reply.code(404).send({ error: "cannot read directory" });
       }
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────
+  // GET /api/slash-commands —— 获取当前项目可用的斜杠命令
+  // ───────────────────────────────────────────────────────────
+  app.get<{ Querystring: { cwd?: string } }>(
+    "/api/slash-commands",
+    async (req, reply) => {
+      const cwd = req.query.cwd || process.cwd();
+      const { resolveSlashCommands } = await import("../lib/slashCommands.js");
+      const commands = await resolveSlashCommands(cwd);
+      return reply.send({ commands });
     },
   );
 

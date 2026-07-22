@@ -119,6 +119,13 @@ export type SSEEvent =
   /** 权限模式已变更 */
   | { type: "mode_changed"; mode: PermissionMode };
 
+/** 斜杠命令 */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
 /** 新建会话请求 */
 export interface CreateSessionRequest {
   cwd: string;

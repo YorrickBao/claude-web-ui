@@ -1,9 +1,11 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
 import { ChatThread } from "@/components/ChatThread";
+import { PermissionRequestBanner, type PendingPermission } from "@/components/PermissionRequestBanner";
+import { PlanApprovalBanner, type PendingPlanApproval } from "@/components/PlanApprovalBanner";
 import { Badge } from "@/components/ui/badge";
 import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, setSessionThinkingLevel, updateSessionTitle } from "@/lib/api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +42,60 @@ export function ChatView({
   initialInputTokens,
   initialOutputTokens,
 }: ChatViewProps) {
+  // 待处理的权限请求和计划审批
+  const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<PendingPlanApproval | null>(null);
+
+  // 用 Map 保存每个权限请求的 respond 回调，支持多个并发请求互不覆盖
+  const permissionRespondMapRef = useRef(
+    new Map<string, (behavior: "allow" | "deny", message?: string) => Promise<void>>()
+  );
+  // 计划审批的 approve/reject 回调（单槽，同一时刻只有一个计划）
+  const planCallbacksRef = useRef<{
+    approve?: (opts?: { editedPlan?: string; prompt?: string }) => Promise<void>;
+    reject?: () => void;
+  }>({});
+
+  const handlePermissionRequest = useCallback(
+    (evt: {
+      requestId: string;
+      toolName: string;
+      toolInput: unknown;
+      decisionReason?: string;
+      respond: (behavior: "allow" | "deny", message?: string) => Promise<void>;
+    }) => {
+      permissionRespondMapRef.current.set(evt.requestId, evt.respond);
+      setPendingPermission({
+        requestId: evt.requestId,
+        toolName: evt.toolName,
+        toolInput: evt.toolInput,
+        decisionReason: evt.decisionReason,
+      });
+    },
+    [],
+  );
+
+  const handlePlanProposed = useCallback(
+    (evt: {
+      planContent: string;
+      approve: (opts?: { editedPlan?: string; prompt?: string }) => Promise<void>;
+      reject: () => void;
+    }) => {
+      setPendingPlan({ planContent: evt.planContent });
+      planCallbacksRef.current = { approve: evt.approve, reject: evt.reject };
+    },
+    [],
+  );
+
+  const handleModeChanged = useCallback(
+    (_mode: string) => {
+      // mode_changed 事件中的 mode 由后端推送，先不做本地切换以避免竞态；
+      // 仅刷新侧栏。
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+    },
+    [],
+  );
+
   const { runtime, error, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
@@ -48,11 +104,43 @@ export function ChatView({
       permissionMode: initialPermissionMode,
       effortLevel: initialEffortLevel,
       onSessionCreated: (id) => {
-        // 静默替换 URL（不触发组件重挂，对话状态不丢）
         window.history.replaceState(null, "", `/c/${id}`);
         window.dispatchEvent(new CustomEvent("session-list-changed"));
       },
+      onPermissionRequest: handlePermissionRequest,
+      onPlanProposed: handlePlanProposed,
+      onModeChanged: handleModeChanged,
     });
+
+  // 权限审批操作函数（从 Map 中取出 respond 调用）
+  async function handlePermissionAllow(requestId: string) {
+    const respond = permissionRespondMapRef.current.get(requestId);
+    permissionRespondMapRef.current.delete(requestId);
+    if (respond) await respond("allow");
+    setPendingPermission(null);
+  }
+
+  async function handlePermissionDeny(requestId: string) {
+    const respond = permissionRespondMapRef.current.get(requestId);
+    permissionRespondMapRef.current.delete(requestId);
+    if (respond) await respond("deny", "User denied via UI");
+    setPendingPermission(null);
+  }
+
+  // 计划审批操作函数（从 ref 中取出回调调用）
+  async function handlePlanApprove(opts?: { editedPlan?: string; prompt?: string }) {
+    const { approve } = planCallbacksRef.current;
+    planCallbacksRef.current = {};
+    setPendingPlan(null);
+    if (approve) await approve(opts);
+  }
+
+  function handlePlanReject() {
+    const { reject } = planCallbacksRef.current;
+    planCallbacksRef.current = {};
+    setPendingPlan(null);
+    if (reject) reject();
+  }
 
   // 当前生效的 profileId：初始值来自 prop；切换时本地更新
   const [profileId, setProfileId] = useState<string | null>(
@@ -146,11 +234,28 @@ export function ChatView({
       />
       <div className="min-h-0 flex-1">
         <AssistantRuntimeProvider runtime={runtime}>
+          {/* 权限审批和计划审批横幅 */}
+          {pendingPermission && (
+            <PermissionRequestBanner
+              pending={pendingPermission}
+              onAllow={handlePermissionAllow}
+              onDeny={handlePermissionDeny}
+            />
+          )}
+          {pendingPlan && (
+            <PlanApprovalBanner
+              pending={pendingPlan}
+              onApprove={handlePlanApprove}
+              onReject={handlePlanReject}
+            />
+          )}
           <ChatThread
+            cwd={cwd}
             profileId={profileId}
             permissionMode={permissionMode}
             effortLevel={effortLevel}
             isRunning={isRunning}
+            inputTokens={stats?.inputTokens ?? initialInputTokens ?? 0}
             onProfileChange={handleChangeProfile}
             onPermissionModeChange={handleChangePermissionMode}
             onEffortLevelChange={handleChangeEffortLevel}

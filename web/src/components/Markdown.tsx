@@ -17,6 +17,13 @@ export const Markdown = memo(function Markdown({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        components={{
+          table: ({ children, ...props }) => (
+            <div className="overflow-x-auto">
+              <table {...props}>{children}</table>
+            </div>
+          ),
+        }}
       >
         {children}
       </ReactMarkdown>

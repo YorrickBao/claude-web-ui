@@ -1,6 +1,7 @@
 import {
   query,
   listSessions,
+  listSubagents,
   getSessionInfo,
   renameSession,
   type SDKMessage,
@@ -14,7 +15,7 @@ import { createPendingPermission } from "./inflight.js";
 import { emitSessionEvent } from "./eventBus.js";
 
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
-export { listSessions, getSessionInfo, renameSession };
+export { listSessions, listSubagents, getSessionInfo, renameSession };
 
 // PermissionRequest hook 的回调返回类型与泛型 HookJSONOutput 不兼容
 // （SDK 类型系统尚未完全统一），单独构建此 hook 的闭包后用 any 注入
@@ -149,7 +150,7 @@ export async function* runQuery(
             matcher: "*",
             hooks: [
               async (input) => {
-                try { registerStart(input as SubagentStartHookInput); } catch { /* noop */ }
+                try { registerStart(input as SubagentStartHookInput); } catch (err) { console.warn("[sdk] registerStart failed:", err instanceof Error ? err.message : err); }
                 return { continue: true };
               },
             ],
@@ -160,7 +161,7 @@ export async function* runQuery(
             matcher: "*",
             hooks: [
               async (input) => {
-                try { await registerStop(input as SubagentStopHookInput); } catch { /* noop */ }
+                try { await registerStop(input as SubagentStopHookInput); } catch (err) { console.warn("[sdk] registerStop failed:", err instanceof Error ? err.message : err); }
                 return { continue: true };
               },
             ],

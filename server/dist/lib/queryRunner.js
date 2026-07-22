@@ -61,7 +61,9 @@ export async function runQueryToBus(sessionId, params) {
     }
     finally {
         finalizeSession(sessionId);
-        clearInflight(sessionId);
+        // 传入当前查询的 AbortController，防止旧请求的 finally
+        // 误删已被新请求 setInflight 覆盖的 inflight 记录
+        clearInflight(sessionId, params.abortController);
         emitSessionEnd(sessionId);
     }
 }

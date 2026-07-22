@@ -37,7 +37,19 @@ export function setInflightRunning(sessionId: string): void {
   }
 }
 
-export function clearInflight(sessionId: string): void {
+/**
+ * 清理 inflight 记录。
+ *
+ * @param sessionId 会话 ID
+ * @param ctrl      可选：仅当 inflight 中存储的 AbortController === ctrl 时才清除。
+ *                  不传则强制清除（DELETE 路由等场景）。
+ */
+export function clearInflight(sessionId: string, ctrl?: AbortController): void {
+  if (ctrl) {
+    const entry = inflight.get(sessionId);
+    // 只有当控制器匹配时才清除 —— 防止旧请求的 finally 误删新请求的 inflight
+    if (!entry || entry.ctrl !== ctrl) return;
+  }
   // 清理该会话所有 pending permissions
   clearPendingPermissions(sessionId);
   inflight.delete(sessionId);
@@ -85,11 +97,29 @@ export function createPendingPermission(
   toolName: string,
   toolInput: unknown,
 ): { requestId: string; promise: Promise<PermissionDecision> } {
-  let resolveRef: ((result: PermissionDecision) => void) | undefined;
-  const promise = new Promise<PermissionDecision>((resolve) => {
-    resolveRef = resolve;
-  });
   const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  let resolveRef: ((result: PermissionDecision) => void) | undefined;
+  let settled = false;
+
+  // 5 分钟超时：防止前端断连或 bug 导致 hook 永久阻塞
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  const timeoutId = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    resolveRef?.({ behavior: "deny", message: "Permission request timed out" });
+    pendingPermissions.delete(requestId);
+  }, TIMEOUT_MS);
+
+  const promise = new Promise<PermissionDecision>((resolve) => {
+    resolveRef = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
+  });
+
   pendingPermissions.set(requestId, {
     resolve: resolveRef!,
     sessionId,
