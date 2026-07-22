@@ -61,6 +61,12 @@ export async function* runQuery(
       case "system": {
         if (msg.subtype === "init") {
           yield { type: "session_created", sessionId: msg.session_id };
+        } else if (msg.subtype === "session_state_changed") {
+          // SDK 会话状态变更：idle / running / requires_action（HITL 等待用户决策）
+          const stateMsg = msg as { state: string };
+          if (stateMsg.state === "requires_action") {
+            yield { type: "waiting_for_user" };
+          }
         }
         break;
       }

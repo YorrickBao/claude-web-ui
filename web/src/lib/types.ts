@@ -16,7 +16,8 @@ export type SSEEvent =
       costUsd: number;
       numTurns: number;
       durationMs: number;
-    };
+    }
+  | { type: "waiting_for_user" };
 
 /** 会话列表/详情里的单条会话 */
 export interface SessionView {
@@ -27,6 +28,8 @@ export interface SessionView {
   createdAt: number;
   lastModified: number;
   profileId: string | null;
+  /** 会话运行状态 */
+  runningStatus: "idle" | "running" | "waiting";
 }
 
 /** 一套环境变量配置 */

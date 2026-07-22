@@ -86,6 +86,8 @@ export function useChatSSE({
       setError(null);
       setStats(null);
       setIsRunning(true);
+      // 通知侧栏：当前会话进入 inflight 状态
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
 
       // 乐观写入：用户消息 + assistant 占位（status running）
       const placeholder: ChatMessage = {
@@ -151,6 +153,9 @@ export function useChatSSE({
               });
               setMessages((prev) => completeLast(prev));
               break;
+            case "waiting_for_user":
+              // 会话进入 HITL 阻塞，侧栏轮询会感知 runningStatus="waiting"
+              break;
           }
         }
       } catch (err) {
@@ -164,6 +169,8 @@ export function useChatSSE({
       } finally {
         setIsRunning(false);
         abortRef.current = null;
+        // 通知侧栏：会话已完成，退出 inflight
+        window.dispatchEvent(new CustomEvent("session-list-changed"));
       }
     },
     onCancel: async () => {

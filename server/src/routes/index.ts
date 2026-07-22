@@ -20,8 +20,11 @@ import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import {
   setInflight,
+  setInflightWaiting,
+  setInflightRunning,
   clearInflight,
   getInflight,
+  getInflightStatus,
 } from "../lib/inflight.js";
 import type {
   CreateSessionRequest,
@@ -53,6 +56,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       createdAt: r.createdAt,
       lastModified: r.lastModified,
       profileId: r.profileId ?? null,
+      runningStatus: getInflightStatus(r.sessionId) ?? "idle",
     }));
     return reply.send({ sessions: views });
   });
@@ -160,6 +164,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         if (evt.type === "session_created" && !registered) {
           await register(evt.sessionId);
         }
+        // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
+        if (sessionId) {
+          if (evt.type === "waiting_for_user") {
+            setInflightWaiting(sessionId);
+          } else {
+            setInflightRunning(sessionId);
+          }
+        }
         sendSSE(reply, evt);
       }
     } catch (err) {
@@ -212,6 +224,12 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         env: await resolveSessionEnv(sessionId),
       });
       for await (const evt of stream) {
+        // 跟踪 inflight 状态：HITL 等待 ↔ 运行中
+        if (evt.type === "waiting_for_user") {
+          setInflightWaiting(sessionId);
+        } else {
+          setInflightRunning(sessionId);
+        }
         sendSSE(reply, evt);
       }
     } catch (err) {

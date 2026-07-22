@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listSessions } from "@/lib/api";
 import type { SessionView } from "@/lib/types";
 
@@ -6,6 +6,7 @@ export function useSessions() {
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +38,16 @@ export function useSessions() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refresh]);
+
+  // 短轮询：每 2 秒刷新，感知 inflight 运行状态变化
+  useEffect(() => {
+    pollingRef.current = setInterval(() => {
+      refresh();
+    }, 2000);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   }, [refresh]);
 
   return { sessions, loading, error, refresh };

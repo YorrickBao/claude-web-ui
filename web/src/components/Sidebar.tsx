@@ -3,6 +3,8 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
   MessageSquare,
+  Loader2,
+  AlertCircle,
   Settings,
   Trash2,
   PanelLeftClose,
@@ -237,7 +239,13 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                     )
                   }
                 >
-                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {s.runningStatus === "waiting" ? (
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
+                  ) : s.runningStatus === "running" ? (
+                    <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                  ) : (
+                    <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  )}
                 </NavLink>
               </li>
             ))}
@@ -299,7 +307,13 @@ export function Sidebar({ width, isCollapsed: controlledCollapsed, onToggleColla
                               )
                             }
                           >
-                            <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {s.runningStatus === "waiting" ? (
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-500" />
+                            ) : s.runningStatus === "running" ? (
+                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                            ) : (
+                              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            )}
                             <div className="min-w-0 flex-1">
                               <div className="truncate">{s.title}</div>
                             </div>

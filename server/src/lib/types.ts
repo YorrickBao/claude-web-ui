@@ -44,6 +44,8 @@ export interface SessionView {
   lastModified: number;
   /** 当前绑定的 profile id（null = 纯 CLI 默认） */
   profileId: string | null;
+  /** 会话运行状态 */
+  runningStatus: "idle" | "running" | "waiting";
 }
 
 /** sessions.json 文件结构 */
@@ -73,7 +75,8 @@ export type SSEEvent =
       costUsd: number;
       numTurns: number;
       durationMs: number;
-    };
+    }
+  | { type: "waiting_for_user" };
 
 /** 新建会话请求 */
 export interface CreateSessionRequest {
