@@ -14,6 +14,7 @@ import {
   resolveSessionEnv,
   resolveProfileEnv,
   setSessionProfile,
+  accumulateTokens,
 } from "../lib/store.js";
 import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions } from "../lib/sdk.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
@@ -65,6 +66,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         runningStatus: getInflightStatus(r.sessionId) ?? "idle",
         permissionMode: r.permissionMode ?? "bypassPermissions",
         effortLevel: r.effortLevel ?? "high",
+        inputTokens: r.inputTokens ?? 0,
+        outputTokens: r.outputTokens ?? 0,
       };
     });
     return reply.send({ sessions: views });
@@ -103,6 +106,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         permissionMode: rec.permissionMode ?? "bypassPermissions",
         effortLevel: rec.effortLevel ?? "high",
         runningStatus: getInflightStatus(rec.sessionId) ?? "idle",
+        inputTokens: rec.inputTokens ?? 0,
+        outputTokens: rec.outputTokens ?? 0,
         messages: history,
       });
     },
@@ -249,6 +254,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           profileId,
           permissionMode,
           effortLevel,
+          inputTokens: 0,
+          outputTokens: 0,
         });
         // 通过 SDK 设置标题（写入 jsonl 转录，CLI 也能看到）
         if (initialTitle) {
@@ -276,10 +283,26 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
             setInflightRunning(sessionId);
           }
         }
-        sendSSE(reply, evt);
-        // 广播到事件总线，供 GET /stream 订阅者续流
-        if (sessionId) {
-          emitSessionEvent(sessionId, evt);
+        // done 事件：先累加 token 到持久化存储，再发送新的累计值
+        if (evt.type === "done" && sessionId) {
+          await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
+            (err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`),
+          );
+          // 读取累加后的最新累计值，发送给前端
+          const updated = await getSession(sessionId);
+          const doneEvt = {
+            type: "done" as const,
+            inputTokens: updated?.inputTokens ?? evt.inputTokens,
+            outputTokens: updated?.outputTokens ?? evt.outputTokens,
+            durationMs: evt.durationMs,
+          };
+          sendSSE(reply, doneEvt);
+          emitSessionEvent(sessionId, doneEvt);
+        } else {
+          sendSSE(reply, evt);
+          if (sessionId) {
+            emitSessionEvent(sessionId, evt);
+          }
         }
       }
     } catch (err) {
@@ -343,9 +366,24 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         } else {
           setInflightRunning(sessionId);
         }
-        sendSSE(reply, evt);
-        // 广播到事件总线，供 GET /stream 订阅者续流
-        emitSessionEvent(sessionId, evt);
+        // done 事件：先累加 token 到持久化存储，再发送新的累计值
+        if (evt.type === "done") {
+          await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
+            (err) => app.log.warn({ err }, `accumulateTokens failed for ${sessionId}`),
+          );
+          const updated = await getSession(sessionId);
+          const doneEvt = {
+            type: "done" as const,
+            inputTokens: updated?.inputTokens ?? evt.inputTokens,
+            outputTokens: updated?.outputTokens ?? evt.outputTokens,
+            durationMs: evt.durationMs,
+          };
+          sendSSE(reply, doneEvt);
+          emitSessionEvent(sessionId, doneEvt);
+        } else {
+          sendSSE(reply, evt);
+          emitSessionEvent(sessionId, evt);
+        }
       }
     } catch (err) {
       const message =

@@ -196,6 +196,27 @@ export async function setSessionProfile(
   await touchSession(sessionId, { profileId });
 }
 
+/**
+ * 累加 token 计数到会话记录中。
+ * 每次 query 完成后调用，将本轮用量累加到持久化的累计值上。
+ */
+export async function accumulateTokens(
+  sessionId: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<void> {
+  const data = await readAllSessions();
+  const idx = data.sessions.findIndex((s) => s.sessionId === sessionId);
+  if (idx < 0) return;
+  data.sessions[idx] = {
+    ...data.sessions[idx],
+    inputTokens: (data.sessions[idx].inputTokens ?? 0) + inputTokens,
+    outputTokens: (data.sessions[idx].outputTokens ?? 0) + outputTokens,
+    lastModified: Date.now(),
+  };
+  await writeSessions(data);
+}
+
 // ─────────────────────────────────────────────────────────────
 // 会话列表（用 SDK listSessions 替代手动扫盘）
 // ─────────────────────────────────────────────────────────────
@@ -229,6 +250,8 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
       profileId: localRec?.profileId ?? null,
       permissionMode: localRec?.permissionMode ?? "bypassPermissions",
       effortLevel: localRec?.effortLevel ?? "high",
+      inputTokens: localRec?.inputTokens ?? 0,
+      outputTokens: localRec?.outputTokens ?? 0,
     };
 
     if (!localRec) {

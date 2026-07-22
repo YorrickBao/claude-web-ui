@@ -21,6 +21,10 @@ export interface ChatViewProps {
   initialEffortLevel?: string;
   /** 会话当前运行状态：running 时用 subscribe 续流，而非静态 loadHistory */
   initialRunningStatus?: "idle" | "running" | "waiting";
+  /** 会话累计 input tokens（用于首次渲染；后续由 SSE done 事件更新） */
+  initialInputTokens?: number;
+  /** 会话累计 output tokens */
+  initialOutputTokens?: number;
 }
 
 export function ChatView({
@@ -33,6 +37,8 @@ export function ChatView({
   initialPermissionMode,
   initialEffortLevel,
   initialRunningStatus,
+  initialInputTokens,
+  initialOutputTokens,
 }: ChatViewProps) {
   const { runtime, error, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
     useChatSSE({
@@ -134,6 +140,8 @@ export function ChatView({
         title={title}
         subtitle={subtitle}
         stats={stats}
+        initialInputTokens={initialInputTokens}
+        initialOutputTokens={initialOutputTokens}
         error={error}
       />
       <div className="min-h-0 flex-1">
@@ -158,12 +166,16 @@ function Header({
   title,
   subtitle,
   stats,
+  initialInputTokens,
+  initialOutputTokens,
   error,
 }: {
   sessionId: string | null;
   title?: string;
   subtitle?: string;
-  stats: { costUsd: number; numTurns: number; durationMs: number } | null;
+  stats: { inputTokens: number; outputTokens: number; durationMs: number } | null;
+  initialInputTokens?: number;
+  initialOutputTokens?: number;
   error: string | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -280,14 +292,27 @@ function Header({
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {stats && (
             <>
-              <Badge variant="secondary" className="text-[10px] h-4">{stats.numTurns} 轮</Badge>
-              <Badge variant="secondary" className="text-[10px] h-4">${stats.costUsd.toFixed(4)}</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4">
+                入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
+              </Badge>
               <Badge variant="secondary" className="text-[10px] h-4">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
             </>
+          )}
+          {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
+            <Badge variant="secondary" className="text-[10px] h-4">
+              入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
+            </Badge>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+/** 格式化 token 数：>=1000 用 k 简写 */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
 }
 

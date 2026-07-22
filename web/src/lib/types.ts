@@ -13,8 +13,11 @@ export type SSEEvent =
   | { type: "error"; message: string }
   | {
       type: "done";
-      costUsd: number;
-      numTurns: number;
+      /** 会话累计 input tokens（含本轮） */
+      inputTokens: number;
+      /** 会话累计 output tokens（含本轮） */
+      outputTokens: number;
+      /** 本轮耗时（ms） */
       durationMs: number;
     }
   | { type: "waiting_for_user" }
@@ -35,6 +38,10 @@ export interface SessionView {
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
   /** 思考级别 */
   effortLevel: "low" | "medium" | "high" | "xhigh" | "max" | "disabled";
+  /** 累计 input tokens */
+  inputTokens: number;
+  /** 累计 output tokens */
+  outputTokens: number;
 }
 
 /** 一套环境变量配置 */

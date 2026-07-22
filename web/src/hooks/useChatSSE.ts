@@ -52,8 +52,11 @@ export function useChatSSE({
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{
-    costUsd: number;
-    numTurns: number;
+    /** 会话累计 input tokens */
+    inputTokens: number;
+    /** 会话累计 output tokens */
+    outputTokens: number;
+    /** 本轮耗时（ms） */
     durationMs: number;
   } | null>(null);
 
@@ -93,7 +96,6 @@ export function useChatSSE({
    */
   const subscribe = useCallback(async (targetSessionId: string) => {
     setError(null);
-    setStats(null);
     setIsRunning(true);
     sessionIdRef.current = targetSessionId;
     setActiveSessionId(targetSessionId);
@@ -139,8 +141,8 @@ export function useChatSSE({
             break;
           case "done":
             setStats({
-              costUsd: evt.costUsd,
-              numTurns: evt.numTurns,
+              inputTokens: evt.inputTokens,
+              outputTokens: evt.outputTokens,
               durationMs: evt.durationMs,
             });
             setMessages((prev) => completeLast(prev));
@@ -245,8 +247,8 @@ export function useChatSSE({
               break;
             case "done":
               setStats({
-                costUsd: evt.costUsd,
-                numTurns: evt.numTurns,
+                inputTokens: evt.inputTokens,
+                outputTokens: evt.outputTokens,
                 durationMs: evt.durationMs,
               });
               setMessages((prev) => completeLast(prev));

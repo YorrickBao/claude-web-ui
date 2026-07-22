@@ -149,14 +149,23 @@ export async function* runQuery(
 
       case "result": {
         if (msg.subtype === "success") {
+          const s = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultSuccess;
           yield {
             type: "done",
-            costUsd: msg.total_cost_usd,
-            numTurns: msg.num_turns,
+            inputTokens: s.usage?.input_tokens ?? 0,
+            outputTokens: s.usage?.output_tokens ?? 0,
             durationMs: msg.duration_ms,
           };
         } else {
           // error_max_turns / error_during_execution / ...
+          // 即使在错误退出路径上，前面轮次消耗的 token 也是真实数据，先发 done 累加上去
+          const e = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultError;
+          yield {
+            type: "done",
+            inputTokens: e.usage?.input_tokens ?? 0,
+            outputTokens: e.usage?.output_tokens ?? 0,
+            durationMs: msg.duration_ms,
+          };
           yield {
             type: "error",
             message: `会话结束（${msg.subtype}）`,

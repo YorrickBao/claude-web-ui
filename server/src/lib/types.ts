@@ -39,6 +39,10 @@ export interface SessionRecord {
   permissionMode: PermissionMode;
   /** 思考级别（默认深度推理兼容旧数据） */
   effortLevel: EffortLevel;
+  /** 累计 input tokens（跨多轮持久化累加） */
+  inputTokens: number;
+  /** 累计 output tokens（跨多轮持久化累加） */
+  outputTokens: number;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后）。标题来自 SDK customTitle / summary。 */
@@ -56,6 +60,10 @@ export interface SessionView {
   permissionMode: PermissionMode;
   /** 思考级别 */
   effortLevel: EffortLevel;
+  /** 累计 input tokens */
+  inputTokens: number;
+  /** 累计 output tokens */
+  outputTokens: number;
 }
 
 /** sessions.json 文件结构 */
@@ -82,8 +90,11 @@ export type SSEEvent =
   | { type: "error"; message: string }
   | {
       type: "done";
-      costUsd: number;
-      numTurns: number;
+      /** 会话累计 input tokens（含本轮） */
+      inputTokens: number;
+      /** 会话累计 output tokens（含本轮） */
+      outputTokens: number;
+      /** 本轮耗时（ms） */
       durationMs: number;
     }
   | { type: "waiting_for_user" }
