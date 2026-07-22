@@ -76,7 +76,6 @@ export function ChatView({
         subtitle={subtitle}
         stats={stats}
         error={error}
-        canEditSessionEnv={!!activeSessionId}
         profileId={profileId}
         onProfileChange={handleChangeProfile}
       />
@@ -94,7 +93,6 @@ function Header({
   subtitle,
   stats,
   error,
-  canEditSessionEnv,
   profileId,
   onProfileChange,
 }: {
@@ -102,7 +100,6 @@ function Header({
   subtitle?: string;
   stats: { costUsd: number; numTurns: number; durationMs: number } | null;
   error: string | null;
-  canEditSessionEnv: boolean;
   profileId: string | null;
   onProfileChange: (id: string | null) => void;
 }) {
@@ -133,18 +130,16 @@ function Header({
           )}
         </div>
       </div>
-      {canEditSessionEnv && (
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-            profile
-          </span>
-          <ProfileSelect
-            value={profileId}
-            onChange={onProfileChange}
-            noneLabel="不绑定 · CLI 默认"
-          />
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+          profile
+        </span>
+        <ProfileSelect
+          value={profileId}
+          onChange={onProfileChange}
+          noneLabel="不绑定 · CLI 默认"
+        />
+      </div>
     </div>
   );
 }
