@@ -2,10 +2,13 @@ import {
   ThreadPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
+  useThreadViewport,
+  useThreadViewportStore,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, Square } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, Square } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -126,9 +129,14 @@ export function ChatThread({
             }}
           />
         </div>
+
+        {/* 滚动到底部按钮：sticky 在视口底部居中，仅在不在底部时渲染 */}
+        <div className="pointer-events-none sticky bottom-0 flex justify-center pb-2">
+          <ScrollToBottomButton />
+        </div>
       </ThreadPrimitive.Viewport>
 
-      <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pt-8 pb-safe md:px-4">
+      <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-3 pt-2 pb-safe md:px-4">
         <div className="mx-auto max-w-3xl">
           <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
@@ -357,5 +365,31 @@ function AssistantMessage() {
 function RunningCursor() {
   return (
     <span className="ml-0.5 inline-block h-4 w-2.5 animate-pulse rounded-sm bg-accent align-middle" />
+  );
+}
+
+/**
+ * 滚动到底部按钮。
+ * 始终挂载，仅切换可见性（opacity + pointer-events），避免卸载/挂载
+ * 改变滚动区域高度导致的内容跳动。底部时通过 opacity-0 完全透明且不可点击。
+ */
+function ScrollToBottomButton() {
+  const isAtBottom = useThreadViewport((s) => s.isAtBottom);
+  const viewportStore = useThreadViewportStore();
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={() => viewportStore.getState().scrollToBottom({ behavior: "instant" })}
+      aria-hidden={isAtBottom}
+      tabIndex={isAtBottom ? -1 : 0}
+      className={cn(
+        "pointer-events-auto h-8 w-8 rounded-full border-border/60 bg-card/95 shadow-md shadow-black/10 backdrop-blur transition-opacity duration-150 hover:bg-card",
+        isAtBottom ? "pointer-events-none opacity-0" : "opacity-100",
+      )}
+      aria-label="滚动到底部"
+    >
+      <ChevronDown className="size-4" />
+    </Button>
   );
 }
