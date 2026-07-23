@@ -151,6 +151,9 @@ export async function* runQuery(
           ? {}
           : { effort: params.effortLevel as Exclude<EffortLevel, "disabled" | "default"> }),
       abortController: params.abortController,
+      // 开启逐 token 流式：SDK 会发出 stream_event（SDKPartialAssistantMessage），
+      // 后端累积后以 assistant_delta 快照转发，实现真·流式输出体验
+      includePartialMessages: true,
       ...(childEnv ? { env: childEnv } : {}),
       hooks: {
         // PermissionRequest: HITL 权限审批（非 bypass 模式）
@@ -222,38 +225,85 @@ export async function* runQuery(
         break;
       }
 
+      case "stream_event": {
+        // SDKPartialAssistantMessage：逐 token 流式，发增量事件。
+        // 一个用户回合内，agentic loop 的所有轮次（thinking/text/tool_use）
+        // 都累积进同一条前端 assistant 消息，所以这里只发增量 delta。
+        const partial = msg as {
+          parent_tool_use_id?: string | null;
+          event: {
+            type: string;
+            delta?: {
+              type: string;
+              text?: string;
+              thinking?: string;
+            };
+          };
+        };
+        // 忽略子代理（subagent）的流式事件，避免污染主对话流
+        if (partial.parent_tool_use_id) break;
+        const evt = partial.event;
+        if (evt.type === "content_block_delta") {
+          const d = evt.delta;
+          if (!d) break;
+          // 文本增量 → 前端追加到末尾 text part
+          if (d.type === "text_delta" && typeof d.text === "string") {
+            yield { type: "text", text: d.text };
+          }
+          // 思考增量 → 前端追加到 reasoning part
+          else if (
+            d.type === "thinking_delta" &&
+            typeof d.thinking === "string"
+          ) {
+            yield { type: "thinking", text: d.thinking };
+          }
+          // input_json_delta / signature_delta 等不转发：
+          // tool_use 的完整参数由随后的 case "assistant" 兜底发出
+        }
+        break;
+      }
+
       case "assistant": {
+        // 完整 assistant 消息：用于补全 tool_use 参数（流式时 input_json
+        // 可能不完整，这里用完整消息保证准确）。text/thinking 已由流式
+        // delta 发出，这里不重复发，避免重复。
         const content = (msg.message as { content?: unknown[] }).content;
         if (!Array.isArray(content)) break;
         for (const block of content) {
           const b = block as {
             type: string;
-            text?: string;
             id?: string;
             name?: string;
             input?: unknown;
           };
-          if (b.type === "text" && typeof b.text === "string") {
-            // Plan 模式下累积计划文本
-            if (isPlanMode) {
-              planTextBuffer += b.text;
-            }
-            yield { type: "text", text: b.text };
-          } else if (
+          // 只发 tool_use（保证参数完整），text/thinking 流式已发过
+          if (
             b.type === "tool_use" &&
             typeof b.id === "string" &&
             typeof b.name === "string"
           ) {
-            // Plan 模式下累积规划工具调用摘要
-            if (isPlanMode) {
-              planToolsBuffer += `- ${summarizeToolCall(b.name, b.input)}\n`;
-            }
             yield {
               type: "tool_use",
               id: b.id,
               name: b.name,
               input: b.input,
             };
+          }
+        }
+        // Plan 模式：累积计划文本与工具摘要，供 conversation_reset 发 plan_proposed
+        if (isPlanMode) {
+          for (const block of content) {
+            const b = block as {
+              type: string;
+              text?: string;
+              name?: string;
+              input?: unknown;
+            };
+            if (b.type === "text" && typeof b.text === "string") {
+              planTextBuffer += b.text;
+            } else if (b.type === "tool_use" && typeof b.name === "string") {
+              planToolsBuffer += `- ${summarizeToolCall(b.name, b.input)}\n`;
+            }
           }
         }
         break;

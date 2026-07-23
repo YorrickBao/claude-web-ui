@@ -1,21 +1,13 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { contentBlocksToParts, type AssistantPart } from "./contentParts.js";
 
 /**
  * 历史消息 part —— 与前端 ThreadMessageLike 的 content part 对齐：
  * - text: 文本
+ * - reasoning: 思考过程
  * - tool-call: 工具调用 + 结果在同一 part（result 为可选字段）
  */
-export type ReplayPart =
-  | { type: "text"; text: string }
-  | {
-      type: "tool-call";
-      toolCallId: string;
-      toolName: string;
-      args?: unknown;
-      argsText?: string;
-      result?: unknown;
-      isError?: boolean;
-    };
+export type ReplayPart = AssistantPart;
 
 export interface ReplayMessage {
   role: "user" | "assistant";
@@ -85,36 +77,30 @@ export async function replaySession(
       const content = (m.message as { content?: unknown[] }).content;
       if (!Array.isArray(content)) continue;
 
-      const parts: ReplayPart[] = [];
-      for (const block of content) {
-        const b = block as {
-          type: string;
-          text?: string;
-          id?: string;
-          name?: string;
-          input?: unknown;
-        };
+      // 复用共享映射：text / thinking→reasoning / tool_use→tool-call
+      // dropEmptyText=true 去掉空文本块（历史回放不需要占位）
+      const parts = contentBlocksToParts(content, true);
+      if (parts.length === 0) continue;
 
-        if (b.type === "text" && typeof b.text === "string") {
-          if (b.text.trim()) parts.push({ type: "text", text: b.text });
-        } else if (
-          b.type === "tool_use" &&
-          typeof b.id === "string" &&
-          typeof b.name === "string"
-        ) {
-          parts.push({
-            type: "tool-call",
-            toolCallId: b.id,
-            toolName: b.name,
-            args: b.input,
-            argsText: safeStringify(b.input),
-          });
-        }
-      }
-
-      if (parts.length > 0) {
-        const msgIdx = out.length;
-        out.push({ role: "assistant", content: parts });
+      // 合并连续的 assistant 消息：agentic loop 的每轮 SDK assistant
+      // 消息（thinking/tool_use/中间 text）都属于同一个用户回合，
+      // 合并进同一条前端消息，避免把一个回合碎成几十条消息。
+      const last = out[out.length - 1];
+      let msgIdx: number;
+      if (last && last.role === "assistant") {
+        // 追加到已有 assistant 消息
+        msgIdx = out.length - 1;
+        const baseLen = last.content.length;
+        last.content.push(...parts);
+        parts.forEach((p, i) => {
+          if (p.type === "tool-call") {
+            pendingTools.set(p.toolCallId, { msgIdx, partIdx: baseLen + i });
+          }
+        });
+      } else {
+        // 开新的 assistant 消息
+        msgIdx = out.length;
+        out.push({ role: "assistant", content: [...parts] });
         parts.forEach((p, partIdx) => {
           if (p.type === "tool-call") {
             pendingTools.set(p.toolCallId, { msgIdx, partIdx });
@@ -125,12 +111,4 @@ export async function replaySession(
   }
 
   return out;
-}
-
-function safeStringify(v: unknown): string {
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
 }

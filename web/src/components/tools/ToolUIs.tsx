@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Markdown } from "@/components/Markdown";
 
 /**
  * 工具调用 UI 组件。
@@ -22,7 +22,69 @@ export interface ToolUIProps {
   status: { type: "running" | "complete" | "incomplete" | "requires-action" };
 }
 
-/** 工具卡片外壳：可折叠 + 名称 + 状态徽章 */
+/**
+ * 思考过程（reasoning part）渲染。
+ * - 消息运行中（status running）默认展开、模型往下走后收起。
+ * - 空文本（流式刚开始）显示"思考中…"占位。
+ * - 无边框：仅用左侧细色条 + 收起/展开，视觉轻量。
+ */
+export function ReasoningBlock({
+  text,
+  isStreaming,
+}: {
+  text?: string;
+  isStreaming?: boolean;
+}) {
+  const [open, setOpen] = useState(!!isStreaming);
+  const showCursor = isStreaming && !text;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="size-3 shrink-0" />
+        ) : (
+          <ChevronRight className="size-3 shrink-0" />
+        )}
+        <span className="font-medium">
+          {showCursor ? "思考中…" : "思考过程"}
+        </span>
+        {isStreaming && (
+          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+        )}
+      </button>
+      {open && (text || showCursor) && (
+        <div className="mt-1 pl-3.5 text-[13px] leading-relaxed text-muted-foreground/80">
+          {showCursor ? (
+            <span className="text-muted-foreground/50">…</span>
+          ) : (
+            <Markdown>{text ?? ""}</Markdown>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 消息错误块：assistant 消息进入 incomplete/error 状态时显示。
+ * 无边框，仅用红色文字 + 左色条。
+ */
+export function MessageErrorBlock({ message }: { message?: string }) {
+  return (
+    <div className="my-1 border-l-2 border-red-500/50 pl-3 py-1 text-sm text-red-400">
+      <div className="font-medium">⚠ 出错了</div>
+      {message && (
+        <div className="mt-0.5 text-[13px] text-red-400/70">{message}</div>
+      )}
+    </div>
+  );
+}
+
+/** 工具卡片外壳：可折叠 + 名称 + 状态。无边框，仅 hover 时浅背景。 */
 export function ToolCardShell({
   name,
   summary,
@@ -40,19 +102,19 @@ export function ToolCardShell({
   const isRunning = status.type === "running";
 
   return (
-    <div className="mt-1.5 rounded-xl border border-border/50 bg-card/40 transition-colors hover:border-border">
+    <div className="rounded-md transition-colors hover:bg-muted/30">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50"
+        className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm"
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
         )}
         <span
           className={cn(
-            "font-mono font-medium",
+            "font-mono text-[13px] font-medium",
             isError
               ? "text-red-400"
               : isRunning
@@ -63,21 +125,20 @@ export function ToolCardShell({
           {name}
         </span>
         {summary && (
-          <span className="truncate text-muted-foreground">{summary}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground/70">{summary}</span>
         )}
         {isRunning && (
-          <Badge variant="outline" className="ml-auto animate-pulse text-amber-400">
-            运行中…
-          </Badge>
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-amber-400">
+            <span className="inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+            运行中
+          </span>
         )}
         {isError && (
-          <Badge variant="destructive" className="ml-auto">出错</Badge>
+          <span className="ml-auto text-[11px] text-red-400">出错</span>
         )}
       </button>
       {open && children && (
-        <div className="space-y-2 border-t border-border px-3 py-2">
-          {children}
-        </div>
+        <div className="space-y-2 px-2 pb-2 pt-1">{children}</div>
       )}
     </div>
   );

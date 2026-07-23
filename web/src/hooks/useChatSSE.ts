@@ -193,6 +193,9 @@ export function useChatSSE({
       case "text":
         setMessages((prev) => appendTextToLast(prev, evt.text));
         break;
+      case "thinking":
+        setMessages((prev) => appendThinkingToLast(prev, evt.text));
+        break;
       case "tool_use":
         setMessages((prev) =>
           appendToolCall(prev, evt.id, evt.name, evt.input),
@@ -207,9 +210,8 @@ export function useChatSSE({
         // 用户主动中止后的所有 error 事件都不显示
         if (stoppedByUserRef.current) break;
         setError(evt.message);
-        setMessages((prev) =>
-          appendTextToLast(prev, `\n\n⚠️ ${evt.message}`),
-        );
+        // 正式化错误状态：把最后一条 assistant 标为 error，而非文本拼接
+        setMessages((prev) => errorLast(prev, evt.message));
         break;
       case "done":
         setStats({
@@ -443,6 +445,22 @@ function appendTextToLast(msgs: ChatMessage[], delta: string): ChatMessage[] {
   return [...msgs.slice(0, lastIdx), { ...last, content: content as never }];
 }
 
+/** 把 thinking 增量追加到最后一条 assistant 消息的末尾 reasoning part */
+function appendThinkingToLast(msgs: ChatMessage[], delta: string): ChatMessage[] {
+  if (msgs.length === 0) return msgs;
+  const lastIdx = msgs.length - 1;
+  const last = msgs[lastIdx];
+  if (last.role !== "assistant") return msgs;
+  const content = [...((last.content as unknown) as AnyPart[])];
+  const lp = content[content.length - 1];
+  if (lp && lp.type === "reasoning" && typeof lp.text === "string") {
+    content[content.length - 1] = { ...lp, text: lp.text + delta };
+  } else {
+    content.push({ type: "reasoning", text: delta });
+  }
+  return [...msgs.slice(0, lastIdx), { ...last, content: content as never }];
+}
+
 function appendToolCall(
   msgs: ChatMessage[],
   toolCallId: string,
@@ -498,6 +516,21 @@ function completeLast(msgs: ChatMessage[]): ChatMessage[] {
   return [
     ...msgs.slice(0, lastIdx),
     { ...last, status: { type: "complete", reason: "stop" } },
+  ];
+}
+
+/** 把最后一条 assistant 消息标记为错误（incomplete + error，保留已有 content） */
+function errorLast(msgs: ChatMessage[], message: string): ChatMessage[] {
+  if (msgs.length === 0) return msgs;
+  const lastIdx = msgs.length - 1;
+  const last = msgs[lastIdx];
+  if (last.role !== "assistant") return msgs;
+  return [
+    ...msgs.slice(0, lastIdx),
+    {
+      ...last,
+      status: { type: "incomplete", reason: "error", error: message },
+    },
   ];
 }
 

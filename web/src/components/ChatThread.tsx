@@ -4,8 +4,10 @@ import {
   ComposerPrimitive,
   useThreadViewport,
   useThreadViewportStore,
+  useMessage,
+  useComposerRuntime,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, ChevronDown, Square } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,11 +24,9 @@ import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
 import { ContextUsageRing } from "@/components/ContextUsageRing";
 import {
-  BashToolUI,
-  EditToolUI,
-  WriteToolUI,
-  ReadToolUI,
   GenericToolUI,
+  ReasoningBlock,
+  MessageErrorBlock,
   type ToolUIProps,
 } from "@/components/tools/ToolUIs";
 
@@ -114,11 +114,7 @@ export function ChatThread({
     <ThreadPrimitive.Root className="flex h-full flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <ThreadPrimitive.Empty>
-          <div className="flex h-full items-center justify-center p-8">
-            <span className="text-sm text-muted-foreground/50 font-mono">
-              $ 开始新的对话
-            </span>
-          </div>
+          <EmptyState />
         </ThreadPrimitive.Empty>
 
         <div className="mx-auto max-w-3xl px-3 py-4 md:px-4 md:py-6">
@@ -317,7 +313,7 @@ export function ChatThread({
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="mb-4 flex justify-end md:mb-6">
+    <MessagePrimitive.Root className="group/msg mb-4 flex justify-end gap-1 md:mb-6">
       <div className="min-w-0">
         <div className="inline-block max-w-full rounded-2xl rounded-br-md bg-accent px-3 py-2 text-left text-white md:px-4 md:py-2.5">
           <MessagePrimitive.Parts
@@ -337,34 +333,242 @@ function UserMessage() {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="mb-4 flex gap-2 md:mb-6 md:gap-3">
+    <MessagePrimitive.Root className="group/msg relative mb-4 flex gap-2 md:mb-6 md:gap-3">
       <div className="min-w-0 flex-1">
         <div className="inline-block max-w-full rounded-2xl rounded-bl-md bg-card px-3 py-2 text-foreground md:px-4 md:py-3">
-          <MessagePrimitive.Parts
-            components={{
-              Text: ({ text }) =>
-                text ? <Markdown>{text}</Markdown> : <RunningCursor />,
-              tools: {
-                by_name: {
-                  Bash: BashToolUI as (p: ToolUIProps) => React.ReactElement,
-                  Edit: EditToolUI as (p: ToolUIProps) => React.ReactElement,
-                  Write: WriteToolUI as (p: ToolUIProps) => React.ReactElement,
-                  Read: ReadToolUI as (p: ToolUIProps) => React.ReactElement,
-                },
-                Fallback:
-                  GenericToolUI as (p: ToolUIProps) => React.ReactElement,
-              },
-            }}
-          />
+          <AssistantContent />
         </div>
       </div>
+      <AssistantActionBar />
     </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * assistant 消息正文：用 GroupedParts 把连续的 reasoning + tool-call
+ * 包成"思维链"折叠块，运行中展开、结束后收起，最终只露文本回答。
+ */
+function AssistantContent() {
+  const status = useMessage((s) => s.status);
+  const content = useMessage((s) => s.content);
+  const isRunning = status?.type === "running";
+
+  // 把 parts 分成"正文（text）"和"工作过程（reasoning + tool-call）"两类。
+  // 无论中间是否被 text 隔断，所有 reasoning/tool-call 都合并成
+  // 一个"工作过程"折叠块，正文文本单独渲染。
+  const parts = (content as readonly AnyPart[] | undefined) ?? [];
+  const textParts = parts.filter((p) => p.type === "text");
+  const workParts = parts.filter(
+    (p) => p.type === "reasoning" || p.type === "tool-call",
+  );
+  const hasText = textParts.some(
+    (p) => typeof p.text === "string" && p.text.trim(),
+  );
+  const hasWork = workParts.length > 0;
+
+  return (
+    <>
+      {hasWork && (
+        <WorkProcessGroup parts={workParts} isRunning={isRunning} />
+      )}
+      {hasText ? (
+        <div className={hasWork ? "mt-2" : ""}>
+          <Markdown>
+            {textParts.map((p) => (p.text ?? "")).join("")}
+          </Markdown>
+        </div>
+      ) : isRunning && !hasWork ? (
+        <RunningCursor />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * 工作过程折叠块：把一轮里所有 reasoning + tool-call 合并为一个可折叠组。
+ * 运行中默认展开、结束后收起。内部各 part 用对应组件渲染（保留 part-scope）。
+ */
+function WorkProcessGroup({
+  parts,
+  isRunning,
+}: {
+  parts: readonly AnyPart[];
+  isRunning: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  const toolCount = parts.filter((p) => p.type === "tool-call").length;
+
+  return (
+    <div className="text-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        <span className="font-medium">工作过程</span>
+        {toolCount > 0 && (
+          <span className="text-muted-foreground/60">{toolCount} 个工具</span>
+        )}
+        {isRunning && (
+          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+        )}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5 border-l border-border/40 pl-3">
+          {parts.map((p, i) => {
+            if (p.type === "reasoning") {
+              return (
+                <ReasoningBlock
+                  key={i}
+                  text={typeof p.text === "string" ? p.text : undefined}
+                  isStreaming={isRunning}
+                />
+              );
+            }
+            if (p.type === "tool-call") {
+              return <GenericToolUI key={i} {...mapToolPart(p)} />;
+            }
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 把 part 的 tool-call 映射成 ToolUIProps */
+function mapToolPart(part: AnyPart): ToolUIProps {
+  const st = (part as { status?: { type?: string } }).status;
+  return {
+    toolName: (part.toolName as string) ?? "",
+    args: part.args,
+    argsText: typeof part.argsText === "string" ? part.argsText : undefined,
+    result: part.result,
+    isError: typeof part.isError === "boolean" ? part.isError : undefined,
+    status: {
+      type:
+        st?.type === "running"
+          ? "running"
+          : st?.type === "complete"
+            ? "complete"
+            : st?.type === "incomplete"
+              ? "incomplete"
+              : "requires-action",
+    },
+  };
+}
+
+type AnyPart = { type: string; [k: string]: unknown };
+
+/**
+ * assistant 消息错误块：消息进入 incomplete/error 状态时显示。
+ */
+function AssistantErrorIfAny() {
+  const status = useMessage((s) => s.status);
+  if (status?.type !== "incomplete" || status.reason !== "error") return null;
+  const errMsg = typeof status.error === "string" ? status.error : undefined;
+  return <MessageErrorBlock message={errMsg} />;
+}
+
+/**
+ * assistant 消息操作：错误块 + 复制按钮。
+ * 复制按钮绝对定位浮在气泡外，hover 消息时淡入，不占文档流（避免布局抖动）。
+ * 仅当消息有文本内容时才渲染（工作过程组无文本回答时不显示）。
+ */
+function AssistantActionBar() {
+  return (
+    <>
+      <AssistantErrorIfAny />
+      <CopyButton />
+    </>
+  );
+}
+
+/** 复制按钮：提取消息文本，用 navigator.clipboard 复制，2s 内显示对勾 */
+function CopyButton() {
+  const [copied, setCopied] = useState(false);
+  const text = useMessage((s) =>
+    (s.content as readonly { type: string; text?: string }[] | undefined)
+      ?.filter((p) => p.type === "text")
+      .map((p) => p.text ?? "")
+      .join("") ?? "",
+  );
+  // 没有文本内容（纯工作过程组）时不渲染复制按钮
+  if (!text.trim()) return null;
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      (err) =>
+        console.warn(
+          "[copy] clipboard write failed:",
+          err instanceof Error ? err.message : err,
+        ),
+    );
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="absolute -bottom-2.5 left-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100 md:left-3"
+    >
+      {copied ? (
+        <>
+          <Check className="size-3 text-emerald-400" /> 已复制
+        </>
+      ) : (
+        <>
+          <Copy className="size-3" /> 复制
+        </>
+      )}
+    </button>
   );
 }
 
 function RunningCursor() {
   return (
     <span className="ml-0.5 inline-block h-4 w-2.5 animate-pulse rounded-sm bg-accent align-middle" />
+  );
+}
+
+/**
+ * 空状态：提示语 + 建议词。点击建议词把文本填入 composer（不自动发送，
+ * 让用户可调整后再按 Enter）。
+ */
+function EmptyState() {
+  const composer = useComposerRuntime();
+  const suggestions = [
+    "解释这个项目的结构",
+    "帮我修复一个 bug",
+    "重构这段代码",
+    "给这个文件写测试",
+  ];
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+      <span className="font-mono text-sm text-muted-foreground/50">
+        $ 开始新的对话
+      </span>
+      <div className="flex max-w-md flex-wrap items-center justify-center gap-2">
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => composer?.setText(s)}
+            className="rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
