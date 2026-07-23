@@ -8,7 +8,7 @@ import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, getPendingPermissions, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
-import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, } from "../channels/relay.js";
+import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, buildRemoteUrl, } from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
@@ -773,7 +773,7 @@ export async function apiRoutes(app) {
                     ...status,
                     relayUrl: saved.relayUrl,
                     accessKey: saved.accessKey,
-                    remoteUrl: `${saved.relayUrl.replace(/\/+$/, "")}/?k=${encodeURIComponent(saved.accessKey)}`,
+                    remoteUrl: buildRemoteUrl(saved.relayUrl, saved.accessKey),
                 });
             }
         }
