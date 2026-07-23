@@ -44,6 +44,7 @@ import {
   stopRelayTunnel,
   getRelayStatus,
   setLocalBase,
+  buildRemoteUrl,
   type RelayConfig,
 } from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
@@ -899,7 +900,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           ...status,
           relayUrl: saved.relayUrl,
           accessKey: saved.accessKey,
-          remoteUrl: `${saved.relayUrl.replace(/\/+$/, "")}/?k=${encodeURIComponent(saved.accessKey)}`,
+          remoteUrl: buildRemoteUrl(saved.relayUrl, saved.accessKey),
         });
       }
     }

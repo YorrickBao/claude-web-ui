@@ -74,8 +74,10 @@ const RECONNECT_MAX_MS = 30000;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 const PING_INTERVAL_MS = 25000; // 略小于中转 30s，确保中转 readIdleTimeout 不触发
 
-// 收集每个 connId 的请求体分片
+// 收集每个 connId 的请求体：req 帧到达后创建 resolver，req_body 分片累积，
+// req_body:last 时 resolve 触发 fetch。避免轮询延迟。
 const reqBodyBuffers = new Map<string, string[]>();
+const reqBodyResolvers = new Map<string, (body: string | undefined) => void>();
 
 /** 由 index.ts 在 server 监听成功后注入本地 base URL，如 http://127.0.0.1:23456 */
 let localBase: string | null = null;
@@ -137,6 +139,7 @@ function stopInternal(clearEnabled: boolean): void {
   connected = false;
   connecting = false;
   reqBodyBuffers.clear();
+  reqBodyResolvers.clear();
   if (clearEnabled) {
     enabled = false;
   }
@@ -261,18 +264,28 @@ async function handleFrame(data: unknown): Promise<void> {
       const parts = reqBodyBuffers.get(f.connId);
       if (parts) {
         parts.push(f.body);
-        if (f.last) {
-          // 请求体接收完毕的事件由 handleReq 在收到首个 req 时已启动异步处理，
-          // 这里仅负责累积；若 req 尚未记录则忽略（乱序）
+      }
+      if (f.last) {
+        // 请求体接收完毕，唤醒等待中的 handleReq
+        const body = parts ? parts.join("") : undefined;
+        reqBodyBuffers.delete(f.connId);
+        const resolver = reqBodyResolvers.get(f.connId);
+        if (resolver) {
+          reqBodyResolvers.delete(f.connId);
+          resolver(body);
         }
       }
       break;
     }
 
     case "end": {
-      // 远程客户端取消请求（如 SSE 关闭），转发到本地 fetch 不可中途取消，
-      // 记录即可；SSE 会在本地流结束时自然收尾
+      // 远程客户端取消请求（如浏览器关闭 SSE 连接）
       reqBodyBuffers.delete(f.connId);
+      const resolver = reqBodyResolvers.get(f.connId);
+      if (resolver) {
+        reqBodyResolvers.delete(f.connId);
+        resolver(undefined);
+      }
       break;
     }
 
@@ -296,17 +309,12 @@ async function handleReq(
     return;
   }
 
-  // 等待可能的请求体分片（给 50ms 让后续 req_body 到达；绝大多数 POST 体很小，单帧完成）
-  let body: string | undefined;
-  const buffered = reqBodyBuffers.get(connId);
-  if (buffered) {
-    // 已有分片累积（某些实现首帧带 body）
-    body = buffered.join("");
-    reqBodyBuffers.delete(connId);
-  } else {
-    // 等一小段时间收集 req_body 帧
-    body = await collectReqBody(connId);
-  }
+  // 等待请求体：中转在 req 帧后必发 req_body:last 标记结束。
+  // 这里创建 buffer + resolver，由 req_body 帧处理逻辑填充并唤醒。
+  reqBodyBuffers.set(connId, []);
+  const body = await new Promise<string | undefined>((resolve) => {
+    reqBodyResolvers.set(connId, resolve);
+  });
 
   // 构造转发 headers：剔除 hop-by-hop
   const headers = new Headers();
@@ -374,38 +382,6 @@ async function handleReq(
   void isSse;
 }
 
-/** 收集一个 connId 的请求体分片，最多等 200ms */
-function collectReqBody(connId: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    const buf: string[] = [];
-    reqBodyBuffers.set(connId, buf);
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      reqBodyBuffers.delete(connId);
-      resolve(buf.length ? buf.join("") : undefined);
-    };
-    // 轮询 20ms 一次，200ms 内收齐即返回
-    const start = Date.now();
-    const tick = () => {
-      if (buf.length > 0) {
-        // 收到首片后再给 30ms 看是否有后续分片
-        setTimeout(finish, 30);
-        return;
-      }
-      if (Date.now() - start > 200) {
-        finish();
-        return;
-      }
-      setTimeout(tick, 20);
-    };
-    // 先清空，让 req_body 累积到 buf
-    reqBodyBuffers.set(connId, buf);
-    setTimeout(tick, 5);
-  });
-}
-
 function sendError(connId: string, message: string): void {
   send({ type: "error", connId, message });
 }
@@ -430,14 +406,21 @@ function buildTunnelUrl(relayUrl: string): string {
   return `${u}/tunnel`;
 }
 
-/** 由中转地址 + accessKey 构造远程浏览器访问地址 */
-function buildRemoteUrl(relayUrl: string, accessKey: string): string {
+/** 由中转地址 + accessKey 构造远程浏览器访问地址（HTTP，供浏览器/二维码使用） */
+export function buildRemoteUrl(relayUrl: string, accessKey: string): string {
   if (!relayUrl || !accessKey) return "";
-  const u = normalizeUrl(relayUrl);
+  const u = toHttpScheme(normalizeUrl(relayUrl));
   return `${u}/?k=${encodeURIComponent(accessKey)}`;
 }
 
 /** 规范化：去掉末尾斜杠。保留 scheme（wss/ws 或 https/http） */
 function normalizeUrl(u: string): string {
   return u.replace(/\/+$/, "");
+}
+
+/** wss→https、ws→http，供浏览器 HTTP 访问用（隧道端点保持 ws/wss） */
+function toHttpScheme(u: string): string {
+  if (u.startsWith("wss://")) return "https://" + u.slice("wss://".length);
+  if (u.startsWith("ws://")) return "http://" + u.slice("ws://".length);
+  return u;
 }

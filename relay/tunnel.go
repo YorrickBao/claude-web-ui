@@ -88,21 +88,48 @@ func (t *Tunnel) localReadLoop(parent context.Context, h *Hub) {
 		}
 
 		switch f.Type {
-		case TypeRes, TypeResBody, TypeEnd, TypeError:
-			// 按 connId 路由到 client
-			client, ok := t.takeRoute(f.ConnId)
+		case TypeRes:
+			// 响应头：写到对应 HTTP 连接（保留路由，body 可能多片）
+			p, ok := t.takeRouteKeep(f.ConnId)
 			if !ok {
-				// client 可能已断开，丢弃
 				continue
 			}
-			if err := client.writeClient(parent, f); err != nil {
-				log.Printf("[tunnel] %s write to client %s failed: %v", shortKey(t.accessKey), f.ConnId, err)
+			p.writeHeader(f.Status, f.Headers)
+
+		case TypeResBody:
+			p, ok := t.takeRouteKeep(f.ConnId)
+			if !ok {
 				continue
 			}
-			// 响应流结束（last:true 或 end）时清理路由
-			if (f.Type == TypeResBody && f.Last) || f.Type == TypeEnd {
+			if !p.headerSent {
+				// 本地没发 res 头就先发 body（异常），补一个 200
+				p.writeHeader(http.StatusOK, nil)
+			}
+			p.writeBody(f.Body)
+			if f.Last {
 				t.deleteRoute(f.ConnId)
+				p.finish()
 			}
+
+		case TypeEnd:
+			// 本地主动终止该请求
+			p, ok := t.takeRoute(f.ConnId)
+			if !ok {
+				continue
+			}
+			p.fail("ended by local")
+
+		case TypeError:
+			// 本地处理出错
+			if f.ConnId == "" {
+				log.Printf("[tunnel] %s error: %s", shortKey(t.accessKey), f.Message)
+				continue
+			}
+			p, ok := t.takeRoute(f.ConnId)
+			if !ok {
+				continue
+			}
+			p.fail("local error: " + f.Message)
 
 		case TypePong:
 			// 心跳回复，忽略

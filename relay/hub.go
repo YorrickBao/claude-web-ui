@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
+	"strconv"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -54,17 +59,16 @@ func (h *Hub) unregister(accessKey string, t *Tunnel) {
 	}
 }
 
-// Tunnel 代表一条连到本地 WebUI 的出站隧道，可挂多个远程 client。
+// Tunnel 代表一条连到本地 WebUI 的出站隧道。
+// 远程浏览器的 HTTP 请求经中转转成 req 帧发到这里，本地 fetch 后用 res/res_body
+// 帧回传，中转再写回对应 HTTP 连接。每个在途 HTTP 请求用一个 connId 关联。
 type Tunnel struct {
 	accessKey string
 	conn      *websocket.Conn
 	writeMu   sync.Mutex // 串行化向本地 WS 写帧
 
-	clientsMu sync.Mutex
-	clients   map[*Client]struct{} // 挂在此隧道上的所有 client
-
 	routesMu sync.Mutex
-	routes   map[string]*Client // connId → client（路由本地响应帧回 client）
+	routes   map[string]*pendingHTTP // connId → 在途 HTTP 响应（远程浏览器侧）
 
 	closed  bool
 	closeMu sync.Mutex
@@ -74,8 +78,7 @@ func NewTunnel(accessKey string, conn *websocket.Conn) *Tunnel {
 	return &Tunnel{
 		accessKey: accessKey,
 		conn:      conn,
-		clients:   make(map[*Client]struct{}),
-		routes:    make(map[string]*Client),
+		routes:    make(map[string]*pendingHTTP),
 	}
 }
 
@@ -90,49 +93,36 @@ func (t *Tunnel) writeLocal(ctx context.Context, f Frame) error {
 	return t.conn.Write(ctx, websocket.MessageText, data)
 }
 
-// addClient / removeClient 维护 client 集合。
-func (t *Tunnel) addClient(c *Client) {
-	t.clientsMu.Lock()
-	t.clients[c] = struct{}{}
-	t.clientsMu.Unlock()
-}
-
-func (t *Tunnel) removeClient(c *Client) {
-	t.clientsMu.Lock()
-	delete(t.clients, c)
-	t.clientsMu.Unlock()
-	// 清理该 client 所有路由
+// addRoute / takeRoute / peekRoute 维护 connId → pendingHTTP 路由。
+func (t *Tunnel) addRoute(connId string, p *pendingHTTP) {
 	t.routesMu.Lock()
-	for id, cl := range t.routes {
-		if cl == c {
-			delete(t.routes, id)
-		}
-	}
+	t.routes[connId] = p
 	t.routesMu.Unlock()
 }
 
-// addRoute / takeRoute 维护 connId → client 路由。
-func (t *Tunnel) addRoute(connId string, c *Client) {
-	t.routesMu.Lock()
-	t.routes[connId] = c
-	t.routesMu.Unlock()
-}
-
-func (t *Tunnel) takeRoute(connId string) (*Client, bool) {
+// takeRoute 取出并删除（用于流结束、错误）。
+func (t *Tunnel) takeRoute(connId string) (*pendingHTTP, bool) {
 	t.routesMu.Lock()
 	defer t.routesMu.Unlock()
-	c, ok := t.routes[connId]
-	return c, ok
+	p, ok := t.routes[connId]
+	return p, ok
 }
 
-// deleteRoute 删除单个路由（响应流结束后调用）。
+// takeRouteKeep 取出但不删除（用于 res_body 多片，需要保留直到 last）。
+func (t *Tunnel) takeRouteKeep(connId string) (*pendingHTTP, bool) {
+	t.routesMu.Lock()
+	defer t.routesMu.Unlock()
+	p, ok := t.routes[connId]
+	return p, ok
+}
+
 func (t *Tunnel) deleteRoute(connId string) {
 	t.routesMu.Lock()
 	delete(t.routes, connId)
 	t.routesMu.Unlock()
 }
 
-// shutdown 关闭隧道：关闭本地 WS，并关闭所有挂着的 client。
+// shutdown 关闭隧道：关闭本地 WS，并终结所有在途 HTTP 请求（返回 502）。
 func (t *Tunnel) shutdown(reason string) {
 	t.closeMu.Lock()
 	if t.closed {
@@ -144,50 +134,113 @@ func (t *Tunnel) shutdown(reason string) {
 
 	_ = t.conn.Close(websocket.StatusNormalClosure, reason)
 
-	t.clientsMu.Lock()
-	clients := make([]*Client, 0, len(t.clients))
-	for c := range t.clients {
-		clients = append(clients, c)
+	// 收集所有在途请求并失败它们
+	t.routesMu.Lock()
+	pendings := make([]*pendingHTTP, 0, len(t.routes))
+	for _, p := range t.routes {
+		pendings = append(pendings, p)
 	}
-	t.clientsMu.Unlock()
-	for _, c := range clients {
-		c.shutdown("tunnel closed")
+	t.routes = make(map[string]*pendingHTTP)
+	t.routesMu.Unlock()
+	for _, p := range pendings {
+		p.fail("tunnel closed: " + reason)
 	}
 	log.Printf("[hub] tunnel %s shutdown: %s", shortKey(t.accessKey), reason)
 }
 
-// Client 是一个远程浏览器的 WS 连接，挂在某条 Tunnel 上。
-type Client struct {
-	conn    *websocket.Conn
-	tunnel  *Tunnel
-	writeMu sync.Mutex
-	closed  bool
-	closeMu sync.Mutex
+// pendingHTTP 代表一个远程浏览器 HTTP 请求在隧道侧的"占位"。
+// localReadLoop 收到 res/res_body 帧后写 ResponseWriter；HTTP handler
+// goroutine 阻塞在 wait() 等流结束（或客户端断开）。
+//
+// 并发：writeHeader/writeBody 只在 localReadLoop（单 goroutine）调用；
+// wait/fail 在 HTTP handler goroutine 调用；done channel 协调两者。
+type pendingHTTP struct {
+	w          httpResponseWriter
+	flusher    http.Flusher
+	done       chan struct{}
+	err        error
+	headerSent bool
 }
 
-func NewClient(conn *websocket.Conn, tunnel *Tunnel) *Client {
-	return &Client{conn: conn, tunnel: tunnel}
+type httpResponseWriter = interface {
+	Header() http.Header
+	WriteHeader(statusCode int)
+	Write([]byte) (int, error)
 }
 
-func (c *Client) writeClient(ctx context.Context, f Frame) error {
-	data, err := encodeFrame(f)
-	if err != nil {
-		return err
+func newPendingHTTP(w httpResponseWriter) *pendingHTTP {
+	p := &pendingHTTP{w: w, done: make(chan struct{})}
+	if fl, ok := w.(http.Flusher); ok {
+		p.flusher = fl
 	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	return c.conn.Write(ctx, websocket.MessageText, data)
+	return p
 }
 
-func (c *Client) shutdown(reason string) {
-	c.closeMu.Lock()
-	if c.closed {
-		c.closeMu.Unlock()
+// writeHeader 写响应头（仅一次）。跳过 hop-by-hop 头。
+func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
+	if p.headerSent {
 		return
 	}
-	c.closed = true
-	c.closeMu.Unlock()
-	_ = c.conn.Close(websocket.StatusNormalClosure, reason)
+	h := p.w.Header()
+	for k, v := range headers {
+		if isHopByHop(k) {
+			continue
+		}
+		h.Set(k, v)
+	}
+	p.w.WriteHeader(status)
+	if p.flusher != nil {
+		p.flusher.Flush()
+	}
+	p.headerSent = true
+}
+
+func (p *pendingHTTP) writeBody(body string) {
+	if body != "" {
+		_, _ = p.w.Write([]byte(body))
+	}
+	if p.flusher != nil {
+		p.flusher.Flush()
+	}
+}
+
+// finish 标记响应流正常结束。
+func (p *pendingHTTP) finish() {
+	select {
+	case <-p.done:
+	default:
+		close(p.done)
+	}
+}
+
+// fail 标记失败（若尚未发头则可由 handler 写错误页）。
+func (p *pendingHTTP) fail(reason string) {
+	if p.err == nil {
+		p.err = errors.New(reason)
+	}
+	p.finish()
+}
+
+// wait 阻塞直到响应结束、出错或客户端断开（ctx）。
+func (p *pendingHTTP) wait(ctx context.Context) error {
+	select {
+	case <-p.done:
+		return p.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ── 工具函数 ──
+
+// connIdSeq 全局递增，保证 connId 唯一。
+var connIdSeq uint64
+
+// generateConnId 生成形如 c-<ns低位hex>-<seq> 的 connId，便于日志辨识且不重复。
+func generateConnId() string {
+	n := atomic.AddUint64(&connIdSeq, 1)
+	lo := uint64(time.Now().UnixNano()) & 0xffff
+	return "c-" + strconv.FormatUint(lo, 16) + "-" + strconv.FormatUint(n, 10)
 }
 
 func shortKey(k string) string {
@@ -195,4 +248,15 @@ func shortKey(k string) string {
 		return k
 	}
 	return k[:4] + "…" + k[len(k)-4:]
+}
+
+// isHopByHop 判断是否为 hop-by-hop / 不应转发的头。
+func isHopByHop(name string) bool {
+	switch name {
+	case "Connection", "Keep-Alive", "Proxy-Authenticate",
+		"Proxy-Authorization", "Te", "Trailers",
+		"Transfer-Encoding", "Upgrade":
+		return true
+	}
+	return false
 }

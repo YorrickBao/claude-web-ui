@@ -8,11 +8,19 @@
 
 中转是纯转发，不解析 HTTP 内容，不做 TLS（交 Nginx）。
 
-## 构建
+## 获取二进制
 
-需要 Go 1.26+。
+**方式一（推荐）：从 GitHub Actions / Releases 下载预编译产物**
+
+仓库已配置 GitHub Actions，每次推送 `relay/` 改动会自动构建 Linux/macOS/Windows 多平台二进制。打 `v*` tag 时会发布到 Releases。
+
+- 最新构建产物：仓库 → Actions → 选最近一次 Build Relay → 下载对应平台的 artifact
+- 正式发布：仓库 → Releases
+
+**方式二：本地编译**（需 Go 1.26+、[just](https://github.com/casey/just)）
 
 ```bash
+cd relay
 # 当前平台
 just build
 
@@ -20,6 +28,8 @@ just build
 just build-linux
 # 产物：claude-web-ui-relay-linux-amd64
 ```
+
+> 注意：Go 构建产物不提交进仓库（已在 .gitignore 排除），统一由 CI 构建。
 
 ## 部署到 VPS
 

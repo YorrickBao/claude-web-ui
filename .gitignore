@@ -26,3 +26,8 @@ server/data/*.log
 # tooling artifacts (playwright snapshots, etc.)
 .playwright-mcp/
 .zcode/
+
+# relay (Go) build artifacts —— 不进仓库，由 GitHub Actions 构建发布
+relay/claude-web-ui-relay*
+relay/dist/
+

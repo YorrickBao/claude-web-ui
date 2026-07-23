@@ -1,0 +1,104 @@
+name: Build Relay
+
+# 每次推送 relay/ 相关改动时，交叉编译 Go 中转服务多平台二进制，
+# 上传为 workflow artifact，便于下载部署。
+# 打 tag（v*）时额外发布到 GitHub Releases。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - ".github/workflows/build-relay.yml"
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "relay/**"
+      - ".github/workflows/build-relay.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write # 打 tag 时发布 Release 需要
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: relay/go.sum
+
+      - name: Build
+        working-directory: relay
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -ldflags "-s -w" -o claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+          go vet ./...
+
+      - name: Compress (tar.gz)
+        if: matrix.goos != 'windows'
+        working-directory: relay
+        run: tar -czf claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}
+
+      - name: Compress (zip)
+        if: matrix.goos == 'windows'
+        working-directory: relay
+        run: zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            relay/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            relay/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Release (on tag)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            ## Claude WebUI 中转服务
+
+            下载对应平台的压缩包，解压后部署到 VPS。详见 [relay/README.md](https://github.com/${{ github.repository }}/blob/main/relay/README.md)。
+
+            ### 校验
+
+            ```bash
+            ./claude-web-ui-relay --listen 127.0.0.1:8787
+            curl http://127.0.0.1:8787/healthz  # {"ok":true}
+            ```
