@@ -3,7 +3,7 @@ import fastifyStatic from "@fastify/static";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { HOST, START_PORT, WEB_DIST_DIR, DATA_DIR } from "./env.js";
+import { HOST, START_PORT, WEB_DIST_DIR, DATA_DIR, LOG_ENABLED } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
 import { startFeishuChannel } from "./channels/feishu.js";
 /** 尝试监听端口，占用则 +1 重试（最多试 100 个） */
@@ -35,14 +35,16 @@ function openBrowser(url) {
 }
 async function main() {
     const app = Fastify({
-        logger: process.env.NODE_ENV === "production"
-            ? true
-            : {
-                transport: {
-                    target: "pino-pretty",
-                    options: { colorize: true, translateTime: "HH:MM:ss" },
-                },
-            },
+        logger: LOG_ENABLED
+            ? process.env.NODE_ENV === "production"
+                ? true
+                : {
+                    transport: {
+                        target: "pino-pretty",
+                        options: { colorize: true, translateTime: "HH:MM:ss" },
+                    },
+                }
+            : false,
     });
     // 业务路由
     await app.register(apiRoutes);
@@ -102,20 +104,24 @@ async function main() {
     let feishuChannelStarted = false;
     async function startFeishuChannelIfNeeded(config) {
         if (feishuChannelStarted) {
-            console.info("[feishu] channel already started, skipping");
+            if (LOG_ENABLED)
+                console.info("[feishu] channel already started, skipping");
             return;
         }
         if (!config.enabled || !config.appId || !config.appSecret) {
-            console.info("[feishu] channel disabled or missing credentials");
+            if (LOG_ENABLED)
+                console.info("[feishu] channel disabled or missing credentials");
             return;
         }
         try {
             await startFeishuChannel(config);
             feishuChannelStarted = true;
-            console.info("[feishu] channel started");
+            if (LOG_ENABLED)
+                console.info("[feishu] channel started");
         }
         catch (err) {
-            console.error("[feishu] channel startup failed:", err);
+            if (LOG_ENABLED)
+                console.error("[feishu] channel startup failed:", err);
         }
     }
     startFeishuChannelIfNeeded(feishuConfig).catch((err) => {
@@ -124,6 +130,7 @@ async function main() {
     globalThis.__feishuChannelStarter = startFeishuChannelIfNeeded;
 }
 main().catch((err) => {
-    console.error("fatal:", err);
+    if (LOG_ENABLED)
+        console.error("fatal:", err);
     process.exit(1);
 });

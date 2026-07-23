@@ -26,3 +26,5 @@ export const WEB_DIST_DIR = path.join(ROOT_DIR, "web", "dist");
 export const START_PORT = Number(process.env.PORT ?? 23456);
 /** 监听地址（纯本地部署） */
 export const HOST = process.env.HOST ?? "127.0.0.1";
+/** 是否输出日志（--log 参数控制，默认关闭） */
+export const LOG_ENABLED = process.env.CLAUDE_WEB_UI_LOG === "true";
