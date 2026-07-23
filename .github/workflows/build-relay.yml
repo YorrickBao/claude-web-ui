@@ -53,26 +53,27 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
-          go build -trimpath -ldflags "-s -w" -o claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o dist/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
           go vet ./...
 
       - name: Compress (tar.gz)
         if: matrix.goos != 'windows'
         working-directory: relay
-        run: tar -czf claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: tar -czf dist/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C dist claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}
 
       - name: Compress (zip)
         if: matrix.goos == 'windows'
         working-directory: relay
-        run: zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.exe
+        run: cd dist && zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            relay/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
-            relay/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+            relay/dist/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            relay/dist/claude-web-ui-relay-${{ matrix.goos }}-${{ matrix.goarch }}.zip
           if-no-files-found: error
 
   release:

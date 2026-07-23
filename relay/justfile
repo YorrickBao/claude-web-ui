@@ -8,30 +8,35 @@
 #   just run                # 本地直接运行
 #   just vet                # 静态检查
 #   just fmt                # 格式化
-#   just test-smoke         # 端到端冒烟（需先 just run 起中转）
+#   just clean              # 清理产物
 
 BIN     := "claude-web-ui-relay"
+DIST    := "dist"
 LDFLAGS := "-s -w"
 GOFLAGS := "-trimpath"
 LISTEN  := "127.0.0.1:8787"
 
 # 编译当前平台
 build:
-    go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{BIN}} .
+    mkdir -p {{DIST}}
+    go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}} .
 
 # 交叉编译 Linux amd64（最常见 VPS）
 build-linux:
-    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{BIN}}-linux-amd64 .
+    mkdir -p {{DIST}}
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-linux-amd64 .
 
 # 交叉编译 Linux arm64（ARM VPS）
 build-linux-arm64:
-    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{BIN}}-linux-arm64 .
+    mkdir -p {{DIST}}
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-linux-arm64 .
 
 # 交叉编译 macOS arm64（本地测试）
 build-darwin-arm64:
-    GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{BIN}}-darwin-arm64 .
+    mkdir -p {{DIST}}
+    GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-darwin-arm64 .
 
-# 本地直接运行
+# 本地直接运行（不落产物）
 run:
     go run . --listen {{LISTEN}}
 
@@ -45,4 +50,4 @@ fmt:
 
 # 清理产物
 clean:
-    rm -f {{BIN}} {{BIN}}-*
+    rm -rf {{DIST}}
