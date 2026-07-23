@@ -60,7 +60,33 @@ async function main() {
             decorateReply: true,
             wildcard: false, // 不拦截 /*，让 SPA 路由落到 setNotFoundHandler
         });
-        // SPA fallback：未匹配的 GET 返回 index.html
+        // ── 缓存策略 ────────────────────────────────────────────────
+        // @fastify/static 底层 send 库会固定写 Cache-Control: public, max-age=0，
+        // 且在 setHeaders 回调之后用 reply.headers(headers) 覆盖，因此 setHeaders
+        // 无法改写 Cache-Control。这里用 onSend 钩子在最终发送前改写：
+        //   - index.html（含根路径 / 与 SPA fallback）：禁缓存
+        //     避免旧 index 指向已被覆盖的 hash 资源（表现为 JS/CSS 全部返回 HTML）
+        //   - /assets/*（内容 hash 文件）：永久不可变缓存
+        //   - /api/*：不干预，保持默认（无显式缓存头）
+        app.addHook("onSend", async (req, reply, payload) => {
+            if (req.method !== "GET" && req.method !== "HEAD")
+                return payload;
+            const url = req.url.split("?", 2)[0];
+            if (url.startsWith("/api/"))
+                return payload; // API 响应不干预缓存
+            if (url.startsWith("/assets/")) {
+                // hash 资源：内容变化即换文件名，可永久缓存
+                reply.header("Cache-Control", "public, max-age=31536000, immutable");
+            }
+            else {
+                // 根路径 / 、index.html、SPA fallback 路由等 HTML 文档：每次拉取最新
+                reply.header("Cache-Control", "no-cache, no-store, must-revalidate");
+                reply.header("Pragma", "no-cache");
+                reply.header("Expires", "0");
+            }
+            return payload;
+        });
+        // SPA fallback：未匹配的 GET（非 /api）返回 index.html
         app.setNotFoundHandler((req, reply) => {
             if (req.method === "GET" && !req.url.startsWith("/api")) {
                 return reply.sendFile("index.html");
