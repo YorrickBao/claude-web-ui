@@ -1,24 +1,29 @@
 /**
- * 子代理注册中心 —— 跟踪主会话下所有子代理的生命周期。
+ * 子代理注册中心 —— 追踪主会话下所有子代理的运行时生命周期。
+ *
+ * 职责边界（重要）：
+ *   「识别哪些会话是子代理并从会话列表过滤」由 SDK listSessions 负责
+ *   （它内部用 isSidechain 自动排除 sidechain 会话，参见 sdk.d.ts:704）。
+ *   本模块**不做会话识别**，只做：
+ *     ① SubagentStart/Stop hook 实时记录活跃子代理
+ *     ② query 结束时把残留 running 子代理标记为 zombie（finalizeSession）
+ *     ③ 会话删除时清理 registry 内存记录（cleanupSession）
+ *     ④ 服务启动加载持久化数据 + 周期性僵尸扫描
  *
  * 持久化：
- *   注册表数据写入 server/data/subagents.json，跨进程重启保留。
- *   getAllSubagentIds() 返回的数据包含已持久化的历史记录
- *   + 当前进程内 Hook 捕获的实时记录。
- *
- * 三种信号判定幽灵 SubagentStop：
- *   ① agent_type 存在（SubagentStopHookInput 上必有）
- *   ② agentRegistry 中有对应的 SubagentStart 记录
- *   ③ agent_transcript_path 指向的文件存在
- * 三个都满足才算真子代理，否则标记为 phantom。
+ *   registry 数据写入 server/data/subagents.json，跨进程重启保留。
  *
  * 僵尸清理：
  *   每 60s 扫描一次，超过 5 分钟仍为 "running" 且没有 transcript 的
  *   标记为 zombie 并清理。
+ *
+ * 自愈：
+ *   loadRegistry 加载历史记录时，校验每条记录的 transcriptPath 是否
+ *   符合子代理路径模式（…/subagents/agent-<id>.jsonl），不符合的视为
+ *   历史误判（旧版 seed 逻辑把主会话误判为子代理）并剔除。
  */
 import fsp from "node:fs/promises";
 import { SUBAGENTS_FILE } from "../env.js";
-import { emitSessionEvent } from "./eventBus.js";
 // ─────────────────────────────────────────────────────────────
 // 注册表
 // ─────────────────────────────────────────────────────────────
@@ -36,7 +41,6 @@ function indexBySession(record) {
 }
 let saveTimer = null;
 let dirty = false;
-let loaded = false;
 function scheduleSave() {
     dirty = true;
     if (saveTimer)
@@ -57,137 +61,58 @@ function scheduleSave() {
     }, 500); // 500ms 防抖：短时间内多次变更只写一次盘
 }
 /**
- * 首次启动存量扫描：遍历所有 .jsonl 文件识别已有子代理，
- * 播种到持久化 registry。仅当 subagents.json 为空时执行一次，
- * 之后由 Hook 维护。
+ * 判定 transcriptPath 是否是合法的子代理转录路径。
+ * 合法形态：`.../subagents/agent-<id>.jsonl`（SDK 0.3.216+ 标准）。
+ * 旧版 seed 误判的主会话记录要么无 transcriptPath，要么指向顶级
+ * `<sessionId>.jsonl`，都不匹配此模式。
  */
-async function seedRegistryFromDisk() {
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const projectsDir = path.join(os.homedir(), ".claude", "projects");
-    let projectNames;
-    try {
-        projectNames = await fsp.readdir(projectsDir);
-    }
-    catch {
-        return;
-    }
-    let found = 0;
-    for (const projName of projectNames) {
-        const projectPath = path.join(projectsDir, projName);
-        let entries;
-        try {
-            entries = await fsp.readdir(projectPath);
-        }
-        catch {
-            continue;
-        }
-        for (const entry of entries) {
-            // 新格式：顶级 .jsonl → 读首行判 enqueue content
-            if (entry.endsWith(".jsonl")) {
-                const agentId = entry.slice(0, -6);
-                if (registry.has(agentId))
-                    continue; // 已从磁盘加载
-                const filePath = path.join(projectPath, entry);
-                try {
-                    const fh = await fsp.open(filePath, "r");
-                    let firstLine;
-                    try {
-                        const buf = Buffer.alloc(8192);
-                        const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-                        const text = buf.toString("utf-8", 0, bytesRead);
-                        const nl = text.indexOf("\n");
-                        firstLine = nl >= 0 ? text.slice(0, nl) : text;
-                    }
-                    finally {
-                        await fh.close();
-                    }
-                    const parsed = JSON.parse(firstLine);
-                    if (parsed.type === "queue-operation" &&
-                        parsed.operation === "enqueue" &&
-                        "content" in parsed) {
-                        const record = {
-                            agentId,
-                            parentSessionId: "", // 存量数据无法回溯父会话
-                            agentType: "unknown",
-                            status: "stopped",
-                            startedAt: Date.now(),
-                            stoppedAt: Date.now(),
-                        };
-                        registry.set(agentId, record);
-                        indexBySession(record);
-                        found++;
-                    }
-                }
-                catch {
-                    // 文件不可读 → 跳过
-                }
-                continue;
-            }
-            // 旧格式兜底：目录下 subagents/agent-*.jsonl
-            const subagentsPath = path.join(projectPath, entry, "subagents");
-            let agentFiles;
-            try {
-                agentFiles = await fsp.readdir(subagentsPath);
-            }
-            catch {
-                continue;
-            }
-            for (const file of agentFiles) {
-                if (file.startsWith("agent-") && file.endsWith(".jsonl")) {
-                    const agentId = file.slice(6, -6);
-                    if (registry.has(agentId))
-                        continue;
-                    const record = {
-                        agentId,
-                        parentSessionId: entry, // 旧格式中目录名即父会话 ID
-                        agentType: "unknown",
-                        status: "stopped",
-                        startedAt: Date.now(),
-                        stoppedAt: Date.now(),
-                    };
-                    registry.set(agentId, record);
-                    indexBySession(record);
-                    found++;
-                }
-            }
-        }
-    }
-    if (found > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[agentRegistry] seeded ${found} agents from disk scan`);
-        // 立即持久化，不等待防抖
-        try {
-            const data = { agents: Object.fromEntries(registry) };
-            await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(data, null, 2), "utf-8");
-        }
-        catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn("[agentRegistry] seed save failed:", err instanceof Error ? err.message : err);
-        }
-    }
+function isValidSubagentTranscript(p) {
+    if (!p)
+        return false;
+    return /[\\/]subagents[\\/]agent-[^\\/]+\.jsonl$/.test(p);
 }
+/**
+ * 加载持久化数据并做自愈清理：剔除历史误判的主会话记录。
+ *
+ * 自愈判据：合法子代理的 transcriptPath 必须形如
+ *   `.../subagents/agent-<id>.jsonl`。
+ * 不符合的（旧版 seed 把主会话误判为子代理时未设 transcriptPath，
+ * 或 registerStop 误记录了顶级会话路径）一律剔除并重写磁盘。
+ */
 async function loadRegistry() {
-    if (loaded)
-        return;
-    loaded = true;
+    let cleaned = 0;
     try {
         const raw = await fsp.readFile(SUBAGENTS_FILE, "utf-8");
         const data = JSON.parse(raw);
         if (data.agents) {
             for (const [agentId, record] of Object.entries(data.agents)) {
+                // 自愈：transcriptPath 不符合子代理路径模式 → 历史误判的主会话，剔除
+                if (!isValidSubagentTranscript(record.transcriptPath)) {
+                    cleaned++;
+                    continue;
+                }
                 registry.set(agentId, record);
                 indexBySession(record);
             }
         }
         // eslint-disable-next-line no-console
-        console.log(`[agentRegistry] loaded ${registry.size} agents from disk`);
+        console.log(`[agentRegistry] loaded ${registry.size} agents from disk` +
+            (cleaned > 0 ? ` (self-healed: removed ${cleaned} misclassified records)` : ""));
+        if (cleaned > 0) {
+            // 立即重写 subagents.json，把误判记录从磁盘也清掉
+            try {
+                const fresh = { agents: Object.fromEntries(registry) };
+                await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(fresh, null, 2), "utf-8");
+            }
+            catch (err) {
+                // eslint-disable-next-line no-console
+                console.warn("[agentRegistry] self-heal save failed:", err instanceof Error ? err.message : err);
+            }
+        }
     }
     catch {
         // 文件不存在或损坏 → 从空开始
     }
-    // 每次启动都做增量扫描：发现 CLI 或其他进程新建的子代理则补入
-    await seedRegistryFromDisk();
 }
 // ─────────────────────────────────────────────────────────────
 // 注册 / 更新
@@ -203,11 +128,6 @@ export function registerStart(input) {
     };
     registry.set(input.agent_id, record);
     indexBySession(record);
-    emitSessionEvent(input.session_id, {
-        type: "subagent_started",
-        agentId: input.agent_id,
-        agentType: input.agent_type,
-    });
     scheduleSave();
 }
 /**
@@ -253,85 +173,8 @@ export async function registerStop(input) {
     registry.set(input.agent_id, record);
     if (!staged)
         indexBySession(record);
-    emitSessionEvent(input.session_id, {
-        type: "subagent_stopped",
-        agentId: input.agent_id,
-        agentType: record.agentType,
-        phantom: isPhantom,
-    });
     scheduleSave();
     return record;
-}
-// ─────────────────────────────────────────────────────────────
-// 查询
-// ─────────────────────────────────────────────────────────────
-/** 获取某会话当前活跃（running）的子代理数量 */
-export function getActiveCount(sessionId) {
-    const set = sessionIndex.get(sessionId);
-    if (!set)
-        return 0;
-    let count = 0;
-    for (const agentId of set) {
-        const rec = registry.get(agentId);
-        if (rec?.status === "running")
-            count++;
-    }
-    return count;
-}
-/** 获取某会话的子代理统计 */
-export function getSessionStats(sessionId) {
-    const set = sessionIndex.get(sessionId);
-    if (!set)
-        return { total: 0, running: 0, stopped: 0, phantom: 0, zombie: 0 };
-    const stats = {
-        total: 0,
-        running: 0,
-        stopped: 0,
-        phantom: 0,
-        zombie: 0,
-    };
-    for (const agentId of set) {
-        const rec = registry.get(agentId);
-        if (!rec)
-            continue;
-        stats.total++;
-        switch (rec.status) {
-            case "running":
-                stats.running++;
-                break;
-            case "stopped":
-                stats.stopped++;
-                break;
-            case "phantom":
-                stats.phantom++;
-                break;
-            case "zombie":
-                stats.zombie++;
-                break;
-        }
-    }
-    return stats;
-}
-/** 获取当前内存中所有已知子代理的 agentId 集合（用于过滤会话列表） */
-export function getAllSubagentIds() {
-    const ids = new Set();
-    for (const [agentId] of registry) {
-        ids.add(agentId);
-    }
-    return ids;
-}
-/** 获取某会话的所有子代理记录 */
-export function getSessionAgents(sessionId) {
-    const set = sessionIndex.get(sessionId);
-    if (!set)
-        return [];
-    const result = [];
-    for (const agentId of set) {
-        const rec = registry.get(agentId);
-        if (rec)
-            result.push(rec);
-    }
-    return result;
 }
 // ─────────────────────────────────────────────────────────────
 // 僵尸清理
@@ -362,12 +205,6 @@ async function scanZombies() {
             // 运行超过 5 分钟但没有 transcript → 幽灵子代理
             record.status = "zombie";
             anyZombie = true;
-            emitSessionEvent(record.parentSessionId, {
-                type: "subagent_stopped",
-                agentId: record.agentId,
-                agentType: record.agentType,
-                phantom: false,
-            });
         }
         // 如果有 transcript 但一直 running → 可能是后台长任务，不标记为 zombie
     }
@@ -387,13 +224,6 @@ export function startZombieScanner() {
     // 允许进程退出（不阻止 event loop）
     if (scannerInterval.unref)
         scannerInterval.unref();
-}
-/** 停止僵尸扫描 */
-export function stopZombieScanner() {
-    if (scannerInterval) {
-        clearInterval(scannerInterval);
-        scannerInterval = null;
-    }
 }
 /**
  * 会话结束时调用：将所有 running 子代理标记为 zombie。
