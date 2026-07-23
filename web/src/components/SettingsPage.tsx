@@ -14,6 +14,7 @@ import {
   Shield,
   Settings2,
   Bot,
+  Info,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { ENV_FIELDS, pruneEnvValues, type EnvValues } from "@/lib/envFields";
@@ -438,6 +439,64 @@ export function SettingsPage() {
                 </Button>
               </div>
             )}
+          </div>
+        </section>
+
+        <Separator className="opacity-30" />
+
+        {/* ── 会话共享说明 ── */}
+        <section>
+          <div className="mb-4 flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+              <Info className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <h2 className="text-sm font-semibold tracking-tight">
+              会话共享与多端使用
+            </h2>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border/50 bg-card/40 p-4 text-xs leading-relaxed text-muted-foreground sm:p-5">
+            <p>
+              本工具设计为<strong className="font-medium text-foreground">
+                单进程本地使用
+              </strong>
+              ，不推荐同时启动多个实例，与 Claude Code CLI 的会话共享能力有限。
+            </p>
+
+            <div className="space-y-2">
+              <p className="font-medium text-foreground">按场景的共享能力：</p>
+              <ul className="space-y-1.5">
+                <li className="flex gap-2">
+                  <span className="shrink-0 text-emerald-500">✓</span>
+                  <span>
+                    <strong className="font-medium text-foreground">
+                      同进程多标签页
+                    </strong>
+                    ：完全共享（实时流、运行状态、发消息、审批）
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="shrink-0 text-amber-500">~</span>
+                  <span>
+                    <strong className="font-medium text-foreground">
+                      多个 Web UI 进程 / 与 Claude Code CLI
+                    </strong>
+                    ：仅静态共享——会话列表和历史消息互通，但
+                    <strong className="font-medium text-foreground">
+                      看不到对方的实时输出、运行状态、也无法中止对方
+                    </strong>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+              <p className="text-amber-600 dark:text-amber-400">
+                <strong className="font-medium">需要完整共享？</strong>
+                用远程控制（手机扫码连接本浏览器）即可——它走的是同一个运行实例，
+                实时流、状态、操作全部互通。
+              </p>
+            </div>
           </div>
         </section>
 
