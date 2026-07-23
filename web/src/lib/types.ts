@@ -19,8 +19,6 @@ export type SSEEvent =
     }
   | { type: "waiting_for_user" }
   | { type: "history"; messages: unknown[] }
-  | { type: "subagent_started"; agentId: string; agentType: string }
-  | { type: "subagent_stopped"; agentId: string; agentType: string; phantom: boolean }
   /** 工具权限请求：agent 想执行某个操作，需要用户审批 */
   | {
       type: "permission_request";

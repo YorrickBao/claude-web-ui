@@ -40,7 +40,7 @@ import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
-import { getSessionStats, startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
+import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -62,7 +62,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     const views: SessionView[] = records.map((r) => {
       const sdk = sdkMap.get(r.sessionId);
-      const stats = getSessionStats(r.sessionId);
       return {
         sessionId: r.sessionId,
         cwd: r.cwd,
@@ -79,7 +78,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
-        subagentCount: stats.total,
       };
     });
     return reply.send({ sessions: views });
@@ -108,7 +106,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           `replaySession failed for ${rec.sessionId}`,
         );
       }
-      const stats = getSessionStats(rec.sessionId);
       return reply.send({
         sessionId: rec.sessionId,
         cwd: rec.cwd,
@@ -125,7 +122,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
             : "idle"),
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
-        subagentCount: stats.total,
         messages: history,
       });
     },
