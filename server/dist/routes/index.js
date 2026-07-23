@@ -5,7 +5,7 @@ import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSession
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
-import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, } from "../lib/inflight.js";
+import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
@@ -248,13 +248,18 @@ export async function apiRoutes(app) {
         const profileId = body.profileId ?? null;
         const permissionMode = body.permissionMode ?? "default";
         const effortLevel = body.effortLevel ?? "default";
+        const clientId = body.clientId ?? null;
         /** 总线订阅取消函数（session_created 后赋值，finally 中清理） */
         let unsubBusEvents = null;
-        // 客户端断开时中止查询：与 messages / approve-plan 路由保持一致，
-        // 否则用户在「新建会话 + 首条消息」阶段关页面会让后端 SDK
-        // 进程继续跑到自然结束（审核挂起时更要挂满 5 分钟超时）。
+        /** HTTP 连接是否已关闭。关闭后不再向 reply 写：查询照常跑，事件继续进总线 + transcript，前端会自动重连续流。 */
+        let closed = false;
+        // 查询生命周期独立于 HTTP 连接：只有 POST /abort（用户点停止）或
+        // DELETE（删会话）才取消查询。连接断开只停止向这条死连接转发事件，
+        // SDK 继续跑到自然结束，事件经 emitEventToBus 写入总线 +
+        // transcript，重连的客户端经 GET /stream 的 replaySession 补全。
         req.raw.on("close", () => {
-            ctrl.abort();
+            closed = true;
+            unsubBusEvents?.();
         });
         try {
             const stream = runQuery({
@@ -271,6 +276,9 @@ export async function apiRoutes(app) {
             const register = async (id) => {
                 sessionId = id;
                 setInflight(id, ctrl);
+                // 记录 clientId→sessionId 映射，供断线重连时反查 sessionId 续流
+                if (clientId)
+                    rememberClientSession(clientId, id);
                 // 标题：用户指定的优先，其次用首条消息截断
                 const initialTitle = body.title?.trim() || body.message.trim().slice(0, 200) || null;
                 await upsertSession({
@@ -313,8 +321,8 @@ export async function apiRoutes(app) {
                     await emitEventToBus(sessionId, evt);
                     // 不直接 sendSSE —— 总线订阅负责转发
                 }
-                else {
-                    // session_created 之前的异常情况，直接发
+                else if (!closed) {
+                    // session_created 之前的异常情况，直接发（连接已关则丢弃）
                     sendSSE(reply, evt);
                 }
             }
@@ -331,11 +339,11 @@ export async function apiRoutes(app) {
                     emitSessionEvent(sessionId, errorEvent);
                     // 如果总线订阅未建立（error 发生在 register 期间），
                     // 需要直接发给 POST 客户端，否则 bus 订阅已负责转发
-                    if (!unsubBusEvents) {
+                    if (!unsubBusEvents && !closed) {
                         sendSSE(reply, errorEvent);
                     }
                 }
-                else {
+                else if (!closed) {
                     sendSSE(reply, errorEvent);
                 }
             }
@@ -346,12 +354,13 @@ export async function apiRoutes(app) {
             if (sessionId) {
                 finalizeSession(sessionId);
                 emitSessionEnd(sessionId);
-                // 传入当前 AbortController，防止旧请求的 finally
-                // 误删已被新请求 setInflight 覆盖的 inflight 记录
                 clearInflight(sessionId, ctrl);
                 await touchSession(sessionId);
             }
-            endSSE(reply);
+            try {
+                endSSE(reply);
+            }
+            catch { /* 连接可能已关闭 */ }
         }
     });
     // ───────────────────────────────────────────────────────────
@@ -375,12 +384,16 @@ export async function apiRoutes(app) {
         const ctrl = new AbortController();
         setInflight(sessionId, ctrl);
         // 订阅总线：所有事件（含查询事件、子代理事件）统一转发到客户端
+        let closed = false;
         const unsubEvent = onSessionEvent(sessionId, (evt) => {
-            sendSSE(reply, evt);
+            if (!closed)
+                sendSSE(reply, evt);
         });
-        // 客户端断开时中止查询
+        // 查询生命周期独立于连接：只有 POST /abort / DELETE 才取消。
+        // 断开仅停止向死连接转发，runQueryToBus 继续把事件写到总线 + transcript。
         req.raw.on("close", () => {
-            ctrl.abort();
+            closed = true;
+            unsubEvent();
         });
         try {
             await runQueryToBus(sessionId, {
@@ -396,8 +409,23 @@ export async function apiRoutes(app) {
         finally {
             unsubEvent();
             await touchSession(sessionId);
-            endSSE(reply);
+            try {
+                endSSE(reply);
+            }
+            catch { /* 连接可能已关闭 */ }
         }
+    });
+    // ───────────────────────────────────────────────────────────
+    // GET /api/sessions/by-client/:clientId —— 凭 clientId 反查 sessionId
+    // 新建会话时 session_created 未送达前端就断线的竞态下，前端凭此续流。
+    // 与 /api/sessions/:id 路径段数不同，不会冲突。
+    // ───────────────────────────────────────────────────────────
+    app.get("/api/sessions/by-client/:clientId", async (req, reply) => {
+        const sid = resolveClientSession(req.params.clientId);
+        if (!sid) {
+            return reply.code(404).send({ error: "no session for clientId" });
+        }
+        return reply.send({ sessionId: sid });
     });
     // ───────────────────────────────────────────────────────────
     // POST /api/sessions/:id/abort —— 中止进行中的会话
@@ -762,7 +790,10 @@ export async function apiRoutes(app) {
         const ctrl = new AbortController();
         setInflight(sessionId, ctrl);
         // 订阅总线：统一转发所有事件，session_created 替换为 mode_changed
+        let closed = false;
         const unsubEvent = onSessionEvent(sessionId, (evt) => {
+            if (closed)
+                return;
             if (evt.type === "session_created") {
                 sendSSE(reply, { type: "mode_changed", mode: execMode });
             }
@@ -770,8 +801,11 @@ export async function apiRoutes(app) {
                 sendSSE(reply, evt);
             }
         });
+        // 查询生命周期独立于连接：只有 POST /abort / DELETE 才取消。
+        // 断开仅停止向死连接转发，runQueryToBus 继续把事件写到总线 + transcript。
         req.raw.on("close", () => {
-            ctrl.abort();
+            closed = true;
+            unsubEvent();
         });
         try {
             await runQueryToBus(sessionId, {
@@ -787,7 +821,10 @@ export async function apiRoutes(app) {
         finally {
             unsubEvent();
             await touchSession(sessionId);
-            endSSE(reply);
+            try {
+                endSSE(reply);
+            }
+            catch { /* 连接可能已关闭 */ }
         }
     });
 }

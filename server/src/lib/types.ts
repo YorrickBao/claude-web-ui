@@ -137,6 +137,12 @@ export interface CreateSessionRequest {
   permissionMode?: PermissionMode;
   /** 思考级别（缺省 = high） */
   effortLevel?: EffortLevel;
+  /**
+   * 前端为本次新建会话生成的 uuid。
+   * 用于 session_created 事件尚未送达前端时连接断开的竞态：
+   * 前端断线重连时可凭它反查真实 sessionId 续流。
+   */
+  clientId?: string;
 }
 
 /** 发消息请求 */

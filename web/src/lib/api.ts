@@ -91,7 +91,7 @@ export function sendMessage(
 export function createSession(
   cwd: string,
   message: string,
-  opts: { title?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string } = {},
+  opts: { title?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string; clientId?: string } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
   return fetch("/api/sessions", {
@@ -104,9 +104,41 @@ export function createSession(
       profileId: opts.profileId ?? null,
       permissionMode: opts.permissionMode ?? "default",
       effortLevel: opts.effortLevel ?? "default",
+      clientId: opts.clientId,
     }),
     signal,
   });
+}
+
+/**
+ * 凭 clientId 反查 sessionId（带重试退避）。
+ *
+ * 用于「新建会话」时 session_created 事件尚未送达前端连接就断开的竞态：
+ * 后端可能还在 register 中（sessionId 尚未登记），此处每 500ms 重试，
+ * 最多 ~8 秒。返回 sessionId 或 undefined（彻底找不到）。
+ */
+export async function resolveSessionByClient(
+  clientId: string,
+  opts: { intervalMs?: number; maxAttempts?: number } = {},
+): Promise<string | undefined> {
+  const intervalMs = opts.intervalMs ?? 500;
+  const maxAttempts = opts.maxAttempts ?? 16; // 16 * 500ms = 8s
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await fetch(
+        `/api/sessions/by-client/${encodeURIComponent(clientId)}`,
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { sessionId: string };
+        return data.sessionId;
+      }
+      // 404 表示后端尚未登记，继续重试
+    } catch {
+      // 网络抖动，继续重试
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return undefined;
 }
 
 // encode URI component 一次的轻包装，避免重复编码

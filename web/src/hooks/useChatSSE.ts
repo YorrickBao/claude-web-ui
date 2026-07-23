@@ -4,7 +4,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { createSession, sendMessage, respondToPermission, approvePlan, abortSession } from "@/lib/api";
+import { createSession, sendMessage, respondToPermission, approvePlan, abortSession, resolveSessionByClient } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
 import type { SSEEvent } from "@/lib/types";
 
@@ -234,6 +234,8 @@ export function useChatSSE({
               setIsRunning(true);
               const ctrl2 = new AbortController();
               abortRef.current = ctrl2;
+              /** 是否已把生命周期交给 subscribe（断线重连）。 */
+              let handedOff2 = false;
               try {
                 const res2 = await approvePlan(sid, "approve", opts, ctrl2.signal);
                 if (!res2.ok || !res2.body) throw new Error(`approvePlan: ${res2.status}`);
@@ -242,11 +244,20 @@ export function useChatSSE({
                 }
               } catch (err2) {
                 const e2 = err2 as Error;
-                if (e2.name !== "AbortError") setError(e2.message);
+                const isUserStop = e2.name === "AbortError" || stoppedByUserRef.current;
+                if (isUserStop) {
+                  // 用户停止，保持现状
+                } else if (!stoppedByUserRef.current) {
+                  // 意外断线：approvePlan 查询仍在后端跑，经 stream 续流
+                  handedOff2 = true;
+                  void subscribe(sid);
+                }
               } finally {
-                setIsRunning(false);
-                abortRef.current = null;
-                window.dispatchEvent(new CustomEvent("session-list-changed"));
+                if (!handedOff2) {
+                  setIsRunning(false);
+                  abortRef.current = null;
+                  window.dispatchEvent(new CustomEvent("session-list-changed"));
+                }
               }
             },
             reject: () => {
@@ -292,8 +303,12 @@ export function useChatSSE({
       };
       setMessages((prev) => [...prev, userMsg, placeholder]);
 
+      // 新建会话时生成 clientId，用于 session_created 未送达即断线时反查 sessionId
+      const clientId = crypto.randomUUID();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      /** 是否已把生命周期交给 subscribe（断线重连）。true 时 finally 不清理。 */
+      let handedOff = false;
 
       try {
         const res = sessionIdRef.current
@@ -305,6 +320,7 @@ export function useChatSSE({
                 profileId: profileIdRef.current,
                 permissionMode: permissionModeRef.current,
                 effortLevel: effortLevelRef.current,
+                clientId,
               },
               ctrl.signal,
             );
@@ -320,17 +336,36 @@ export function useChatSSE({
         }
       } catch (err) {
         const e = err as Error;
-        if (e.name === "AbortError") {
+        const isUserStop = e.name === "AbortError" || stoppedByUserRef.current;
+        if (isUserStop) {
           setMessages((prev) => completeLast(prev));
         } else {
-          setError(e.message);
-          setMessages((prev) => completeLast(prev));
+          // 意外断线（网络抖动等，非页面销毁）：查询仍在后端跑，
+          // 尝试经 GET /stream 续流重新接上。
+          let targetSid: string | undefined = sessionIdRef.current ?? undefined;
+          if (!targetSid) {
+            // 新建会话且 session_created 未到达：凭 clientId 反查
+            targetSid = await resolveSessionByClient(clientId);
+          }
+          // 重连窗口期用户点了停止，则不再续流
+          if (stoppedByUserRef.current) {
+            setMessages((prev) => completeLast(prev));
+          } else if (targetSid) {
+            handedOff = true;
+            // subscribe 自管 isRunning / abortRef / 事件处理
+            void subscribe(targetSid);
+          } else {
+            setError("连接已断开，任务仍在后台运行，可在侧栏重新进入该会话查看。");
+            setMessages((prev) => completeLast(prev));
+          }
         }
       } finally {
-        setIsRunning(false);
-        abortRef.current = null;
-        // 通知侧栏：会话已完成，退出 inflight
-        window.dispatchEvent(new CustomEvent("session-list-changed"));
+        if (!handedOff) {
+          setIsRunning(false);
+          abortRef.current = null;
+          // 通知侧栏：会话已完成，退出 inflight
+          window.dispatchEvent(new CustomEvent("session-list-changed"));
+        }
       }
     },
     onCancel: async () => {

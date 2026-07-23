@@ -102,3 +102,31 @@ export function clearPendingPermissions(sessionId) {
         }
     }
 }
+// ─────────────────────────────────────────────────────────────
+// Client → Session 瞬态映射
+// 用于「新建会话」路由在 session_created 尚未送达前端时连接断开的竞态：
+// 前端凭 clientId 反查真实 sessionId，重新 subscribe 续流。
+// 纯内存：服务器重启则查询本就消亡，无需持久化。
+// ─────────────────────────────────────────────────────────────
+const CLIENT_SESSION_TTL_MS = 10 * 60 * 1000; // 10 分钟，覆盖查询生命周期
+const clientSessionMap = new Map();
+/** 记录 clientId → sessionId 映射（可重复调用覆盖，刷新 expires） */
+export function rememberClientSession(clientId, sessionId) {
+    if (!clientId)
+        return;
+    clientSessionMap.set(clientId, {
+        sessionId,
+        expires: Date.now() + CLIENT_SESSION_TTL_MS,
+    });
+}
+/** 按 clientId 查询 sessionId。过期返回 undefined 并清理。 */
+export function resolveClientSession(clientId) {
+    const entry = clientSessionMap.get(clientId);
+    if (!entry)
+        return undefined;
+    if (entry.expires < Date.now()) {
+        clientSessionMap.delete(clientId);
+        return undefined;
+    }
+    return entry.sessionId;
+}
