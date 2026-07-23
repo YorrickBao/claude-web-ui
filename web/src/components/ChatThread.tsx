@@ -8,6 +8,7 @@ import {
   useComposerRuntime,
 } from "@assistant-ui/react";
 import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check } from "lucide-react";
+import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -111,7 +112,7 @@ export function ChatThread({
   };
 
   return (
-    <ThreadPrimitive.Root className="flex h-full flex-col">
+    <ThreadPrimitive.Root className="relative flex h-full flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <ThreadPrimitive.Empty>
           <EmptyState />
@@ -307,13 +308,20 @@ export function ChatThread({
           </div>
         </div>
       </ComposerPrimitive.Root>
+
+      {/* 对话大纲：常驻左侧浮层，hover 显隐 */}
+      <ThreadOutline />
     </ThreadPrimitive.Root>
   );
 }
 
 function UserMessage() {
+  const msgId = useMessage((s) => s.id);
   return (
-    <MessagePrimitive.Root className="group/msg mb-4 flex justify-end gap-1 md:mb-6">
+    <MessagePrimitive.Root
+      id={messageAnchorId(msgId)}
+      className="group/msg mb-4 flex justify-end gap-1 md:mb-6"
+    >
       <div className="min-w-0">
         <div className="inline-block max-w-full rounded-2xl rounded-br-md bg-accent px-3 py-2 text-left text-white md:px-4 md:py-2.5">
           <MessagePrimitive.Parts
@@ -386,7 +394,9 @@ function AssistantContent() {
 
 /**
  * 工作过程折叠块：把一轮里所有 reasoning + tool-call 合并为一个可折叠组。
- * 运行中默认展开、结束后收起。内部各 part 用对应组件渲染（保留 part-scope）。
+ * - 运行中默认展开，对话结束（running→complete）自动收起
+ * - 历史消息（初始非 running）默认折叠
+ * - 用户手动展开/折叠后不再被自动行为覆盖
  */
 function WorkProcessGroup({
   parts,
@@ -395,7 +405,15 @@ function WorkProcessGroup({
   parts: readonly AnyPart[];
   isRunning: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(isRunning);
+  // 运行中→结束时自动折叠一次（用户手动展开过的不再覆盖）
+  const wasRunningRef = useRef(isRunning);
+  useEffect(() => {
+    if (wasRunningRef.current && !isRunning) {
+      setOpen(false);
+    }
+    wasRunningRef.current = isRunning;
+  }, [isRunning]);
   const toolCount = parts.filter((p) => p.type === "tool-call").length;
 
   return (
