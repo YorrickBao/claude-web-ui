@@ -82,7 +82,8 @@ async function main(): Promise<void> {
   try {
     const port = await tryListen(app, HOST, START_PORT);
     const url = `http://${HOST}:${port}`;
-    app.log.info(`▶ ${url}`);
+    // 访问地址必须始终打印，不受 --log 控制（cli.mjs 会全局静默 console）
+    process.stdout.write(`\n  ▶  ${url}\n\n`);
     openBrowser(url);
   } catch (err) {
     app.log.error(err);
