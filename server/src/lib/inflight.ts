@@ -7,6 +7,8 @@
  * 让 PermissionRequest hook 能等待前端用户响应。
  */
 
+import { emitSessionEvent } from "./eventBus.js";
+
 export type InflightStatus = "running" | "waiting";
 
 interface InflightEntry {
@@ -84,6 +86,15 @@ interface PendingPermissionEntry {
   sessionId: string;
   toolName: string;
   toolInput: unknown;
+  decisionReason?: string;
+}
+
+/** 返回给重连客户端的待审批请求快照（不含 resolve 回调） */
+export interface PendingPermissionSnapshot {
+  requestId: string;
+  toolName: string;
+  toolInput: unknown;
+  decisionReason?: string;
 }
 
 const pendingPermissions = new Map<string, PendingPermissionEntry>();
@@ -96,6 +107,7 @@ export function createPendingPermission(
   sessionId: string,
   toolName: string,
   toolInput: unknown,
+  decisionReason?: string,
 ): { requestId: string; promise: Promise<PermissionDecision> } {
   const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -107,6 +119,12 @@ export function createPendingPermission(
   const timeoutId = setTimeout(() => {
     if (settled) return;
     settled = true;
+    // 通知前端清除横幅（reason=timeout），再 resolve 让 hook 解除阻塞
+    emitSessionEvent(sessionId, {
+      type: "permission_resolved",
+      requestId,
+      reason: "timeout",
+    });
     resolveRef?.({ behavior: "deny", message: "Permission request timed out" });
     pendingPermissions.delete(requestId);
   }, TIMEOUT_MS);
@@ -125,6 +143,7 @@ export function createPendingPermission(
     sessionId,
     toolName,
     toolInput,
+    decisionReason,
   });
   return { requestId, promise };
 }
@@ -136,11 +155,32 @@ export function takePendingPermission(requestId: string): PendingPermissionEntry
   return entry;
 }
 
+/** 查询某个会话当前所有待审批请求（只读快照，供重连补播） */
+export function getPendingPermissions(sessionId: string): PendingPermissionSnapshot[] {
+  const result: PendingPermissionSnapshot[] = [];
+  for (const [requestId, entry] of pendingPermissions) {
+    if (entry.sessionId === sessionId) {
+      result.push({
+        requestId,
+        toolName: entry.toolName,
+        toolInput: entry.toolInput,
+        decisionReason: entry.decisionReason,
+      });
+    }
+  }
+  return result;
+}
+
 /** 清理某个会话的所有 pending permissions（abort / 会话结束） */
 export function clearPendingPermissions(sessionId: string): void {
   for (const [id, entry] of pendingPermissions) {
     if (entry.sessionId === sessionId) {
-      // 拒绝所有 pending 请求
+      // 通知前端清除横幅（reason=aborted），再拒绝 pending 请求
+      emitSessionEvent(sessionId, {
+        type: "permission_resolved",
+        requestId: id,
+        reason: "aborted",
+      });
       entry.resolve({ behavior: "deny", message: "Session aborted or ended" });
       pendingPermissions.delete(id);
     }

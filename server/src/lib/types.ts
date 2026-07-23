@@ -108,6 +108,15 @@ export type SSEEvent =
       toolInput: unknown;
       decisionReason?: string;
     }
+  /**
+   * 权限请求已解决：通知前端清除对应横幅。
+   * reason: timeout（5 分钟超时拒绝）/ aborted（会话中止）/ resolved（已被某个客户端响应）
+   */
+  | {
+      type: "permission_resolved";
+      requestId: string;
+      reason: "timeout" | "aborted" | "resolved";
+    }
   /** Plan mode 退出：LLM 产出了计划，等待用户审批后切到执行模式 */
   | { type: "plan_proposed"; planContent: string }
   /** 权限模式已变更 */

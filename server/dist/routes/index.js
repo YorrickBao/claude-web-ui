@@ -5,7 +5,7 @@ import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSession
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
-import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
+import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, getPendingPermissions, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { DATA_DIR } from "../env.js";
@@ -186,6 +186,19 @@ export async function apiRoutes(app) {
                     }
                 }
                 sendSSE(reply, evt);
+            }
+            // 重连补播：如果会话有待审批的权限请求（用户刷新/切回），
+            // 重新推送给当前重连客户端。这些 permission_request 事件之前
+            // 已经 emit 到 bus（首次请求时），重连客户端没收到，这里直接补发。
+            // 不走 bus —— 避免其他订阅者重复收到。
+            for (const pending of getPendingPermissions(sessionId)) {
+                sendSSE(reply, {
+                    type: "permission_request",
+                    requestId: pending.requestId,
+                    toolName: pending.toolName,
+                    toolInput: pending.toolInput,
+                    decisionReason: pending.decisionReason,
+                });
             }
             // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
             if (!getInflight(sessionId)) {
@@ -730,7 +743,7 @@ export async function apiRoutes(app) {
     // 前端对 permission_request 事件的响应：批准/拒绝某个工具调用
     // ───────────────────────────────────────────────────────────
     app.post("/api/sessions/:id/permission-response", async (req, reply) => {
-        const { requestId, behavior, message } = req.body;
+        const { requestId, behavior, message, updatedPermissions } = req.body;
         if (!requestId || !behavior) {
             return reply.code(400).send({ error: "requestId and behavior are required" });
         }
@@ -751,6 +764,15 @@ export async function apiRoutes(app) {
         pending.resolve({
             behavior,
             message: message ?? (behavior === "deny" ? "User denied the operation" : undefined),
+            ...(behavior === "allow" && updatedPermissions?.length
+                ? { updatedPermissions }
+                : {}),
+        });
+        // 通知所有订阅者（含其他标签页）清除该横幅
+        emitSessionEvent(req.params.id, {
+            type: "permission_resolved",
+            requestId,
+            reason: "resolved",
         });
         return reply.send({ ok: true });
     });

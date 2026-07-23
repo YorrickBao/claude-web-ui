@@ -55,6 +55,27 @@ export const ENV_FIELDS: readonly EnvFieldMeta[] = [
     help: "子 agent（Task 工具）使用的模型。",
   },
   {
+    name: "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH",
+    label: "子 Agent 嵌套深度",
+    placeholder: "留空用默认（1）",
+    type: "number",
+    help: "子 agent 最多能再派生几层子 agent。0.3.217 起默认 1（不再嵌套）；需要多层嵌套时调大。",
+  },
+  {
+    name: "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS",
+    label: "子 Agent 并发上限",
+    placeholder: "留空用默认（20）",
+    type: "number",
+    help: "同一会话内同时运行的子 agent 数量上限。0.3.217 起默认 20。",
+  },
+  {
+    name: "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION",
+    label: "单会话子 Agent 总数",
+    placeholder: "留空用 CLI 默认",
+    type: "number",
+    help: "单个会话内允许创建的子 agent 总数上限。",
+  },
+  {
     name: "ANTHROPIC_DEFAULT_OPUS_MODEL",
     label: "Opus 模型",
     placeholder: "留空使用 CLI 默认",

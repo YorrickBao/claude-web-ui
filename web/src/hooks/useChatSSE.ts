@@ -45,8 +45,19 @@ export interface UseChatSSEOptions {
     toolName: string;
     toolInput: unknown;
     decisionReason?: string;
-    respond: (behavior: "allow" | "deny", message?: string) => Promise<void>;
+    respond: (
+      behavior: "allow" | "deny",
+      message?: string,
+      updatedPermissions?: Array<{
+        type: "add";
+        toolName: string;
+        permission: "allow";
+        destination: "session";
+      }>,
+    ) => Promise<void>;
   }) => void;
+  /** 权限请求已解决（超时/中止/已被响应）：前端清除对应横幅 */
+  onPermissionResolved?: (requestId: string, reason: string) => void;
   /** 收到计划提案时的回调（前端渲染审批卡片） */
   onPlanProposed?: (evt: {
     planContent: string;
@@ -65,6 +76,7 @@ export function useChatSSE({
   effortLevel,
   onSessionCreated,
   onPermissionRequest,
+  onPermissionResolved,
   onPlanProposed,
   onModeChanged,
 }: UseChatSSEOptions) {
@@ -85,6 +97,8 @@ export function useChatSSE({
   onCreatedRef.current = onSessionCreated;
   const onPermissionRef = useRef(onPermissionRequest);
   onPermissionRef.current = onPermissionRequest;
+  const onPermissionResolvedRef = useRef(onPermissionResolved);
+  onPermissionResolvedRef.current = onPermissionResolved;
   const onPlanRef = useRef(onPlanProposed);
   onPlanRef.current = onPlanProposed;
   const onModeRef = useRef(onModeChanged);
@@ -219,11 +233,21 @@ export function useChatSSE({
             toolName: evt.toolName,
             toolInput: evt.toolInput,
             decisionReason: evt.decisionReason,
-            respond: async (behavior, message) => {
-              await respondToPermission(targetSessionId, evt.requestId, behavior, message);
+            respond: async (behavior, message, updatedPermissions) => {
+              await respondToPermission(
+                targetSessionId,
+                evt.requestId,
+                behavior,
+                message,
+                updatedPermissions,
+              );
             },
           });
         }
+        break;
+      case "permission_resolved":
+        // 权限请求已解决（超时/中止/已被响应）：通知前端清除横幅
+        onPermissionResolvedRef.current?.(evt.requestId, evt.reason);
         break;
       case "plan_proposed":
         if (onPlanRef.current) {

@@ -15,7 +15,7 @@ function buildPermissionRequestHook(sessionIdRef) {
                 decision: { behavior: "deny", message: "Session not initialized" },
             };
         }
-        const { requestId, promise } = createPendingPermission(sid, input.tool_name, input.tool_input);
+        const { requestId, promise } = createPendingPermission(sid, input.tool_name, input.tool_input, input.decision_reason);
         emitSessionEvent(sid, {
             type: "permission_request",
             requestId,
@@ -33,9 +33,15 @@ function buildPermissionRequestHook(sessionIdRef) {
                 },
             };
         }
+        // allow：透传 updatedPermissions（"始终允许此工具"）和 updatedInput
+        const allowDecision = { behavior: "allow" };
+        if (decision.updatedInput)
+            allowDecision.updatedInput = decision.updatedInput;
+        if (decision.updatedPermissions)
+            allowDecision.updatedPermissions = decision.updatedPermissions;
         return {
             hookEventName: "PermissionRequest",
-            decision: { behavior: "allow" },
+            decision: allowDecision,
         };
     };
 }
@@ -47,9 +53,16 @@ export async function* runQuery(params) {
         : undefined;
     const mode = params.permissionMode ?? "default";
     const isPlanMode = mode === "plan";
-    const needsPermissionHook = mode !== "bypassPermissions";
+    // 仅这三种模式需要人工审批 hook：
+    // - default / acceptEdits：危险操作需弹窗
+    // - plan：只读工具仍可能触发审批
+    // dontAsk / auto / bypassPermissions 由 SDK 内部决定，不安装 hook，
+    // 避免 SDK 在这些模式下仍调用 hook 导致无人响应的 5 分钟挂起。
+    const needsPermissionHook = mode === "default" || mode === "acceptEdits" || mode === "plan";
     // 在 plan 模式下累积计划文本，conversation_reset 时发送给前端
     let planTextBuffer = "";
+    // plan 模式下累积规划过程只读工具调用摘要，作为计划依据附在 planContent 后
+    let planToolsBuffer = "";
     // SessionId 的引用对象，供 buildPermissionRequestHook 闭包捕获
     const sessionIdRef = { current: undefined };
     // 预构建 PermissionRequest hook（只构建一次，避免每次 query 都创建闭包）
@@ -144,11 +157,17 @@ export async function* runQuery(params) {
             // Plan mode 退出：session 重置，准备进入执行阶段
             case "conversation_reset": {
                 if (isPlanMode && planTextBuffer) {
+                    // 将规划过程的只读工具调用摘要附在计划文本之后，
+                    // 作为审批依据。用分隔线隔离，不干扰 LLM 计划主体。
+                    const planContent = planToolsBuffer.trim()
+                        ? `${planTextBuffer}\n\n---\n\n**规划依据（只读工具调用）：**\n${planToolsBuffer}`
+                        : planTextBuffer;
                     yield {
                         type: "plan_proposed",
-                        planContent: planTextBuffer,
+                        planContent,
                     };
                     planTextBuffer = "";
+                    planToolsBuffer = "";
                 }
                 break;
             }
@@ -168,6 +187,10 @@ export async function* runQuery(params) {
                     else if (b.type === "tool_use" &&
                         typeof b.id === "string" &&
                         typeof b.name === "string") {
+                        // Plan 模式下累积规划工具调用摘要
+                        if (isPlanMode) {
+                            planToolsBuffer += `- ${summarizeToolCall(b.name, b.input)}\n`;
+                        }
                         yield {
                             type: "tool_use",
                             id: b.id,
@@ -224,4 +247,36 @@ export async function* runQuery(params) {
             }
         }
     }
+}
+/**
+ * 把规划阶段的只读工具调用压缩为单行摘要，附在计划审批文本后。
+ * 只提取每个工具最关键的参数，避免把完整 JSON 塞进 planContent。
+ */
+function summarizeToolCall(toolName, input) {
+    if (!input || typeof input !== "object")
+        return `${toolName}()`;
+    const obj = input;
+    switch (toolName) {
+        case "Read":
+            return `Read(${obj.file_path ?? "?"})`;
+        case "Glob":
+            return `Glob(${obj.pattern ?? "?"}${obj.path ? `, ${obj.path}` : ""})`;
+        case "Grep":
+            return `Grep("${truncate(String(obj.pattern ?? ""), 60)}"${obj.path ? `, ${obj.path}` : ""})`;
+        case "Bash":
+            return `Bash(${truncate(String(obj.command ?? ""), 80)})`;
+        case "LS":
+            return `LS(${obj.path ?? "?"})`;
+        case "WebSearch":
+            return `WebSearch("${truncate(String(obj.query ?? ""), 60)}")`;
+        case "WebFetch":
+            return `WebFetch(${obj.url ?? "?"})`;
+        default:
+            return `${toolName}(${truncate(JSON.stringify(obj), 100)})`;
+    }
+}
+function truncate(s, maxLen) {
+    if (s.length <= maxLen)
+        return s;
+    return s.slice(0, maxLen) + "…";
 }

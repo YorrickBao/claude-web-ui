@@ -239,13 +239,20 @@ export async function respondToPermission(
   requestId: string,
   behavior: "allow" | "deny",
   message?: string,
+  /** allow 时若 remember=true，则附带 updatedPermissions 让 SDK 记住决定 */
+  updatedPermissions?: Array<{
+    type: "add";
+    toolName: string;
+    permission: "allow";
+    destination: "session";
+  }>,
 ): Promise<void> {
   const res = await fetch(
     `/api/sessions/${id(sessionId)}/permission-response`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId, behavior, message }),
+      body: JSON.stringify({ requestId, behavior, message, updatedPermissions }),
     },
   );
   if (!res.ok) throw new Error(`respondToPermission: ${res.status}`);

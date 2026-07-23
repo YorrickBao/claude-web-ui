@@ -11,7 +11,10 @@ export interface PendingPermission {
 
 interface PermissionRequestBannerProps {
   pending: PendingPermission;
-  onAllow: (requestId: string) => Promise<void>;
+  onAllow: (
+    requestId: string,
+    opts?: { remember?: boolean; toolName?: string },
+  ) => Promise<void>;
   onDeny: (requestId: string) => Promise<void>;
 }
 
@@ -22,11 +25,15 @@ export function PermissionRequestBanner({
   onDeny,
 }: PermissionRequestBannerProps) {
   const [responding, setResponding] = useState(false);
+  const [remember, setRemember] = useState(false);
 
   async function handleAllow() {
     setResponding(true);
     try {
-      await onAllow(pending.requestId);
+      await onAllow(pending.requestId, {
+        remember,
+        toolName: pending.toolName,
+      });
     } finally {
       setResponding(false);
     }
@@ -92,6 +99,16 @@ export function PermissionRequestBanner({
                 <X className="h-3 w-3" />
                 拒绝
               </Button>
+              <label className="ml-1 flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3 cursor-pointer rounded border-border accent-amber-600"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  disabled={responding}
+                />
+                始终允许此工具
+              </label>
             </div>
           </div>
         </div>

@@ -27,6 +27,12 @@ export type SSEEvent =
       toolInput: unknown;
       decisionReason?: string;
     }
+  /** 权限请求已解决：清除对应横幅（超时/中止/已被响应） */
+  | {
+      type: "permission_resolved";
+      requestId: string;
+      reason: "timeout" | "aborted" | "resolved";
+    }
   /** Plan mode 退出：LLM 产出了计划，等待用户审批 */
   | { type: "plan_proposed"; planContent: string }
   /** 权限模式已变更 */

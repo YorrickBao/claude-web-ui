@@ -43,12 +43,25 @@ export function ChatView({
   initialOutputTokens,
 }: ChatViewProps) {
   // 待处理的权限请求和计划审批
-  const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  // pendingPermissions 用数组：支持多个并发请求同时显示各自横幅
+  const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
   const [pendingPlan, setPendingPlan] = useState<PendingPlanApproval | null>(null);
 
   // 用 Map 保存每个权限请求的 respond 回调，支持多个并发请求互不覆盖
   const permissionRespondMapRef = useRef(
-    new Map<string, (behavior: "allow" | "deny", message?: string) => Promise<void>>()
+    new Map<
+      string,
+      (
+        behavior: "allow" | "deny",
+        message?: string,
+        updatedPermissions?: Array<{
+          type: "add";
+          toolName: string;
+          permission: "allow";
+          destination: "session";
+        }>,
+      ) => Promise<void>
+    >(),
   );
   // 计划审批的 approve/reject 回调（单槽，同一时刻只有一个计划）
   const planCallbacksRef = useRef<{
@@ -62,18 +75,36 @@ export function ChatView({
       toolName: string;
       toolInput: unknown;
       decisionReason?: string;
-      respond: (behavior: "allow" | "deny", message?: string) => Promise<void>;
+      respond: (
+        behavior: "allow" | "deny",
+        message?: string,
+        updatedPermissions?: Array<{
+          type: "add";
+          toolName: string;
+          permission: "allow";
+          destination: "session";
+        }>,
+      ) => Promise<void>;
     }) => {
       permissionRespondMapRef.current.set(evt.requestId, evt.respond);
-      setPendingPermission({
-        requestId: evt.requestId,
-        toolName: evt.toolName,
-        toolInput: evt.toolInput,
-        decisionReason: evt.decisionReason,
-      });
+      setPendingPermissions((prev) => [
+        ...prev,
+        {
+          requestId: evt.requestId,
+          toolName: evt.toolName,
+          toolInput: evt.toolInput,
+          decisionReason: evt.decisionReason,
+        },
+      ]);
     },
     [],
   );
+
+  // 权限请求已解决（超时/中止/已被响应）：清除对应横幅和回调
+  const handlePermissionResolved = useCallback((requestId: string) => {
+    permissionRespondMapRef.current.delete(requestId);
+    setPendingPermissions((prev) => prev.filter((p) => p.requestId !== requestId));
+  }, []);
 
   const handlePlanProposed = useCallback(
     (evt: {
@@ -108,23 +139,41 @@ export function ChatView({
         window.dispatchEvent(new CustomEvent("session-list-changed"));
       },
       onPermissionRequest: handlePermissionRequest,
+      onPermissionResolved: handlePermissionResolved,
       onPlanProposed: handlePlanProposed,
       onModeChanged: handleModeChanged,
     });
 
   // 权限审批操作函数（从 Map 中取出 respond 调用）
-  async function handlePermissionAllow(requestId: string) {
+  async function handlePermissionAllow(
+    requestId: string,
+    opts?: { remember?: boolean; toolName?: string },
+  ) {
     const respond = permissionRespondMapRef.current.get(requestId);
     permissionRespondMapRef.current.delete(requestId);
-    if (respond) await respond("allow");
-    setPendingPermission(null);
+    if (respond) {
+      // 勾选"始终允许"时附带 updatedPermissions，让 SDK 记住决定
+      const updatedPermissions =
+        opts?.remember && opts.toolName
+          ? [
+              {
+                type: "add" as const,
+                toolName: opts.toolName,
+                permission: "allow" as const,
+                destination: "session" as const,
+              },
+            ]
+          : undefined;
+      await respond("allow", undefined, updatedPermissions);
+    }
+    setPendingPermissions((prev) => prev.filter((p) => p.requestId !== requestId));
   }
 
   async function handlePermissionDeny(requestId: string) {
     const respond = permissionRespondMapRef.current.get(requestId);
     permissionRespondMapRef.current.delete(requestId);
     if (respond) await respond("deny", "User denied via UI");
-    setPendingPermission(null);
+    setPendingPermissions((prev) => prev.filter((p) => p.requestId !== requestId));
   }
 
   // 计划审批操作函数（从 ref 中取出回调调用）
@@ -234,14 +283,15 @@ export function ChatView({
       />
       <div className="min-h-0 flex-1">
         <AssistantRuntimeProvider runtime={runtime}>
-          {/* 权限审批和计划审批横幅 */}
-          {pendingPermission && (
+          {/* 权限审批和计划审批横幅（支持多个并发权限请求同时展示） */}
+          {pendingPermissions.map((p) => (
             <PermissionRequestBanner
-              pending={pendingPermission}
+              key={p.requestId}
+              pending={p}
               onAllow={handlePermissionAllow}
               onDeny={handlePermissionDeny}
             />
-          )}
+          ))}
           {pendingPlan && (
             <PlanApprovalBanner
               pending={pendingPlan}
