@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Menu } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/Sidebar";
 import { NewSessionView } from "@/components/NewSessionView";
@@ -261,6 +262,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 /** 已有会话：先拉元信息 + 历史，再渲染 ChatView */
 function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
+  const navigate = useNavigate();
   const [meta, setMeta] = useState<{
     title: string;
     cwd: string;
@@ -284,6 +286,13 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
         const res = await fetch(
           `/api/sessions/${encodeURIComponent(sessionId)}`,
         );
+        // 会话不存在（已删除/从未创建）：提示后自动跳回首页
+        if (res.status === 404) {
+          if (cancelled) return;
+          toast.error("会话不存在", { description: sessionId });
+          navigate("/new", { replace: true });
+          return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as SessionView & {
           messages: ThreadMessageLike[];
@@ -309,7 +318,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, navigate]);
 
   if (err) {
     return (
