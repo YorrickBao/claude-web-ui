@@ -285,14 +285,14 @@ export function RemoteControlDialog() {
                 <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
                   <Check className="h-3.5 w-3.5" /> 远程访问地址
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-[11px]">
-                    {remoteUrl}
-                  </code>
+                <code className="block w-full break-all rounded bg-background px-2 py-1 text-[11px]">
+                  {remoteUrl}
+                </code>
+                <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-[11px]"
                     onClick={() => handleCopy(remoteUrl, "远程地址")}
                     title="复制"
                   >
@@ -301,24 +301,27 @@ export function RemoteControlDialog() {
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
+                    复制
                   </Button>
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-[11px]"
                     onClick={() => setShowQR((v) => !v)}
                     title="二维码"
                   >
                     <QrCode className="h-3.5 w-3.5" />
+                    二维码
                   </Button>
                   <a
                     href={remoteUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                    className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                     title="新窗口打开"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
+                    打开
                   </a>
                 </div>
                 {showQR && (
