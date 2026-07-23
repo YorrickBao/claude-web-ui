@@ -241,7 +241,7 @@ export function RemoteControlDialog() {
                   重新生成
                 </Button>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex items-center gap-1.5">
                 <Input
                   id="relay-key"
                   readOnly
@@ -255,7 +255,7 @@ export function RemoteControlDialog() {
                   onClick={() => accessKey && handleCopy(accessKey, "Access Key")}
                   disabled={!accessKey}
                   title="复制"
-                  className="h-9 w-9 shrink-0"
+                  className="h-8 w-8 shrink-0"
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
