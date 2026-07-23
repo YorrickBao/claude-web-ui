@@ -217,12 +217,13 @@ async function handleFrame(data) {
             }
             if (f.last) {
                 // 请求体接收完毕，唤醒等待中的 handleReq
-                const body = parts ? parts.join("") : undefined;
+                const joined = parts ? parts.join("") : "";
                 reqBodyBuffers.delete(f.connId);
                 const resolver = reqBodyResolvers.get(f.connId);
                 if (resolver) {
                     reqBodyResolvers.delete(f.connId);
-                    resolver(body);
+                    // 空请求体用 undefined，避免 GET/HEAD 误带 body
+                    resolver(joined || undefined);
                 }
             }
             break;
@@ -274,7 +275,8 @@ async function handleReq(f) {
         resp = await fetch(url, {
             method,
             headers,
-            body: body ?? undefined,
+            // GET/HEAD 不能带 body；空 body 也必须为 undefined，否则 Node fetch 报错
+            body: body ? body : undefined,
         });
     }
     catch (err) {
