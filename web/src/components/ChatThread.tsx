@@ -317,6 +317,16 @@ export function ChatThread({
 
 function UserMessage() {
   const msgId = useMessage((s) => s.id);
+  const content = useMessage((s) => s.content);
+  // SDK 在用户中断查询时，会向转录写入一条 "[Request interrupted by user]"
+  // 的 user 消息——它不是用户真实输入，渲染成跨栏事件条而非蓝色气泡
+  const text = (content as readonly { type: string; text?: string }[] | undefined)
+    ?.filter((p) => p.type === "text")
+    .map((p) => p.text ?? "")
+    .join("") ?? "";
+  if (isInterruptText(text)) {
+    return <InterruptEventBar id={messageAnchorId(msgId)} />;
+  }
   return (
     <MessagePrimitive.Root
       id={messageAnchorId(msgId)}
@@ -336,6 +346,37 @@ function UserMessage() {
         </div>
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * 检测一条 user 消息文本是否是 SDK 写入的中断标记（非用户真实输入）。
+ * 宽松匹配 "[Request interrupted ...]"，兼容 "by user for tool use" 等变体。
+ */
+function isInterruptText(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return /^\[Request interrupted\b/i.test(t) && t.endsWith("]");
+}
+
+/**
+ * 中断事件条：用居中、细线分隔的低调形态呈现"回答已中断"，
+ * 明确表达这是一个对话事件而非用户发言。
+ */
+function InterruptEventBar({ id }: { id: string }) {
+  return (
+    <div
+      id={id}
+      role="note"
+      className="my-2 flex items-center gap-3 md:my-3"
+    >
+      <span className="h-px flex-1 bg-border/50" />
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground/70">
+        <Square className="size-2.5 fill-current" />
+        回答已中断
+      </span>
+      <span className="h-px flex-1 bg-border/50" />
+    </div>
   );
 }
 
