@@ -27,6 +27,9 @@ export const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 /** profiles.json 路径（所有环境变量配置） */
 export const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 
+/** subagents.json 路径（子代理注册表持久化，跨进程重启保留） */
+export const SUBAGENTS_FILE = path.join(DATA_DIR, "subagents.json");
+
 /** 前端构建产物（生产模式静态托管） */
 export const WEB_DIST_DIR = path.join(ROOT_DIR, "web", "dist");
 

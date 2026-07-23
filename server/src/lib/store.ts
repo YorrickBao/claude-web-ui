@@ -225,14 +225,15 @@ export async function accumulateTokens(
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * 读取文件的第一行（UTF-8 文本），用于快速检查 transcript 元信息。
+ * 只读前 8KB，覆盖绝大多数 transcript 首行（queue-operation JSON）。
+ */
+/**
  * 文件系统兜底扫描：遍历 ~/.claude/projects/ 下所有
- * `subagents/agent-*.jsonl` 文件，提取子代理 ID。
+ * `subagents/agent-*.jsonl` 文件（旧格式，SDK <0.3.216）。
  *
- * SDK 的 listSubagents 依赖父会话存在——若父会话已删除，
- * 其子代理转录仍在磁盘上，但 listSubagents 找不到它们（孤儿子代理）。
- * 此扫描直接基于文件布局补漏：
- *
- *   ~/.claude/projects/<projectKey>/<parentId>/subagents/agent-<childId>.jsonl
+ * 新格式（SDK ≥0.3.216）的子代理由 agentRegistry 持久化覆盖，
+ * 此处仅作为旧格式和 CLI 直接创建的子代理的兜底。
  *
  * projectKey 是 cwd 绝对路径将 / 替换为 - 并去掉前导 /。
  */
@@ -280,9 +281,7 @@ async function scanOrphanedSubagents(): Promise<Set<string>> {
   }
 
   return ids;
-}
-
-/**
+}/**
  * 与 CLI 磁盘同步并返回所有会话。
  *
  * 同步规则：
@@ -298,9 +297,9 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
   const sdkSessions = await sdkListSessions();
 
   // 收集所有子代理 session id，用于过滤。三重来源：
-  //  ① 内存 agent registry（实时，当前进程内 Hook 捕获的子代理）
+  //  ① agent registry（内存 + 持久化，跨进程重启保留）
   //  ② SDK listSubagents（磁盘扫描，覆盖重启后历史子代理）
-  //  ③ 文件系统兜底扫描（捕获孤儿子代理——父会话已删除但转录仍在磁盘上）
+  //  ③ 文件系统兜底（旧格式 subagents/ 目录 + CLI 直接创建的子代理）
   const subagentIds = getAllSubagentIds();
 
   await Promise.all(
@@ -317,7 +316,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
     }),
   );
 
-  // ③ 文件系统兜底：扫描孤儿子代理（父会话已删除的子代理）
+  // ③ 文件系统兜底：扫描旧格式 subagents/（新格式由 agentRegistry 持久化覆盖）
   let orphanCount = 0;
   try {
     const orphans = await scanOrphanedSubagents();
@@ -339,7 +338,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
   const merged: SessionRecord[] = [];
 
   for (const sdk of sdkSessions) {
-    // 跳过子代理会话（子代理的 sessionId 会出现在父会话的 listSubagents 结果中）
+    // 跳过子代理会话
     if (subagentIds.has(sdk.sessionId)) {
       // eslint-disable-next-line no-console
       console.log(`[store] filtering out subagent session: ${sdk.sessionId}`);

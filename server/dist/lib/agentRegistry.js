@@ -1,6 +1,11 @@
 /**
  * 子代理注册中心 —— 跟踪主会话下所有子代理的生命周期。
  *
+ * 持久化：
+ *   注册表数据写入 server/data/subagents.json，跨进程重启保留。
+ *   getAllSubagentIds() 返回的数据包含已持久化的历史记录
+ *   + 当前进程内 Hook 捕获的实时记录。
+ *
  * 三种信号判定幽灵 SubagentStop：
  *   ① agent_type 存在（SubagentStopHookInput 上必有）
  *   ② agentRegistry 中有对应的 SubagentStart 记录
@@ -12,6 +17,7 @@
  *   标记为 zombie 并清理。
  */
 import fsp from "node:fs/promises";
+import { SUBAGENTS_FILE } from "../env.js";
 import { emitSessionEvent } from "./eventBus.js";
 // ─────────────────────────────────────────────────────────────
 // 注册表
@@ -27,6 +33,161 @@ function indexBySession(record) {
     else {
         sessionIndex.set(record.parentSessionId, new Set([record.agentId]));
     }
+}
+let saveTimer = null;
+let dirty = false;
+let loaded = false;
+function scheduleSave() {
+    dirty = true;
+    if (saveTimer)
+        return;
+    saveTimer = setTimeout(async () => {
+        saveTimer = null;
+        if (!dirty)
+            return;
+        dirty = false;
+        try {
+            const data = { agents: Object.fromEntries(registry) };
+            await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(data, null, 2), "utf-8");
+        }
+        catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn("[agentRegistry] failed to persist:", err instanceof Error ? err.message : err);
+        }
+    }, 500); // 500ms 防抖：短时间内多次变更只写一次盘
+}
+/**
+ * 首次启动存量扫描：遍历所有 .jsonl 文件识别已有子代理，
+ * 播种到持久化 registry。仅当 subagents.json 为空时执行一次，
+ * 之后由 Hook 维护。
+ */
+async function seedRegistryFromDisk() {
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const projectsDir = path.join(os.homedir(), ".claude", "projects");
+    let projectNames;
+    try {
+        projectNames = await fsp.readdir(projectsDir);
+    }
+    catch {
+        return;
+    }
+    let found = 0;
+    for (const projName of projectNames) {
+        const projectPath = path.join(projectsDir, projName);
+        let entries;
+        try {
+            entries = await fsp.readdir(projectPath);
+        }
+        catch {
+            continue;
+        }
+        for (const entry of entries) {
+            // 新格式：顶级 .jsonl → 读首行判 enqueue content
+            if (entry.endsWith(".jsonl")) {
+                const agentId = entry.slice(0, -6);
+                if (registry.has(agentId))
+                    continue; // 已从磁盘加载
+                const filePath = path.join(projectPath, entry);
+                try {
+                    const fh = await fsp.open(filePath, "r");
+                    let firstLine;
+                    try {
+                        const buf = Buffer.alloc(8192);
+                        const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+                        const text = buf.toString("utf-8", 0, bytesRead);
+                        const nl = text.indexOf("\n");
+                        firstLine = nl >= 0 ? text.slice(0, nl) : text;
+                    }
+                    finally {
+                        await fh.close();
+                    }
+                    const parsed = JSON.parse(firstLine);
+                    if (parsed.type === "queue-operation" &&
+                        parsed.operation === "enqueue" &&
+                        "content" in parsed) {
+                        const record = {
+                            agentId,
+                            parentSessionId: "", // 存量数据无法回溯父会话
+                            agentType: "unknown",
+                            status: "stopped",
+                            startedAt: Date.now(),
+                            stoppedAt: Date.now(),
+                        };
+                        registry.set(agentId, record);
+                        indexBySession(record);
+                        found++;
+                    }
+                }
+                catch {
+                    // 文件不可读 → 跳过
+                }
+                continue;
+            }
+            // 旧格式兜底：目录下 subagents/agent-*.jsonl
+            const subagentsPath = path.join(projectPath, entry, "subagents");
+            let agentFiles;
+            try {
+                agentFiles = await fsp.readdir(subagentsPath);
+            }
+            catch {
+                continue;
+            }
+            for (const file of agentFiles) {
+                if (file.startsWith("agent-") && file.endsWith(".jsonl")) {
+                    const agentId = file.slice(6, -6);
+                    if (registry.has(agentId))
+                        continue;
+                    const record = {
+                        agentId,
+                        parentSessionId: entry, // 旧格式中目录名即父会话 ID
+                        agentType: "unknown",
+                        status: "stopped",
+                        startedAt: Date.now(),
+                        stoppedAt: Date.now(),
+                    };
+                    registry.set(agentId, record);
+                    indexBySession(record);
+                    found++;
+                }
+            }
+        }
+    }
+    if (found > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[agentRegistry] seeded ${found} agents from disk scan`);
+        // 立即持久化，不等待防抖
+        try {
+            const data = { agents: Object.fromEntries(registry) };
+            await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(data, null, 2), "utf-8");
+        }
+        catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn("[agentRegistry] seed save failed:", err instanceof Error ? err.message : err);
+        }
+    }
+}
+async function loadRegistry() {
+    if (loaded)
+        return;
+    loaded = true;
+    try {
+        const raw = await fsp.readFile(SUBAGENTS_FILE, "utf-8");
+        const data = JSON.parse(raw);
+        if (data.agents) {
+            for (const [agentId, record] of Object.entries(data.agents)) {
+                registry.set(agentId, record);
+                indexBySession(record);
+            }
+        }
+        // eslint-disable-next-line no-console
+        console.log(`[agentRegistry] loaded ${registry.size} agents from disk`);
+    }
+    catch {
+        // 文件不存在或损坏 → 从空开始
+    }
+    // 每次启动都做增量扫描：发现 CLI 或其他进程新建的子代理则补入
+    await seedRegistryFromDisk();
 }
 // ─────────────────────────────────────────────────────────────
 // 注册 / 更新
@@ -47,6 +208,7 @@ export function registerStart(input) {
         agentId: input.agent_id,
         agentType: input.agent_type,
     });
+    scheduleSave();
 }
 /**
  * SubagentStop hook → 三信号校验后更新状态。
@@ -97,6 +259,7 @@ export async function registerStop(input) {
         agentType: record.agentType,
         phantom: isPhantom,
     });
+    scheduleSave();
     return record;
 }
 // ─────────────────────────────────────────────────────────────
@@ -178,6 +341,7 @@ const SCAN_INTERVAL_MS = 60 * 1000; // 每分钟扫一次
 let scannerInterval = null;
 async function scanZombies() {
     const now = Date.now();
+    let anyZombie = false;
     for (const [_agentId, record] of registry) {
         if (record.status !== "running")
             continue;
@@ -197,6 +361,7 @@ async function scanZombies() {
         if (!transcriptExists) {
             // 运行超过 5 分钟但没有 transcript → 幽灵子代理
             record.status = "zombie";
+            anyZombie = true;
             emitSessionEvent(record.parentSessionId, {
                 type: "subagent_stopped",
                 agentId: record.agentId,
@@ -206,11 +371,18 @@ async function scanZombies() {
         }
         // 如果有 transcript 但一直 running → 可能是后台长任务，不标记为 zombie
     }
+    if (anyZombie)
+        scheduleSave();
 }
-/** 启动僵尸扫描（服务启动时调用一次即可） */
+/** 启动僵尸扫描（服务启动时调用一次即可）。同时从磁盘加载持久化数据。 */
 export function startZombieScanner() {
     if (scannerInterval)
         return;
+    // 异步加载历史数据（不阻塞启动）
+    loadRegistry().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn("[agentRegistry] load failed:", err instanceof Error ? err.message : err);
+    });
     scannerInterval = setInterval(scanZombies, SCAN_INTERVAL_MS);
     // 允许进程退出（不阻止 event loop）
     if (scannerInterval.unref)
@@ -231,12 +403,16 @@ export function finalizeSession(sessionId) {
     const set = sessionIndex.get(sessionId);
     if (!set)
         return;
+    let anyChanged = false;
     for (const agentId of set) {
         const rec = registry.get(agentId);
         if (rec?.status === "running") {
             rec.status = "zombie";
+            anyChanged = true;
         }
     }
+    if (anyChanged)
+        scheduleSave();
 }
 /**
  * 清理某个会话的所有子代理记录（会话删除时调用）。
@@ -252,5 +428,7 @@ export function cleanupSession(sessionId) {
         count++;
     }
     sessionIndex.delete(sessionId);
+    if (count > 0)
+        scheduleSave();
     return count;
 }
