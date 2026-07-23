@@ -40,7 +40,7 @@ export function ToolCardShell({
   const isRunning = status.type === "running";
 
   return (
-    <div className="my-2 rounded-xl border border-border/50 bg-card/40 transition-colors hover:border-border">
+    <div className="mt-1.5 rounded-xl border border-border/50 bg-card/40 transition-colors hover:border-border">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50"
