@@ -1,4 +1,5 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { contentBlocksToParts } from "./contentParts.js";
 /**
  * 拉取会话历史 → ReplayMessage[]。
  *
@@ -47,28 +48,31 @@ export async function replaySession(sessionId, cwd) {
             const content = m.message.content;
             if (!Array.isArray(content))
                 continue;
-            const parts = [];
-            for (const block of content) {
-                const b = block;
-                if (b.type === "text" && typeof b.text === "string") {
-                    if (b.text.trim())
-                        parts.push({ type: "text", text: b.text });
-                }
-                else if (b.type === "tool_use" &&
-                    typeof b.id === "string" &&
-                    typeof b.name === "string") {
-                    parts.push({
-                        type: "tool-call",
-                        toolCallId: b.id,
-                        toolName: b.name,
-                        args: b.input,
-                        argsText: safeStringify(b.input),
-                    });
-                }
+            // 复用共享映射：text / thinking→reasoning / tool_use→tool-call
+            // dropEmptyText=true 去掉空文本块（历史回放不需要占位）
+            const parts = contentBlocksToParts(content, true);
+            if (parts.length === 0)
+                continue;
+            // 合并连续的 assistant 消息：agentic loop 的每轮 SDK assistant
+            // 消息（thinking/tool_use/中间 text）都属于同一个用户回合，
+            // 合并进同一条前端消息，避免把一个回合碎成几十条消息。
+            const last = out[out.length - 1];
+            let msgIdx;
+            if (last && last.role === "assistant") {
+                // 追加到已有 assistant 消息
+                msgIdx = out.length - 1;
+                const baseLen = last.content.length;
+                last.content.push(...parts);
+                parts.forEach((p, i) => {
+                    if (p.type === "tool-call") {
+                        pendingTools.set(p.toolCallId, { msgIdx, partIdx: baseLen + i });
+                    }
+                });
             }
-            if (parts.length > 0) {
-                const msgIdx = out.length;
-                out.push({ role: "assistant", content: parts });
+            else {
+                // 开新的 assistant 消息
+                msgIdx = out.length;
+                out.push({ role: "assistant", content: [...parts] });
                 parts.forEach((p, partIdx) => {
                     if (p.type === "tool-call") {
                         pendingTools.set(p.toolCallId, { msgIdx, partIdx });
@@ -78,12 +82,4 @@ export async function replaySession(sessionId, cwd) {
         }
     }
     return out;
-}
-function safeStringify(v) {
-    try {
-        return JSON.stringify(v);
-    }
-    catch {
-        return String(v);
-    }
 }
