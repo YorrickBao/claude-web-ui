@@ -295,6 +295,12 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     /** 总线订阅取消函数（session_created 后赋值，finally 中清理） */
     let unsubBusEvents: (() => void) | null = null;
 
+    // 客户端断开时中止查询：与 messages / approve-plan 路由保持一致，
+    // 否则用户在「新建会话 + 首条消息」阶段关页面会让后端 SDK
+    // 进程继续跑到自然结束（审核挂起时更要挂满 5 分钟超时）。
+    req.raw.on("close", () => {
+      ctrl.abort();
+    });
     try {
       const stream = runQuery({
         cwd: body.cwd,

@@ -4,7 +4,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { createSession, sendMessage, respondToPermission, approvePlan } from "@/lib/api";
+import { createSession, sendMessage, respondToPermission, approvePlan, abortSession } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
 import type { SSEEvent } from "@/lib/types";
 
@@ -101,6 +101,15 @@ export function useChatSSE({
 
   const stop = useCallback(() => {
     stoppedByUserRef.current = true;
+    // 先通知后端中止正在运行的查询（subscribe 续流模式下本地
+    // abortRef 只控制只读 GET stream，必须靠 /abort 才能停掉
+    // 真正跑查询的 SDK 进程），再中断本地 SSE 连接。
+    const sid = sessionIdRef.current;
+    if (sid) {
+      void abortSession(sid).catch(() => {
+        // 会话不在 inflight（404）等不是错误，静默忽略
+      });
+    }
     abortRef.current?.abort();
   }, []);
 
@@ -326,6 +335,12 @@ export function useChatSSE({
     },
     onCancel: async () => {
       stoppedByUserRef.current = true;
+      const sid = sessionIdRef.current;
+      if (sid) {
+        await abortSession(sid).catch(() => {
+          // 会话不在 inflight（404）等不是错误，静默忽略
+        });
+      }
       abortRef.current?.abort();
     },
   });

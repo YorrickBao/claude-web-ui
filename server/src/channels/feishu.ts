@@ -77,12 +77,16 @@ async function handleMessageNew(
   let newSessionId: string | undefined;
 
   try {
+    // 飞书渠道是无人值守的机器人通道，没有任何审批 UI 订阅
+    // permission_request 事件，若用 default 模式会因 hook 等不到响应
+    // 而挂满 5 分钟超时再 deny。这里显式 bypassPermissions。
     const stream = runQuery({
       cwd,
       prompt: text,
       resume: existingSessionId,
       abortController: new AbortController(),
       env,
+      permissionMode: "bypassPermissions",
     });
 
     for await (const evt of stream) {
