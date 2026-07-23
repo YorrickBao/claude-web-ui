@@ -110,6 +110,19 @@ async function main(): Promise<void> {
     // 访问地址必须始终打印，不受 --log 控制（cli.mjs 会全局静默 console）
     process.stdout.write(`\n  ▶  ${url}\n\n`);
     openBrowser(url);
+
+    // 注入本地 base 给 relay channel，并按落盘配置自动重连隧道
+    const localBase = `http://${HOST}:${port}`;
+    (globalThis as any).__relaySetLocalBase?.(localBase);
+    try {
+      const savedRelay = await (globalThis as any).__relayLoadConfig?.();
+      if (savedRelay) {
+        (globalThis as any).__relayStart?.(savedRelay);
+        if (LOG_ENABLED) console.info("[relay] auto-reconnect from saved config");
+      }
+    } catch (err) {
+      console.warn("[relay] auto-reconnect failed:", err instanceof Error ? err.message : err);
+    }
   } catch (err) {
     app.log.error(err);
     process.exit(1);

@@ -39,6 +39,13 @@ import type {
 } from "../lib/types.js";
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials, type FeishuConfig } from "../channels/feishu.js";
+import {
+  startRelayTunnel,
+  stopRelayTunnel,
+  getRelayStatus,
+  setLocalBase,
+  type RelayConfig,
+} from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
@@ -855,6 +862,112 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     await saveFeishuConfig({ appId, appSecret, domain });
     return reply.send({ ok: true, appId, domain });
   });
+
+  // ───────────────────────────────────────────────────────────
+  // 远程控制（Relay）渠道 API
+  // ───────────────────────────────────────────────────────────
+
+  const RELAY_CONFIG_FILE = path.join(DATA_DIR, "relay-config.json");
+
+  async function saveRelayConfig(config: RelayConfig): Promise<void> {
+    await fsp.writeFile(RELAY_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  }
+
+  async function loadRelayConfig(): Promise<RelayConfig | null> {
+    try {
+      const content = await fsp.readFile(RELAY_CONFIG_FILE, "utf-8");
+      const parsed = JSON.parse(content) as Partial<RelayConfig>;
+      if (!parsed.relayUrl || !parsed.accessKey) return null;
+      return { relayUrl: parsed.relayUrl, accessKey: parsed.accessKey };
+    } catch (err) {
+      // 配置文件不存在属正常情况，不告警；其他错误才告警
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.warn("[relay] load config failed:", err instanceof Error ? err.message : err);
+      }
+      return null;
+    }
+  }
+
+  // GET /api/relay/status —— 当前隧道状态 + 已保存配置
+  app.get("/api/relay/status", async (_req, reply) => {
+    const status = getRelayStatus();
+    // 若运行时未启用，回退到落盘配置供前端展示
+    if (!status.relayUrl || !status.accessKey) {
+      const saved = await loadRelayConfig();
+      if (saved) {
+        return reply.send({
+          ...status,
+          relayUrl: saved.relayUrl,
+          accessKey: saved.accessKey,
+          remoteUrl: `${saved.relayUrl.replace(/\/+$/, "")}/?k=${encodeURIComponent(saved.accessKey)}`,
+        });
+      }
+    }
+    return reply.send(status);
+  });
+
+  // POST /api/relay/start —— 启用隧道
+  app.post<{
+    Body: { relayUrl?: string; accessKey?: string };
+  }>("/api/relay/start", async (req, reply) => {
+    const saved = await loadRelayConfig();
+    const relayUrl = (req.body?.relayUrl ?? saved?.relayUrl ?? "").trim();
+    const accessKey = (req.body?.accessKey ?? saved?.accessKey ?? "").trim();
+
+    if (!relayUrl) {
+      return reply.code(400).send({ error: "中转地址不能为空" });
+    }
+    if (!accessKey) {
+      return reply.code(400).send({ error: "accessKey 不能为空" });
+    }
+    if (!/^wss?:\/\//i.test(relayUrl)) {
+      return reply.code(400).send({ error: "中转地址必须以 ws:// 或 wss:// 开头" });
+    }
+
+    const config: RelayConfig = { relayUrl, accessKey };
+    try {
+      await saveRelayConfig(config);
+    } catch (err) {
+      console.warn("[relay] save config failed:", err instanceof Error ? err.message : err);
+    }
+    startRelayTunnel(config);
+    return reply.send({ ok: true });
+  });
+
+  // POST /api/relay/stop —— 停用隧道（保留配置）
+  app.post("/api/relay/stop", async (_req, reply) => {
+    stopRelayTunnel();
+    return reply.send({ ok: true });
+  });
+
+  // POST /api/relay/regenerate-key —— 重新生成 accessKey（停用中的配置更新）
+  app.post<{
+    Body: { relayUrl?: string };
+  }>("/api/relay/regenerate-key", async (req, reply) => {
+    const crypto = await import("node:crypto");
+    const newKey = crypto.randomBytes(24).toString("base64url");
+    const saved = await loadRelayConfig();
+    const relayUrl = (req.body?.relayUrl ?? saved?.relayUrl ?? "").trim();
+    if (!relayUrl) {
+      return reply.code(400).send({ error: "请先填写中转地址" });
+    }
+    const config: RelayConfig = { relayUrl, accessKey: newKey };
+    try {
+      await saveRelayConfig(config);
+    } catch (err) {
+      console.warn("[relay] save config failed:", err instanceof Error ? err.message : err);
+    }
+    // 若隧道正在运行，用新 key 重连
+    if (getRelayStatus().enabled) {
+      startRelayTunnel(config);
+    }
+    return reply.send({ ok: true, accessKey: newKey });
+  });
+
+  // 暴露配置加载给 index.ts 启动时自动重连
+  (globalThis as any).__relayLoadConfig = loadRelayConfig;
+  (globalThis as any).__relayStart = startRelayTunnel;
+  (globalThis as any).__relaySetLocalBase = setLocalBase;
 
   // ───────────────────────────────────────────────────────────
   // POST /api/sessions/:id/permission-response

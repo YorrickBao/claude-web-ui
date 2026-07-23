@@ -26,6 +26,7 @@ import { deleteSessionApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { RemoteControlDialog } from "@/components/RemoteControlDialog";
 import type { SessionView } from "@/lib/types";
 
 /** 取路径的最后一个组件（目录名） */
@@ -496,6 +497,8 @@ export function Sidebar({
           >
             <Settings className="h-3.5 w-3.5" />
           </Button>
+          {/* 远程控制：组件自带 Smartphone 图标触发器，折叠态也只显示图标 */}
+          <RemoteControlDialog />
           <Button
             variant="ghost"
             size="icon"
