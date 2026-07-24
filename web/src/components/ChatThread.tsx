@@ -196,11 +196,6 @@ export function ChatThread({
                 </SelectItem>
               </SelectContent>
             </Select>
-            {isRunning && (
-              <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap">
-                模式下次消息生效
-              </span>
-            )}
             <div className="flex-1" />
             {inputTokens !== undefined && inputTokens > 0 && (
               <ContextUsageRing used={inputTokens} max={contextMax} />
