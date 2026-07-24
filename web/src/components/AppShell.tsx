@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
+import { subscribeSessionsChanged } from "@/lib/sessionsChannel";
 import type { SessionView } from "@/lib/types";
 
 // 路由级懒加载：把会话渲染栈（@assistant-ui / markdown / highlight.js）和设置页
@@ -352,13 +353,12 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, navigate]);
 
-  // 跨窗口/标签页同步：监听 sessions_changed（SSE，跨 JS 上下文唯一可靠信号），
-  // 仅刷新当前会话的 runningStatus，不动 messages（避免用陈旧快照覆盖实时流）。
-  // 这是"观察方窗口能在对方发消息后接到实时流"的关键：父组件把最新状态以 prop
-  // 形式喂给 ChatView，触发其订阅 effect。
+  // 跨窗口/标签页同步：监听 sessions_changed（全局单例 SSE 频道，跨 JS 上下文
+  // 唯一可靠信号），仅刷新当前会话的 runningStatus，不动 messages（避免用陈旧
+  // 快照覆盖实时流）。这是"观察方窗口能在对方发消息后接到实时流"的关键：父组件
+  // 把最新状态以 prop 形式喂给 ChatView，触发其订阅 effect。
   useEffect(() => {
     if (!sessionId) return;
-    const es = new EventSource("api/sessions/stream");
     const refreshStatus = async () => {
       try {
         const res = await fetch(
@@ -382,8 +382,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
         // 状态刷新失败不影响主流程
       }
     };
-    es.addEventListener("sessions_changed", () => void refreshStatus());
-    return () => es.close();
+    return subscribeSessionsChanged(() => void refreshStatus());
   }, [sessionId]);
 
   if (err) {

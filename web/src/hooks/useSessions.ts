@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listSessions } from "@/lib/api";
+import { subscribeSessionsChanged } from "@/lib/sessionsChannel";
 import type { SessionView } from "@/lib/types";
 
 export function useSessions() {
@@ -23,13 +24,10 @@ export function useSessions() {
     refresh();
   }, [refresh]);
 
-  // 订阅 sessions-changed SSE 推送：后端在新建/删除/状态流转/结束时发信号，
-  // 收到后自行 GET /api/sessions 拉最新列表。EventSource 自动重连。
-  // 替代原先的 2 秒短轮询。
+  // 订阅 sessions_changed（全局单例 SSE 频道，跨组件共享一条连接）。
+  // 收到信号后自行 GET /api/sessions 拉最新列表。替代原先的 2 秒短轮询。
   useEffect(() => {
-    const es = new EventSource("api/sessions/stream");
-    es.addEventListener("sessions_changed", () => void refresh());
-    return () => es.close();
+    return subscribeSessionsChanged(() => void refresh());
   }, [refresh]);
 
   // 监听其它组件发出的"会话列表变更"通知（兼容旧路径）

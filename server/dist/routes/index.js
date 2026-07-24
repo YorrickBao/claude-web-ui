@@ -159,9 +159,19 @@ export async function apiRoutes(app) {
             }
         };
         const unsubEvent = onSessionEvent(sessionId, onEvent);
+        // 心跳防中间代理 idle 关闭：会话在等待权限/SDK 思考期间可能数十秒无事件，
+        // 远程链路（nginx/relay）若无数据会被当作 idle 切断，触发前端秒级重连风暴。
+        // 与 /api/sessions/stream、/api/relay/stream 对齐，15s 发一行 SSE 注释。
+        const heartbeat = setInterval(() => {
+            try {
+                reply.raw.write(": ping\n\n");
+            }
+            catch { /* 连接已断 */ }
+        }, 15000);
         let unsubEnd;
         const cleanup = () => {
             clearTimeout(timeout);
+            clearInterval(heartbeat);
             unsubEvent();
             unsubEnd();
         };
