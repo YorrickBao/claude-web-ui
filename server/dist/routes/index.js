@@ -944,7 +944,8 @@ export async function apiRoutes(app) {
             return reply.code(400).send({ error: msg });
         }
     });
-    // 暴露配置加载给 index.ts 启动时自动重连
+    // 暴露给 index.ts：仅注入 localBase。远程控制不在启动时自动开启，
+    // 必须由用户在界面上主动"启用"。loadRelayConfig 仍供上方 status 端点回退使用。
     globalThis.__relayLoadConfig = loadRelayConfig;
     globalThis.__relayStart = startRelayTunnel;
     globalThis.__relaySetLocalBase = setLocalBase;

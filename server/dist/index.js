@@ -112,20 +112,11 @@ async function main() {
         // 访问地址必须始终打印，不受 --log 控制（cli.mjs 会全局静默 console）
         process.stdout.write(`\n  ▶  ${url}\n\n`);
         openBrowser(url);
-        // 注入本地 base 给 relay channel，并按落盘配置自动重连隧道
+        // 注入本地 base 给 relay channel。
+        // 注意：启动时绝不自动连隧道——远程控制只能由用户在界面上主动"启用"开启。
+        // 这样残留/并发的 WebUI 进程不会各自建隧道导致同 accessKey 互顶。
         const localBase = `http://${HOST}:${port}`;
         globalThis.__relaySetLocalBase?.(localBase);
-        try {
-            const savedRelay = await globalThis.__relayLoadConfig?.();
-            if (savedRelay) {
-                globalThis.__relayStart?.(savedRelay);
-                if (LOG_ENABLED)
-                    console.info("[relay] auto-reconnect from saved config");
-            }
-        }
-        catch (err) {
-            console.warn("[relay] auto-reconnect failed:", err instanceof Error ? err.message : err);
-        }
     }
     catch (err) {
         app.log.error(err);
