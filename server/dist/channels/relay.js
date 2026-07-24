@@ -33,6 +33,11 @@ const RECONNECT_MAX_MS = 30000;
 // 心跳
 let pingTimer = null;
 const PING_INTERVAL_MS = 25000; // 略小于中转 30s，确保中转 readIdleTimeout 不触发
+// 访问令牌：一次性、短命，远程地址携带 ?t=token 首次换 cookie。
+// 不进 accessKey，杜绝长期密钥出现在 URL（日志/Referer/历史）。
+const TOKEN_TTL_SEC = 60;
+let currentToken = null;
+let tokenExpiryTimer = null;
 // 收集每个 connId 的请求体：req 帧到达后创建 resolver，req_body 分片累积，
 // req_body:last 时 resolve 触发 fetch。避免轮询延迟。
 const reqBodyBuffers = new Map();
@@ -46,15 +51,56 @@ export function setLocalBase(base) {
 export function getRelayStatus() {
     const relayUrl = currentConfig?.relayUrl ?? "";
     const accessKey = currentConfig?.accessKey ?? "";
+    // 惰式过期：取快照时若 token 已到期则视为无 token
+    const token = currentToken && currentToken.expiresAt > Date.now() ? currentToken : null;
     return {
         enabled,
         connected,
         connecting,
         relayUrl,
         accessKey,
-        remoteUrl: buildRemoteUrl(relayUrl, accessKey),
+        remoteUrl: token ? buildRemoteUrl(relayUrl, token.token) : "",
+        tokenExpiresAt: token ? token.expiresAt : null,
         error: lastError,
     };
+}
+/**
+ * 生成一个一次性访问令牌（60s 有效），经隧道登记到中转，并广播状态。
+ * 仅在隧道已连接时可用。返回令牌信息或抛出错误（调用方负责提示）。
+ */
+export async function mintToken() {
+    if (!enabled || !connected || !ws || ws.readyState !== WebSocket.OPEN || !currentConfig) {
+        throw new Error("隧道未连接，请先启用远程控制");
+    }
+    const crypto = await import("node:crypto");
+    const token = crypto.randomBytes(24).toString("base64url");
+    const expiresAt = Date.now() + TOKEN_TTL_SEC * 1000;
+    // 清理上一个令牌的到期定时器
+    if (tokenExpiryTimer) {
+        clearTimeout(tokenExpiryTimer);
+        tokenExpiryTimer = null;
+    }
+    currentToken = { token, expiresAt };
+    // 经隧道登记到中转：中转据此建立 token→accessKey 映射
+    send({ type: "register_token", token, ttlSec: TOKEN_TTL_SEC });
+    // 到期自动清空（驱动前端显示「已失效」）
+    tokenExpiryTimer = setTimeout(() => {
+        tokenExpiryTimer = null;
+        if (currentToken && currentToken.expiresAt <= Date.now()) {
+            currentToken = null;
+            notifyStatus();
+        }
+    }, TOKEN_TTL_SEC * 1000 + 200); // +200ms 余量，避免早于 expiresAt 触发
+    notifyStatus();
+    return { token, expiresAt };
+}
+/** 清除当前令牌（断开/停止时调用） */
+function clearToken() {
+    if (tokenExpiryTimer) {
+        clearTimeout(tokenExpiryTimer);
+        tokenExpiryTimer = null;
+    }
+    currentToken = null;
 }
 /** 取最新快照并广播到全局 relay 频道（驱动前端图标颜色实时变化） */
 function notifyStatus() {
@@ -100,6 +146,7 @@ function stopInternal(clearEnabled) {
     connecting = false;
     reqBodyBuffers.clear();
     reqBodyResolvers.clear();
+    clearToken();
     if (clearEnabled) {
         enabled = false;
     }
@@ -362,12 +409,12 @@ function buildTunnelUrl(relayUrl) {
     // wss→https→追加 /tunnel；ws→http 同理
     return `${u}/tunnel`;
 }
-/** 由中转地址 + accessKey 构造远程浏览器访问地址（HTTP，供浏览器/二维码使用） */
-export function buildRemoteUrl(relayUrl, accessKey) {
-    if (!relayUrl || !accessKey)
+/** 由中转地址 + 一次性 token 构造远程浏览器访问地址（HTTP，供浏览器/二维码使用） */
+export function buildRemoteUrl(relayUrl, token) {
+    if (!relayUrl || !token)
         return "";
     const u = toHttpScheme(normalizeUrl(relayUrl));
-    return `${u}/?k=${encodeURIComponent(accessKey)}`;
+    return `${u}/?t=${encodeURIComponent(token)}`;
 }
 /** 规范化：去掉末尾斜杠。保留 scheme（wss/ws 或 https/http） */
 function normalizeUrl(u) {
