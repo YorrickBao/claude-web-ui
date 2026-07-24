@@ -1,10 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useExternalStoreRuntime,
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { createSession, sendMessage, respondToPermission, approvePlan, abortSession, resolveSessionByClient } from "@/lib/api";
+import { createSession, sendMessage, respondToPermission, approvePlan, abortSession, resolveSessionByClient, listSessions } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
 import { uuid } from "@/lib/utils";
 import type { SSEEvent } from "@/lib/types";
@@ -91,6 +91,17 @@ export function useChatSSE({
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  /** 组件卸载标记：subscribe 重连循环据此退出，避免"僵尸"循环泄漏。
+   *  仅在组件真正卸载（key 变化切会话/导航离开）时置 true，
+   *  不能用 stop() 替代——stop() 会调 abortSession 杀掉别窗口正在跑的会话。 */
+  const disposedRef = useRef(false);
+  useEffect(() => {
+    return () => {
+      disposedRef.current = true;
+      // 中断当前 fetch，让 subscribe 循环尽快退出
+      abortRef.current?.abort();
+    };
+  }, []);
   /** 用户是否主动点击了停止按钮：用于抑制后续所有 error 事件 */
   const stoppedByUserRef = useRef(false);
   const sessionIdRef = useRef<string | null>(sessionId);
@@ -137,7 +148,12 @@ export function useChatSSE({
   /**
    * 订阅模式：用 GET SSE 连接到一个正在运行的会话，
    * 先接收完整历史（history 事件），再转到实时事件流。
-   * 用于切回 inflight 会话时续上流式输出。
+   * 用于切回 inflight 会话时续上流式输出，也用于其它窗口作为观察方
+   * 接入同一会话的实时广播。
+   *
+   * 含重连：流意外断开（未收到 done、非用户主动停止）且会话仍在跑时，
+   * 经指数退避延迟后重新订阅。覆盖服务端 10 分钟安全超时与 relay/网络抖动。
+   * 组件卸载时 disposedRef 置 true 并 abort，循环随即退出，避免僵尸泄漏。
    */
   const subscribe = useCallback(async (targetSessionId: string) => {
     setError(null);
@@ -146,30 +162,84 @@ export function useChatSSE({
     setActiveSessionId(targetSessionId);
     window.dispatchEvent(new CustomEvent("session-list-changed"));
 
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    let consecutiveFailures = 0;
+    let reconnectDelay = SUBSCRIBE_RECONNECT_DELAY_MS;
 
     try {
-      const res = await fetch(
-        `api/sessions/${encodeURIComponent(targetSessionId)}/stream`,
-        { signal: ctrl.signal },
-      );
+      for (;;) {
+        // 组件卸载 / 会话切换 → 静默退出，不触碰已卸载的状态
+        if (disposedRef.current) break;
 
-      if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${errText}`.trim());
-      }
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        let doneReceived = false;
+        let streamError: string | null = null;
 
-      for await (const evt of parseSSE(res.body, ctrl.signal)) {
-        handleSSEEvent(evt, targetSessionId);
-      }
-    } catch (err) {
-      const e = err as Error;
-      if (e.name === "AbortError") {
+        try {
+          const res = await fetch(
+            `api/sessions/${encodeURIComponent(targetSessionId)}/stream`,
+            { signal: ctrl.signal },
+          );
+
+          if (!res.ok || !res.body) {
+            const errText = await res.text().catch(() => "");
+            throw new Error(`HTTP ${res.status} ${errText}`.trim());
+          }
+
+          // 流成功建立：重置失败计数与退避
+          consecutiveFailures = 0;
+          reconnectDelay = SUBSCRIBE_RECONNECT_DELAY_MS;
+
+          for await (const evt of parseSSE(res.body, ctrl.signal)) {
+            // 标记正常结束，用于区分"意外断开"与"会话跑完"
+            if (evt.type === "done") doneReceived = true;
+            handleSSEEvent(evt, targetSessionId);
+          }
+        } catch (err) {
+          const e = err as Error;
+          if (e.name === "AbortError") {
+            // 组件卸载（disposedRef）或用户主动停止：终结并退出
+            if (!disposedRef.current) {
+              setMessages((prev) => completeLast(prev));
+            }
+            break;
+          }
+          // 非 abort 的网络/HTTP 错误：交给下面的重连判定
+          streamError = e.message;
+        }
+
+        if (disposedRef.current) break;
+        if (doneReceived) break; // 会话正常结束
+
+        // 意外断开（无 done）：查会话状态决定重连或终结。
+        // 三态：running 仍在跑→重连；ended 确已结束→终结；
+        //       unknown 查询本身失败（同一次网络抖动波及 listSessions）→
+        //       不能贸然终结观察方，按重连处理。
+        const status = await querySessionStatus(targetSessionId);
+        if (disposedRef.current) break;
+
+        if (status === "running" || status === "unknown") {
+          consecutiveFailures++;
+          if (consecutiveFailures > MAX_SUBSCRIBE_RECONNECTS) {
+            // 连续失败超上限：放弃，避免对 stale/异常会话无限重连打服务器
+            if (!stoppedByUserRef.current && streamError) {
+              setError(streamError);
+            }
+            setMessages((prev) => completeLast(prev));
+            break;
+          }
+          await delay(reconnectDelay);
+          // 退避期间组件卸载 / 用户停止 → 退出
+          if (disposedRef.current || stoppedByUserRef.current) break;
+          reconnectDelay = Math.min(
+            reconnectDelay * SUBSCRIBE_BACKOFF_FACTOR,
+            SUBSCRIBE_MAX_DELAY_MS,
+          );
+          continue;
+        }
+        // status === "ended"：会话确已结束（done 未送达的竞态等），终结
         setMessages((prev) => completeLast(prev));
-      } else {
-        setError(e.message);
-        setMessages((prev) => completeLast(prev));
+        break;
       }
     } finally {
       setIsRunning(false);
@@ -428,6 +498,42 @@ function extractText(message: AppendMessage): string {
     .filter((p) => p.type === "text")
     .map((p) => p.text ?? "")
     .join("");
+}
+
+/** subscribe() 意外断开后首次重连的等待时间 */
+const SUBSCRIBE_RECONNECT_DELAY_MS = 500;
+/** 退避上限 */
+const SUBSCRIBE_MAX_DELAY_MS = 30_000;
+/** 退避因子 */
+const SUBSCRIBE_BACKOFF_FACTOR = 2;
+/** 连续重连失败上限：超过则放弃，避免对 stale/异常会话无限打服务器 */
+const MAX_SUBSCRIBE_RECONNECTS = 8;
+
+/** 简单延时 */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 查会话状态，用于重连判定。三态：
+ * - "running"：会话仍在跑（running / waiting）→ 重连
+ * - "ended"：查询成功且会话已结束（idle / completed）→ 终结
+ * - "unknown"：查询本身失败（网络抖动）→ 不能贸然终结观察方，按重连处理
+ */
+async function querySessionStatus(
+  sid: string,
+): Promise<"running" | "ended" | "unknown"> {
+  try {
+    const list = await listSessions();
+    const s = list.find((x) => x.sessionId === sid);
+    if (!s) return "ended";
+    if (s.runningStatus === "running" || s.runningStatus === "waiting") {
+      return "running";
+    }
+    return "ended";
+  } catch {
+    return "unknown";
+  }
 }
 
 /** 把 text 追加到最后一条 assistant 消息的末尾 text part */

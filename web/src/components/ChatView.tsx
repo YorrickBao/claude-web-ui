@@ -229,6 +229,40 @@ export function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // 跨窗口同步：当前会话由非 running 翻转为 running/waiting 时自动订阅实时流。
+  // 场景——观察方窗口打开了一个 idle 会话（只载入静态历史），随后另一个窗口
+  // 在该会话发了消息让它变 running：后端 EventBus 照常广播，但观察方此前未
+  // 订阅 s:<sessionId> 频道，收不到任何事件。这里靠父组件推送的实时
+  // runningStatus（来自 sessions_changed SSE）检测翻转，及时接入实时流。
+  // !isRunning 闸门：发送方窗口（POST 期间 isRunning=true）与已订阅状态不会重复订阅。
+  // isRunning 的 ref 镜像：新 effect 据此判断是否已有活跃订阅，
+  // 而不把 isRunning 放进依赖——否则 subscribe 内部 setIsRunning(true)
+  // 会反过来重跑本 effect（脆弱，且与 subscribe 生命周期耦合）。
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+
+  const prevStatusRef = useRef<{ sid: string | null; status?: string }>({
+    sid: null,
+  });
+  useEffect(() => {
+    const rec = prevStatusRef.current;
+    const justSwitched = rec.sid !== sessionId;
+    const prev = justSwitched ? undefined : rec.status;
+    prevStatusRef.current = { sid: sessionId, status: initialRunningStatus };
+
+    // 切换会话的首次运行交给上面的挂载 effect 处理，这里只管同会话内的状态翻转
+    if (justSwitched) return;
+
+    const wasRunning = prev === "running" || prev === "waiting";
+    const becameRunning =
+      initialRunningStatus === "running" || initialRunningStatus === "waiting";
+    if (sessionId && becameRunning && !wasRunning && !isRunningRef.current) {
+      void subscribe(sessionId);
+    }
+    // 不依赖 isRunning：改用 isRunningRef 读最新值，避免 subscribe 改状态反向触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, initialRunningStatus, subscribe]);
+
   // 切换 profile：调后端绑定接口，成功后刷新本地
   async function handleChangeProfile(newId: string | null) {
     if (!activeSessionId) {

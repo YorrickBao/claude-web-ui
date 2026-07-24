@@ -320,6 +320,40 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, navigate]);
 
+  // 跨窗口/标签页同步：监听 sessions_changed（SSE，跨 JS 上下文唯一可靠信号），
+  // 仅刷新当前会话的 runningStatus，不动 messages（避免用陈旧快照覆盖实时流）。
+  // 这是"观察方窗口能在对方发消息后接到实时流"的关键：父组件把最新状态以 prop
+  // 形式喂给 ChatView，触发其订阅 effect。
+  useEffect(() => {
+    if (!sessionId) return;
+    const es = new EventSource("api/sessions/stream");
+    const refreshStatus = async () => {
+      try {
+        const res = await fetch(
+          `api/sessions/${encodeURIComponent(sessionId)}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as SessionView & {
+          messages?: ThreadMessageLike[];
+        };
+        setMeta((prev) =>
+          prev
+            ? {
+                ...prev,
+                runningStatus: data.runningStatus ?? prev.runningStatus,
+                inputTokens: data.inputTokens ?? prev.inputTokens,
+                outputTokens: data.outputTokens ?? prev.outputTokens,
+              }
+            : prev,
+        );
+      } catch {
+        // 状态刷新失败不影响主流程
+      }
+    };
+    es.addEventListener("sessions_changed", () => void refreshStatus());
+    return () => es.close();
+  }, [sessionId]);
+
   if (err) {
     return (
       <div className="flex h-full items-center justify-center p-4">
