@@ -28,6 +28,35 @@ npx claude-web-ui
 
 源码修改和构建产物可以分开 commit（源码 feat/fix + chore 构建产物），也可以合在一起。
 
+## 发版
+
+项目有两套独立产物，各用各的 tag 前缀，互不干扰：
+
+| 产物 | 分发方式 | 触发 tag | CI 工作流 |
+|---|---|---|---|
+| relay（Go 中转服务） | GitHub Releases | `relay-v*` | `.github/workflows/build-relay.yml` |
+| npm 包（WebUI 主程序） | `npx claude-web-ui` | `v*`（规划中） | — |
+
+### relay 发版
+
+改 `relay/` 后推 main 只会构建临时 artifact（90 天有效，不发版）。正式发版靠打 tag：
+
+```bash
+git tag -a relay-v0.x.0 -m "claude-web-ui-relay v0.x.0
+
+变更说明：
+- xxx"
+git push origin relay-v0.x.0
+```
+
+约 1 分钟内 Actions 自动交叉编译 5 个平台（linux/darwin amd64+arm64、windows amd64）并发布到 Releases，无需手动上传。发版后可用 `gh release view relay-v0.x.0` 核对 assets 是否齐全。
+
+注意事项：
+
+- **tag 前缀必须是 `relay-v`**，否则不触发 relay 工作流（`on.push.tags: relay-v*`）。
+- **不要把 `paths` 放回 `push` 块**——它会同时约束 `branches` 和 `tags`，导致 tag 指向的 commit 若在 `relay/` 下无 diff 就不触发 push 事件，Release 永远建不出来（已踩过这个坑）。`paths` 只保留在 `pull_request` 上省 CI。
+- relay 与 npm 包独立版本号，各自递增，不强制对齐。
+
 ## 关键约束
 
 - 所有设计决策应服务于"浏览器操作等效于终端 `claude` 命令"这一目标

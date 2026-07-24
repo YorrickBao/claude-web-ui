@@ -10,12 +10,23 @@
 
 ## 获取二进制
 
-**方式一（推荐）：从 GitHub Actions / Releases 下载预编译产物**
+**方式一（推荐）：从 GitHub Releases 下载预编译产物**
 
-仓库已配置 GitHub Actions，每次推送 `relay/` 改动会自动构建 Linux/macOS/Windows 多平台二进制。打 `v*` tag 时会发布到 Releases。
+仓库已配置 GitHub Actions（`.github/workflows/build-relay.yml`）：推 main 自动构建 Linux/macOS/Windows 多平台临时 artifact；打 `relay-v*` tag 时发布正式 Release。
 
-- 最新构建产物：仓库 → Actions → 选最近一次 Build Relay → 下载对应平台的 artifact
-- 正式发布：仓库 → Releases
+- 最新临时构建：仓库 → Actions → 选最近一次 Build Relay → 下载对应平台的 artifact（90 天有效）
+- 正式发布：仓库 → [Releases](https://github.com/YorrickBao/claude-web-ui/releases)
+
+### 发版方法
+
+正式发版由 maintainer 打 tag 触发，详见根目录 [AGENTS.md → 发版](../AGENTS.md#发版)。简言之：
+
+```bash
+git tag -a relay-v0.x.0 -m "claude-web-ui-relay v0.x.0"
+git push origin relay-v0.x.0
+```
+
+> tag 前缀必须是 `relay-v`（不是 `v`）。relay 与 npm 包（`npx claude-web-ui`）独立版本化，互不干扰。
 
 **方式二：本地编译**（需 Go 1.26+、[just](https://github.com/casey/just)）
 
