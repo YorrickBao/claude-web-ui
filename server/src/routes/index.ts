@@ -962,7 +962,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(status);
   });
 
-  // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，10 分钟无活动移除）
+  // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，1 天无活动移除）
   app.get("/api/relay/devices", async (_req, reply) => {
     return reply.send({ devices: getDevices() });
   });
