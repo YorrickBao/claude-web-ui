@@ -1,14 +1,16 @@
 name: Build Relay
 
-# 每次推送 relay/ 相关改动时，交叉编译 Go 中转服务多平台二进制，
+# 推送到 main 或打 tag（v*）时，交叉编译 Go 中转服务多平台二进制，
 # 上传为 workflow artifact，便于下载部署。
+# PR 仅在 relay/ 变更时触发以节省 CI。
 # 打 tag（v*）时额外发布到 GitHub Releases。
+#
+# 注意：paths 不能放在 push 块里——它会同时约束 branches 和 tags，
+# 导致 tag 指向的 commit 若在 relay/ 下无 diff 就不触发，Release 永远建不出来。
+# 因此 push 不配 paths（保证 tag 100% 触发），仅在 pull_request 上用 paths 省 CI。
 on:
   push:
     branches: [main]
-    paths:
-      - "relay/**"
-      - ".github/workflows/build-relay.yml"
     tags:
       - "v*"
   pull_request:
