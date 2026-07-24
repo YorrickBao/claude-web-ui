@@ -137,6 +137,11 @@ func (t *Tunnel) localReadLoop(parent context.Context, h *Hub) {
 		case TypePing:
 			_ = t.writeLocal(parent, Frame{Type: TypePong})
 
+		case TypeRegisterToken:
+			// 本地请求登记一个短命访问令牌：token → 当前隧道的 accessKey。
+			// accessKey 在隧道注册时已认证，这里直接取 t.accessKey，可信。
+			h.storeToken(f.Token, t.accessKey, f.TtlSec)
+
 		default:
 			log.Printf("[tunnel] %s unexpected frame type %q", shortKey(t.accessKey), f.Type)
 		}

@@ -21,6 +21,7 @@ const (
 	TypePing       = "ping"       // 心跳
 	TypePong       = "pong"       // 心跳回复
 	TypeEnd        = "end"        // 终止某 connId（client 或本地异常时通知对端清理）
+	TypeRegisterToken = "register_token" // 本地→中转：注册一个短命访问令牌（token→accessKey 映射，TTL 内可一次性换取 cookie）
 )
 
 // Frame 是所有帧的公共信封。解析时先看 Type 再按需读字段。
@@ -36,6 +37,8 @@ type Frame struct {
 	Last      bool              `json:"last,omitempty"`
 	Ok        bool              `json:"ok,omitempty"`
 	Message   string            `json:"message,omitempty"`
+	Token     string            `json:"token,omitempty"`  // register_token 帧携带的短命令牌
+	TtlSec    int               `json:"ttlSec,omitempty"` // register_token 帧的存活秒数
 }
 
 func encodeFrame(f Frame) ([]byte, error) {

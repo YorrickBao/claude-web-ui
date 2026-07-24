@@ -52,6 +52,8 @@ export interface RelayStatusSnapshot {
   relayUrl: string;
   accessKey: string;
   remoteUrl: string;
+  /** 当前访问令牌的到期时间戳（ms）；null 表示无有效令牌 */
+  tokenExpiresAt: number | null;
   error: string | null;
 }
 

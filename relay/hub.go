@@ -17,10 +17,24 @@ import (
 type Hub struct {
 	mu      sync.Mutex
 	tunnels map[string]*Tunnel
+
+	tokensMu sync.Mutex
+	tokens   map[string]tokenEntry // 短命访问令牌：token → accessKey，TTL 内可一次性换 cookie
+}
+
+// tokenEntry 是一个短命令牌的映射项。
+// 本地 WebUI 生成 token 后经隧道发 register_token 帧，中转存此映射；
+// 远程浏览器用 ?t=token 首次访问时一次性消费，换得 accessKey cookie。
+type tokenEntry struct {
+	accessKey string
+	expiresAt time.Time
 }
 
 func NewHub() *Hub {
-	return &Hub{tunnels: make(map[string]*Tunnel)}
+	return &Hub{
+		tunnels: make(map[string]*Tunnel),
+		tokens:  make(map[string]tokenEntry),
+	}
 }
 
 // Find 按 accessKey 查找隧道（不创建）。
@@ -56,6 +70,66 @@ func (h *Hub) unregister(accessKey string, t *Tunnel) {
 	defer h.mu.Unlock()
 	if cur, ok := h.tunnels[accessKey]; ok && cur == t {
 		delete(h.tunnels, accessKey)
+	}
+}
+
+// storeToken 登记一个短命访问令牌：token → accessKey，存活 ttlSec 秒。
+// accessKey 来自隧道自身（注册时已认证），可信，无需再次校验。
+func (h *Hub) storeToken(token, accessKey string, ttlSec int) {
+	if token == "" || accessKey == "" {
+		return
+	}
+	if ttlSec <= 0 {
+		ttlSec = 60
+	}
+	h.tokensMu.Lock()
+	h.tokens[token] = tokenEntry{accessKey: accessKey, expiresAt: time.Now().Add(time.Duration(ttlSec) * time.Second)}
+	h.tokensMu.Unlock()
+}
+
+// consumeToken 查找并删除一个令牌（一次性消费，防重放）。
+// 返回关联的 accessKey 及是否命中（未过期）。
+func (h *Hub) consumeToken(token string) (string, bool) {
+	if token == "" {
+		return "", false
+	}
+	h.tokensMu.Lock()
+	defer h.tokensMu.Unlock()
+	entry, ok := h.tokens[token]
+	if !ok {
+		return "", false
+	}
+	delete(h.tokens, token) // 一次性：无论是否过期，消费后即删
+	if time.Now().After(entry.expiresAt) {
+		return "", false
+	}
+	return entry.accessKey, true
+}
+
+// sweepTokens 清扫已过期的令牌，防止「铸造但从未被消费」的令牌堆积。
+// 由 startTokenSweeper 定时调用。
+func (h *Hub) sweepTokens() {
+	now := time.Now()
+	h.tokensMu.Lock()
+	for k, e := range h.tokens {
+		if now.After(e.expiresAt) {
+			delete(h.tokens, k)
+		}
+	}
+	h.tokensMu.Unlock()
+}
+
+// startTokenSweeper 每 30s 清扫一次过期令牌，直到 ctx 取消。
+func (h *Hub) startTokenSweeper(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.sweepTokens()
+		}
 	}
 }
 

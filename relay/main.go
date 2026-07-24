@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io"
 	"log"
@@ -28,6 +29,10 @@ func main() {
 
 	hub := NewHub()
 
+	// 启动 token 清扫器：定时回收「铸造但从未被消费」的过期令牌，防止内存堆积。
+	// 随进程生命周期运行，无需停止。
+	go hub.startTokenSweeper(context.Background())
+
 	mux := http.NewServeMux()
 
 	// 健康检查（Nginx / 监控用）
@@ -40,7 +45,7 @@ func main() {
 	mux.HandleFunc("/tunnel", hub.handleTunnel)
 
 	// 远程浏览器入口：所有其它请求（含根路径）走 HTTP 透明代理，
-	// 经隧道转发到本地 WebUI。accessKey 从 cookie 或 ?k= 携带。
+	// 经隧道转发到本地 WebUI。?t= 一次性令牌换 cookie；cookie 携带 accessKey。
 	mux.HandleFunc("/", hub.handleProxy)
 
 	srv := &http.Server{

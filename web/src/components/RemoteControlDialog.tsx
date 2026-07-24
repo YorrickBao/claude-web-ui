@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2,
   Copy,
@@ -9,6 +9,8 @@ import {
   WifiOff,
   ExternalLink,
   Smartphone,
+  KeyRound,
+  Clock,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -32,6 +34,7 @@ interface RelayStatus {
   relayUrl: string;
   accessKey: string;
   remoteUrl: string;
+  tokenExpiresAt: number | null;
   error: string | null;
 }
 
@@ -50,6 +53,7 @@ export function RemoteControlDialog() {
   const [accessKey, setAccessKey] = useState("");
   const [toggling, setToggling] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const fetchStatus = useCallback(async () => {
@@ -96,6 +100,48 @@ export function RemoteControlDialog() {
   const connected = status?.connected ?? false;
   const connecting = status?.connecting ?? false;
   const remoteUrl = status?.remoteUrl ?? "";
+  const tokenExpiresAt = status?.tokenExpiresAt ?? null;
+
+  // 倒计时：token 有效期内的剩余秒数。每秒刷新一次，到期归零。
+  // tokenExpiresAt 变化（重新生成/清空）时重建定时器，unmount 时清理。
+  const [remaining, setRemaining] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    if (!tokenExpiresAt) {
+      setRemaining(0);
+      return;
+    }
+    const tick = () => setRemaining(Math.max(0, Math.round((tokenExpiresAt - Date.now()) / 1000)));
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+  }, [tokenExpiresAt]);
+
+  async function handleRefreshToken() {
+    setRefreshing(true);
+    try {
+      const res = await fetch("api/relay/refresh-token", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      // 成功后状态由 SSE 推送的快照驱动，无需手动 setStatus
+      toast.success("已生成访问链接（60 秒有效）");
+    } catch (err) {
+      toast.error(`生成失败：${(err as Error).message}`);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function handleToggle() {
     setToggling(true);
@@ -299,47 +345,81 @@ export function RemoteControlDialog() {
               {enabled ? "停止远程控制" : "启用远程控制"}
             </Button>
 
-            {/* 已连接：远程访问地址 + 二维码 */}
-            {connected && remoteUrl && (
+            {/* 已连接：访问令牌管理 */}
+            {connected && (
               <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
-                  <Check className="h-3.5 w-3.5" /> 远程访问地址
-                </div>
-                <code className="block w-full break-all rounded bg-background px-2 py-1 text-[11px]">
-                  {remoteUrl}
-                </code>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <Check className="h-3.5 w-3.5" /> 远程访问链接
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1 px-2 text-[11px]"
-                    onClick={() => handleCopy(remoteUrl, "远程地址")}
-                    title="复制"
+                    onClick={handleRefreshToken}
+                    disabled={refreshing}
+                    className="h-6 gap-1 px-2 text-[11px]"
+                    title="生成新的访问链接"
                   >
-                    {copied ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    {refreshing ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Copy className="h-3.5 w-3.5" />
+                      <KeyRound className="h-3 w-3" />
                     )}
-                    复制
+                    {tokenExpiresAt ? "刷新链接" : "生成链接"}
                   </Button>
-                  <a
-                    href={remoteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                    title="新窗口打开"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    打开
-                  </a>
                 </div>
-                <div className="flex justify-center rounded-lg bg-white p-3">
-                  <QRCodeSVG value={remoteUrl} size={160} />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  在任意浏览器或手机扫码打开，即可远程操作。
-                </p>
+
+                {/* 无 token 或已失效：提示生成 */}
+                {!tokenExpiresAt || remaining === 0 ? (
+                  <div className="rounded bg-background px-2 py-2 text-[11px] text-muted-foreground">
+                    {tokenExpiresAt ? (
+                      <>链接已失效，请点击「刷新链接」重新生成。</>
+                    ) : (
+                      <>点击「生成链接」创建一次性访问链接（60 秒内有效），在远程浏览器或手机扫码打开。</>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <code className="block w-full break-all rounded bg-background px-2 py-1 text-[11px]">
+                      {remoteUrl}
+                    </code>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[11px]"
+                        onClick={() => handleCopy(remoteUrl, "远程地址")}
+                        title="复制"
+                      >
+                        {copied ? (
+                          <Check className="h-3.5 w-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                        复制
+                      </Button>
+                      <a
+                        href={remoteUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                        title="新窗口打开"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        打开
+                      </a>
+                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-amber-600">
+                        <Clock className="h-3 w-3" /> 剩余 {remaining}s
+                      </span>
+                    </div>
+                    <div className="flex justify-center rounded-lg bg-white p-3">
+                      <QRCodeSVG value={remoteUrl} size={160} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      链接是一次性令牌，首次打开后即失效；在任意浏览器或手机扫码打开即可远程操作。
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>

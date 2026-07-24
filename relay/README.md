@@ -173,7 +173,7 @@ location /relay/ {
 
 ## 协议
 
-见 `protocol.go` 顶部注释。核心帧：`register` / `req` / `req_body` / `res` / `res_body` / `ping`，用 `connId` 关联一次 HTTP 往来。
+见 `protocol.go` 顶部注释。核心帧：`register` / `req` / `req_body` / `res` / `res_body` / `ping`，用 `connId` 关联一次 HTTP 往来。另有 `register_token` 帧：本地→中转，登记一个 60 秒一次性访问令牌（`token` + `ttlSec` 字段），供远程浏览器用 `?t=token` 换取 accessKey cookie。
 
 ## 运维
 
@@ -183,46 +183,48 @@ location /relay/ {
 
 ## 安全说明
 
-远程控制把绑定 `127.0.0.1` 的本地服务暴露到公网，远程浏览器可执行与本地终端 `claude` 完全等效的操作（含执行命令、读写文件）。唯一屏障是 accessKey，请务必读完本节再决定是否部署到公网。
+远程控制把绑定 `127.0.0.1` 的本地服务暴露到公网，远程浏览器可执行与本地终端 `claude` 完全等效的操作（含执行命令、读写文件）。请务必读完本节再决定是否部署到公网。
+
+### 访问令牌（token）交换机制
+
+远程访问**不再在 URL 中携带长期 accessKey**，改用一次性短命令牌：
+
+1. 本地 WebUI 面板点击「生成链接」→ 本地生成 192 bit 随机 token，经隧道登记到中转（`register_token` 帧），存为 `token → accessKey` 映射，**60 秒有效**
+2. 远程地址形如 `https://relay.example.com/?t=<TOKEN>`（仅含一次性 token，无 accessKey）
+3. 浏览器首次打开 → 中转一次性消费 token，种下 accessKey cookie，302 回根路径（剥掉 token）
+4. 后续请求走 cookie 鉴权，accessKey 不出现在任何 URL
+
+这样 accessKey **不会进入 nginx 日志 / Referer / 浏览器历史**——这些位置至多留下一次性 token，且 60 秒后即失效、消费后不可重放。
 
 ### accessKey 的安全性
 
-- **强度**：24 字节随机数（192 bit 熵），穷举不可行
-- **保护**：cookie 为 `HttpOnly` + `SameSite=Lax`，防 XSS 读取和部分 CSRF
+- **强度**：accessKey 与 token 均为 24 字节随机数（192 bit 熵），穷举不可行
+- **token 一次性**：消费后立即删除，即便在 60s 窗口内也无法重放
+- **cookie 保护**：`HttpOnly` + `SameSite=Lax`，防 XSS 读取和部分 CSRF
 - **判定 HTTPS**：relay 直连时看连接 TLS 标记，经 Nginx 终止 TLS 时看 `X-Forwarded-Proto` 头（上面的 nginx 配置已透传该头），据此决定 cookie 的 `Secure` 标记
 
-### accessKey 的主要泄露途径（务必注意）
-
-远程访问地址形如 `https://relay.example.com/?k=<KEY>`，首次访问后 key 种入 cookie，但 **URL 里的 `?k=` 可能被记录到多处**：
+### 残余威胁与缓解
 
 | 途径 | 说明 | 缓解 |
 |------|------|------|
-| **Nginx access log** | 默认记录完整 query，key 明文落盘 | 见下方「日志脱敏」 |
-| **浏览器历史** | 本地历史记录明文存 key | 在敏感环境定期清理；泄漏后立即「重新生成」key |
-| **Referer 头** | 点击远程页面内任何外链时，`Referer` 可能携带 key | 上方配置已加 `Referrer-Policy: no-referrer` |
-| **长期有效** | cookie 有效期 30 天，key 不自动轮换 | 定期在面板「重新生成」key |
+| **HTTP 明文中间人** | 首次 token 交换在明文下可被截获 | 强制 HTTPS：上方配置已做 HTTP→HTTPS 跳转 + HSTS |
+| **浏览器历史留有 token** | token 仍在历史记录（非 accessKey） | 一次性、60s 失效，泄露窗口极短；过期后无害 |
+| **cookie 被盗** | cookie 有效期 30 天 | `Secure`（HTTPS 下）+ `HttpOnly`；必要时在面板「重新生成」accessKey 使旧 cookie 失效 |
+| **relay 重启丢失 token** | 未交换的 token 随进程消失 | 用户在面板重新生成即可 |
 
-### 日志脱敏（强烈建议）
+### 日志脱敏（可选）
 
-默认 access log 会把 `?k=` 记录下来。对 relay 站点，建议不记 access log，或过滤掉 query：
+token 交换后 URL 不含 accessKey，但 token 仍可能进 access log。如需彻底无痕：
 
 ```nginx
-# 方式一：直接不记 relay 站点的 access log（最简单、最彻底）
 location / {
     access_log off;
     # ... 其余 proxy 配置 ...
 }
-
-# 方式二：保留访问计数但脱敏 query（需定义不含 $query_string 的 log_format）
-# 在 http {} 块定义：
-#   log_format noquery '$remote_addr - $remote_user [$time_local] '
-#                      '"$request_method $uri" $status $body_bytes_sent';
-# 站点内引用：
-#   access_log /var/log/nginx/relay.log noquery;
 ```
 
 ### 风险判断
 
-- **个人/临时远程访问**：按上方配置部署（HSTS + Referrer-Policy + 日志脱敏 + 透传 `X-Forwarded-Proto`），风险可接受
-- **长期挂公网 / 多人 / 敏感机器**：不建议。等效本地 shell 的权限配合单一长期 key，一旦 key 泄露即等于本机沦陷，且无审计告警
-- **不要**把 relay 地址和 key 同时分享到群聊、截图、提交进仓库——拿到地址+key 即可远程操作你的本机
+- **个人/临时远程访问**：按上方配置部署（HTTPS + HSTS + Referrer-Policy + 透传 `X-Forwarded-Proto`），风险可接受
+- **长期挂公网 / 多人 / 敏感机器**：不建议。等效本地 shell 的权限即便有 token 保护，cookie 泄露仍等于本机沦陷，且无审计告警
+- **不要**把当前有效的访问链接分享到公开渠道——虽是一次性 token，60s 内仍可被他人抢先使用

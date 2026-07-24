@@ -18,12 +18,43 @@ const (
 // handleProxy 是远程浏览器的主入口：所有非 /tunnel、非 /healthz 的 HTTP 请求都走这里。
 //
 // 工作流：
-//  1. 从 cookie 或 ?k= 取 accessKey；无则返回落地说明页（根路径）或 401。
-//  2. 首次带 ?k= 访问时种 cookie，后续请求浏览器自动携带。
+//  1. 若带 ?t=TOKEN：一次性消费换取 accessKey cookie，302 回根路径（剥掉 token）。
+//     token 失效则返回令牌过期页。accessKey 不出现在 URL。
+//  2. 否则从 cookie 取 accessKey；无则返回落地说明页（根路径）或 401。
 //  3. 凭 accessKey 找到隧道；找不到返回 502。
 //  4. 把 HTTP 请求转成 req/req_body 帧发到本地隧道，阻塞等待 res/res_body 流式回填。
 //  5. 客户端断开时（r.Context 取消）通知本地终止该请求。
 func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
+	// 短命令牌交换（优先于 cookie 鉴权）：远程地址携带 ?t=TOKEN 首次访问，
+	// 一次性消费换得 accessKey cookie，随后 302 回根路径（剥掉 token）。
+	// accessKey 不再出现在 URL，避免进 nginx 日志 / Referer / 浏览器历史。
+	if t := r.URL.Query().Get("t"); t != "" {
+		accessKey, ok := h.consumeToken(t)
+		if !ok {
+			renderTokenExpired(w)
+			return
+		}
+		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieName,
+			Value:    accessKey,
+			Path:     "/",
+			MaxAge:   cookieMaxAge,
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+		})
+		// 去掉 t 参数后跳根路径；保留其余 query（理论上无）
+		q := r.URL.Query()
+		q.Del("t")
+		target := "/"
+		if enc := q.Encode(); enc != "" {
+			target = "/?" + enc
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
+
 	accessKey := accessKeyFromRequest(r)
 
 	if accessKey == "" {
@@ -36,23 +67,6 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, "missing access key — open the link from Claude WebUI remote panel")
 		return
-	}
-
-	// 首次 ?k= 访问：种 cookie
-	if qk := r.URL.Query().Get("k"); qk != "" {
-		// 判断是否走 HTTPS：直连时看 r.TLS；经 Nginx 终止 TLS 时 relay 收到明文 HTTP，
-		// 需看代理透传的 X-Forwarded-Proto。两者皆无（本地 http 测试）则不设 Secure，
-		// 否则浏览器会拒绝在 http 下携带 cookie。
-		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-		http.SetCookie(w, &http.Cookie{
-			Name:     cookieName,
-			Value:    accessKey,
-			Path:     "/",
-			MaxAge:   cookieMaxAge,
-			HttpOnly: true,
-			Secure:   secure,
-			SameSite: http.SameSiteLaxMode,
-		})
 	}
 
 	tunnel, ok := h.Find(accessKey)
@@ -75,7 +89,7 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 构造转发 path + query，剥离中转专属的 k 参数
-	path := stripKeyParam(r.URL)
+	path := stripRelayParams(r.URL)
 
 	// 收集请求头，剥离 hop-by-hop
 	headers := collectHeaders(r.Header)
@@ -135,19 +149,20 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// accessKeyFromRequest 优先从 cookie 取，其次从 ?k= query 取。
+// accessKeyFromRequest 从 cookie 取 accessKey。
+// 远程地址不再携带 accessKey（改用一次性 ?t= token 换 cookie），故仅认 cookie。
 func accessKeyFromRequest(r *http.Request) string {
 	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
 		return c.Value
 	}
-	return r.URL.Query().Get("k")
+	return ""
 }
 
-// stripKeyParam 返回去掉 k 参数后的 path（含剩余 query）。
-// 中转用 ?k= 首次携带 accessKey，该参数不能透传给本地 API。
-func stripKeyParam(u *url.URL) string {
+// stripRelayParams 返回去掉中转专属参数（t）后的 path（含剩余 query）。
+// 中转用 ?t= 携带一次性令牌，该参数不应透传给本地 API。
+func stripRelayParams(u *url.URL) string {
 	q := u.Query()
-	q.Del("k")
+	q.Del("t")
 	encoded := q.Encode()
 	if encoded == "" {
 		return u.Path
@@ -174,7 +189,7 @@ func collectHeaders(h http.Header) map[string]string {
 	return out
 }
 
-// renderLanding 返回中转的落地说明页（无 accessKey 时访问根路径所见）。
+// renderLanding 返回中转的落地说明页（无 accessKey/cookie 时访问根路径所见）。
 func renderLanding(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, `<!doctype html>
@@ -182,11 +197,24 @@ func renderLanding(w http.ResponseWriter) {
 <title>Claude WebUI Relay</title>
 <body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#333;max-width:36rem;margin:0 auto">
 <h2>Claude WebUI 中转服务</h2>
-<p>这是远程控制中转。请通过本地 WebUI 的「远程控制」面板获取的链接访问：</p>
+<p>这是远程控制中转。请通过本地 WebUI 的「远程控制」面板生成访问链接：</p>
 <ol>
 <li>在本地 WebUI 左下角点击 <b>📱 远程控制</b>；</li>
 <li>填写中转地址并启用；</li>
-<li>复制「远程访问地址」在浏览器打开，或扫码。</li>
+<li>点击「生成访问链接」（链接 60 秒内有效），在浏览器打开或扫码。</li>
 </ol>
 <p style="color:#888;font-size:0.85rem">部署中转见仓库 relay/README.md</p>`)
+}
+
+// renderTokenExpired 返回令牌失效页（?t= token 无效或已过期时）。
+func renderTokenExpired(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	_, _ = io.WriteString(w, `<!doctype html>
+<html lang="zh"><meta charset="utf-8">
+<title>访问令牌失效</title>
+<body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#333;max-width:36rem;margin:0 auto">
+<h2>访问链接已失效</h2>
+<p>该链接是一次性访问令牌，已过期或已被使用。</p>
+<p>请在本地 WebUI 的「远程控制」面板点击「生成访问链接」获取新链接。</p>`)
 }

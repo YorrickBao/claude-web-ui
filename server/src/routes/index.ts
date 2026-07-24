@@ -44,7 +44,7 @@ import {
   stopRelayTunnel,
   getRelayStatus,
   setLocalBase,
-  buildRemoteUrl,
+  mintToken,
   type RelayConfig,
 } from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
@@ -947,7 +947,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/relay/status —— 当前隧道状态 + 已保存配置
   app.get("/api/relay/status", async (_req, reply) => {
     const status = getRelayStatus();
-    // 若运行时未启用，回退到落盘配置供前端展示
+    // 若运行时未启用，回退到落盘配置供前端展示（此时尚无 token，remoteUrl 为空）
     if (!status.relayUrl || !status.accessKey) {
       const saved = await loadRelayConfig();
       if (saved) {
@@ -955,7 +955,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           ...status,
           relayUrl: saved.relayUrl,
           accessKey: saved.accessKey,
-          remoteUrl: buildRemoteUrl(saved.relayUrl, saved.accessKey),
         });
       }
     }
@@ -978,7 +977,6 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           ...status,
           relayUrl: saved.relayUrl,
           accessKey: saved.accessKey,
-          remoteUrl: buildRemoteUrl(saved.relayUrl, saved.accessKey),
         };
       }
     }
@@ -1063,6 +1061,20 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       startRelayTunnel(config);
     }
     return reply.send({ ok: true, accessKey: newKey });
+  });
+
+  // POST /api/relay/refresh-token —— 生成一次性访问令牌（60s 有效）。
+  // 令牌经隧道登记到中转，远程地址携带 ?t=token 首次换 cookie。
+  // accessKey 不再出现在 URL，避免进 nginx 日志 / Referer / 浏览器历史。
+  app.post("/api/relay/refresh-token", async (_req, reply) => {
+    try {
+      const { token, expiresAt } = await mintToken();
+      return reply.send({ ok: true, token, expiresAt });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[relay] refresh-token failed:", msg);
+      return reply.code(400).send({ error: msg });
+    }
   });
 
   // 暴露配置加载给 index.ts 启动时自动重连
