@@ -183,6 +183,9 @@ location /relay/ {
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # relay 依赖此头判断客户端是否走 HTTPS，决定 cookie 的 Secure 标记
+    proxy_set_header X-Forwarded-Proto $scheme;
 
     # WS 长连接，关闭缓冲，加大超时
     proxy_buffering off;
@@ -193,7 +196,7 @@ location /relay/ {
 
 验证：
 - `curl https://your-domain.com/relay/healthz` → `{"ok":true}`
-- 浏览器打开远程访问地址（形如 `https://your-domain.com/relay/?k=KEY`）应正常加载
+- 在本地 WebUI 生成访问链接后，浏览器打开（形如 `https://your-domain.com/relay/?t=<TOKEN>`）应正常加载并跳回根路径
 
 > 本地面板「中转地址」填 `wss://your-domain.com/relay`：客户端会自动拼出
 > `wss://your-domain.com/relay/tunnel`，经 nginx 裁前缀后命中中转的 `/tunnel`。
@@ -202,7 +205,7 @@ location /relay/ {
 
 打开 WebUI → 左下角 Smartphone 图标 → 远程控制面板：
 - 中转地址填 `wss://relay.your-domain.com`
-- 启用后，面板会展示「远程访问地址」（带 accessKey），复制到任意浏览器或手机扫码即可远程操作。
+- 启用并连接成功后，点击「生成链接」获取一次性访问链接（60 秒有效），复制到任意浏览器或手机扫码即可远程操作。
 
 ## 协议
 
