@@ -20,6 +20,11 @@ type Hub struct {
 
 	tokensMu sync.Mutex
 	tokens   map[string]tokenEntry // 短命访问令牌：token → accessKey，TTL 内可一次性换 cookie
+
+	// prefix 是外部 URL 前缀（子路径部署用），如 "/relay"；根路径部署为 ""。
+	// 仅用于拼接对外输出的 Location 头和 cookie Path——
+	// nginx 会把前缀剥掉再转发，relay 内部路由（/healthz、/tunnel、/）始终在根路径。
+	prefix string
 }
 
 // tokenEntry 是一个短命令牌的映射项。
@@ -30,11 +35,27 @@ type tokenEntry struct {
 	expiresAt time.Time
 }
 
-func NewHub() *Hub {
+func NewHub(prefix string) *Hub {
 	return &Hub{
 		tunnels: make(map[string]*Tunnel),
 		tokens:  make(map[string]tokenEntry),
+		prefix:  prefix,
 	}
+}
+
+// externalPath 把内部根路径形式的 URL 段拼上外部前缀。
+// 例：prefix="/relay", in="/" → "/relay/"；prefix="" , in="/" → "/"。
+func (h *Hub) externalPath(p string) string {
+	return h.prefix + p
+}
+
+// cookiePath 返回 cookie 的 Path 属性。
+// 根路径部署返回 "/"，子路径部署返回前缀本身（cookie 仅发往该子路径下）。
+func (h *Hub) cookiePath() string {
+	if h.prefix == "" {
+		return "/"
+	}
+	return h.prefix
 }
 
 // Find 按 accessKey 查找隧道（不创建）。

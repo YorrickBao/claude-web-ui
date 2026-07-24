@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,8 @@ const (
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8787", "listen address (bind 127.0.0.1 behind Nginx)")
+	prefix := flag.String("prefix", "", "external URL prefix when deployed behind a sub-path "+
+		"(e.g. /relay). Empty = root deployment. Nginx must strip this prefix before proxying.")
 	quiet := flag.Bool("quiet", false, "suppress log output")
 	flag.Parse()
 
@@ -27,7 +30,10 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
-	hub := NewHub()
+	// 规范化外部前缀：确保以 / 开头、不以 / 结尾；空串表示根路径部署。
+	extPrefix := normalizePrefix(*prefix)
+
+	hub := NewHub(extPrefix)
 
 	// 启动 token 清扫器：定时回收「铸造但从未被消费」的过期令牌，防止内存堆积。
 	// 随进程生命周期运行，无需停止。
@@ -55,8 +61,25 @@ func main() {
 	}
 
 	log.Printf("[relay] listening on %s (behind Nginx for TLS)", *listen)
+	if extPrefix != "" {
+		log.Printf("[relay] external prefix: %s (sub-path deployment; nginx must strip it)", extPrefix)
+	}
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("[relay] server error: %v", err)
 		os.Exit(1)
 	}
+}
+
+// normalizePrefix 规范化子路径前缀：补齐前导 /、去掉结尾 /。
+// 返回空串表示根路径部署（无前缀）。
+// 例："/relay/" → "/relay"，"relay" → "/relay"，"/" → ""，"" → ""。
+func normalizePrefix(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimSuffix(p, "/")
 }

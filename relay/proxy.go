@@ -38,18 +38,18 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    accessKey,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			MaxAge:   cookieMaxAge,
 			HttpOnly: true,
 			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,
 		})
-		// 去掉 t 参数后跳根路径；保留其余 query（理论上无）
+		// 去掉 t 参数后跳根路径（拼上外部前缀）；保留其余 query（理论上无）
 		q := r.URL.Query()
 		q.Del("t")
-		target := "/"
+		target := h.externalPath("/")
 		if enc := q.Encode(); enc != "" {
-			target = "/?" + enc
+			target = h.externalPath("/?") + enc
 		}
 		http.Redirect(w, r, target, http.StatusFound)
 		return

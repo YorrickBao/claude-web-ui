@@ -170,7 +170,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 关键点：
 - nginx `location /relay/` 用尾斜杠 `proxy_pass` **裁掉前缀**，让中转仍看到根路径；
-- 必须有一条 `location = /relay` 把无斜杠访问 301 到 `/relay/`——相对路径解析依赖文档 URL 以斜杠结尾。
+- 必须有一条 `location = /relay` 把无斜杠访问 301 到 `/relay/`——相对路径解析依赖文档 URL 以斜杠结尾；
+- relay 启动**必须**加 `--prefix /relay`：nginx 会把前缀裁掉再转发，relay 内部路由始终在根路径，但对外输出的重定向 Location 和 cookie Path 需要拼回前缀，否则 token 交换后会 302 跳到站点根路径。
 
 ```nginx
 # 无斜杠访问重定向到带斜杠（相对路径解析的前提）
@@ -194,9 +195,17 @@ location /relay/ {
 }
 ```
 
+relay 启动参数需带上前缀（对 systemd unit，改 `ExecStart` 那一行即可）：
+
+```ini
+ExecStart=/opt/claude-web-ui-relay/claude-web-ui-relay --listen 127.0.0.1:8787 --prefix /relay
+```
+
+> 根路径部署（3a）不用加 `--prefix`，留空即可——内部路由和对外输出都在根路径，行为不变。
+
 验证：
 - `curl https://your-domain.com/relay/healthz` → `{"ok":true}`
-- 在本地 WebUI 生成访问链接后，浏览器打开（形如 `https://your-domain.com/relay/?t=<TOKEN>`）应正常加载并跳回根路径
+- 在本地 WebUI 生成访问链接后，浏览器打开（形如 `https://your-domain.com/relay/?t=<TOKEN>`）应正常加载，并 302 跳回 `/relay/`（剥掉 token）
 
 > 本地面板「中转地址」填 `wss://your-domain.com/relay`：客户端会自动拼出
 > `wss://your-domain.com/relay/tunnel`，经 nginx 裁前缀后命中中转的 `/tunnel`。
