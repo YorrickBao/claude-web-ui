@@ -7,7 +7,7 @@ import {
   useMessage,
   useComposerRuntime,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -154,8 +154,9 @@ export function ChatThread({
                 value={permissionMode}
                 onValueChange={(v) => { if (v) onPermissionModeChange(v); }}
               >
-                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
-                  <SelectValue />
+                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-0 justify-center gap-1 px-1.5 text-[11px] text-muted-foreground md:min-w-[52px] md:justify-between md:gap-1.5 md:pl-2.5 md:pr-2">
+                  <ShieldCheck className="h-3 w-3 shrink-0 text-muted-foreground md:hidden" />
+                  <SelectValue className="hidden md:flex" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="bypassPermissions">
@@ -205,8 +206,9 @@ export function ChatThread({
               value={profileId ?? ""}
               onValueChange={(v) => onProfileChange(v || null)}
             >
-              <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
-                <SelectValue />
+              <SelectTrigger variant="ghost" className="h-7 w-auto min-w-0 justify-center gap-1 px-1.5 text-[11px] text-muted-foreground md:min-w-[52px] md:justify-between md:gap-1.5 md:pl-2.5 md:pr-2">
+                <UserCog className="h-3 w-3 shrink-0 text-muted-foreground md:hidden" />
+                <SelectValue className="hidden md:flex" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">
@@ -233,9 +235,9 @@ export function ChatThread({
                 value={effortLevel}
                 onValueChange={(v) => { if (v) onEffortLevelChange(v); }}
               >
-                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-[52px] text-[11px] text-muted-foreground">
-                  <Brain className="mr-1 h-3 w-3 shrink-0 text-muted-foreground" />
-                  <SelectValue />
+                <SelectTrigger variant="ghost" className="h-7 w-auto min-w-0 justify-center gap-1 px-1.5 text-[11px] text-muted-foreground md:min-w-[52px] md:justify-between md:gap-1.5 md:pl-2.5 md:pr-2">
+                  <Brain className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <SelectValue className="hidden md:flex" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">
