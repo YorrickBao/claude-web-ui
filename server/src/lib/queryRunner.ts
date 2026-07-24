@@ -6,7 +6,7 @@
  */
 
 import { runQuery, type RunQueryParams } from "./sdk.js";
-import { emitSessionEvent, emitSessionEnd } from "./eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged } from "./eventBus.js";
 import { setInflightWaiting, setInflightRunning, clearInflight } from "./inflight.js";
 import { accumulateTokens, getSession } from "./store.js";
 import { finalizeSession } from "./agentRegistry.js";
@@ -22,14 +22,15 @@ export async function emitEventToBus(
   sessionId: string,
   evt: SSEEvent,
 ): Promise<SSEEvent> {
-  // Inflight 状态跟踪（跳过终结事件和子代理事件）
+  // Inflight 状态跟踪（跳过终结事件和子代理事件）。
+  // 仅在状态实际变化时广播 sessions-changed，避免每个 token 增量都通知。
   if (evt.type === "waiting_for_user") {
-    setInflightWaiting(sessionId);
+    if (setInflightWaiting(sessionId)) emitSessionsChanged();
   } else if (
     evt.type !== "done" &&
     evt.type !== "error"
   ) {
-    setInflightRunning(sessionId);
+    if (setInflightRunning(sessionId)) emitSessionsChanged();
   }
 
   // done 事件：先累加 token，再发送累加后的值
@@ -84,5 +85,7 @@ export async function runQueryToBus(
     // 误删已被新请求 setInflight 覆盖的 inflight 记录
     clearInflight(sessionId, params.abortController);
     emitSessionEnd(sessionId);
+    // 会话结束（running→completed），通知 Sidebar 刷新
+    emitSessionsChanged();
   }
 }

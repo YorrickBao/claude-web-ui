@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listSessions } from "@/lib/api";
 import type { SessionView } from "@/lib/types";
 
@@ -6,7 +6,6 @@ export function useSessions() {
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -24,7 +23,16 @@ export function useSessions() {
     refresh();
   }, [refresh]);
 
-  // 监听其它组件发出的"会话列表变更"通知（新会话创建后）
+  // 订阅 sessions-changed SSE 推送：后端在新建/删除/状态流转/结束时发信号，
+  // 收到后自行 GET /api/sessions 拉最新列表。EventSource 自动重连。
+  // 替代原先的 2 秒短轮询。
+  useEffect(() => {
+    const es = new EventSource("api/sessions/stream");
+    es.addEventListener("sessions_changed", () => void refresh());
+    return () => es.close();
+  }, [refresh]);
+
+  // 监听其它组件发出的"会话列表变更"通知（兼容旧路径）
   useEffect(() => {
     const handler = () => void refresh();
     window.addEventListener("session-list-changed", handler);
@@ -38,16 +46,6 @@ export function useSessions() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [refresh]);
-
-  // 短轮询：每 2 秒刷新，感知 inflight 运行状态变化
-  useEffect(() => {
-    pollingRef.current = setInterval(() => {
-      refresh();
-    }, 2000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
   }, [refresh]);
 
   return { sessions, loading, error, refresh };

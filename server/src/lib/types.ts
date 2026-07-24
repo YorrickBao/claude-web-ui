@@ -124,7 +124,9 @@ export type SSEEvent =
   /** 权限模式已变更 */
   | { type: "mode_changed"; mode: PermissionMode }
   /** 远程控制隧道状态变更（全局频道，GET /api/relay/stream 推送） */
-  | { type: "relay_status"; status: RelayStatusSnapshot };
+  | { type: "relay_status"; status: RelayStatusSnapshot }
+  /** 会话列表/状态变更通知（全局频道，GET /api/sessions/stream 推送，无数据负载） */
+  | { type: "sessions_changed" };
 
 /** relay_status 事件里的隧道状态快照（与 channels/relay.ts 的 RelayStatus 同构） */
 export interface RelayStatusSnapshot {

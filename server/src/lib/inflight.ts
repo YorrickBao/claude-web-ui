@@ -25,18 +25,24 @@ export function setInflight(sessionId: string, ctrl: AbortController): void {
   inflight.set(sessionId, { ctrl, status: "running" });
 }
 
-export function setInflightWaiting(sessionId: string): void {
+/** 标记会话为 waiting。@returns 状态是否实际发生了变化 */
+export function setInflightWaiting(sessionId: string): boolean {
   const entry = inflight.get(sessionId);
-  if (entry) {
+  if (entry && entry.status !== "waiting") {
     entry.status = "waiting";
+    return true;
   }
+  return false;
 }
 
-export function setInflightRunning(sessionId: string): void {
+/** 标记会话为 running。@returns 状态是否实际发生了变化 */
+export function setInflightRunning(sessionId: string): boolean {
   const entry = inflight.get(sessionId);
-  if (entry) {
+  if (entry && entry.status !== "running") {
     entry.status = "running";
+    return true;
   }
+  return false;
 }
 
 /**
