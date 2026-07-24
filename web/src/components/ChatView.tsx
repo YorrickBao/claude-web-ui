@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, setSessionThinkingLevel, updateSessionTitle } from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Pencil } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 export interface ChatViewProps {
@@ -42,6 +43,7 @@ export function ChatView({
   initialInputTokens,
   initialOutputTokens,
 }: ChatViewProps) {
+  const navigate = useNavigate();
   // 待处理的权限请求和计划审批
   // pendingPermissions 用数组：支持多个并发请求同时显示各自横幅
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
@@ -135,7 +137,9 @@ export function ChatView({
       permissionMode: initialPermissionMode,
       effortLevel: initialEffortLevel,
       onSessionCreated: (id) => {
-        window.history.replaceState(null, "", `/c/${id}`);
+        // HashRouter 下路由信息在 hash 中：必须用 navigate 更新 hash，
+        // window.history.replaceState 会写到 pathname 上（丢 #），刷新后回落默认路由导致会话丢失
+        navigate(`/c/${id}`, { replace: true });
         window.dispatchEvent(new CustomEvent("session-list-changed"));
       },
       onPermissionRequest: handlePermissionRequest,

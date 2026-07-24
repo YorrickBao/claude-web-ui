@@ -95,8 +95,8 @@ export function Sidebar({
   const [firstProfileId, setFirstProfileId] = useState<string | null>(null);
   // 移动端：点击目录名弹出完整路径
   const [pathPopup, setPathPopup] = useState<string | null>(null);
-  // 跟踪真实浏览器 URL（window.history.replaceState 不触发 React Router 更新，需手动同步以正确高亮当前会话）
-  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  // 当前路由 pathname（取自 React Router 的 useLocation，HashRouter 下反映 hash 路由，用于高亮当前会话）
+  const [currentPath, setCurrentPath] = useState(() => location.pathname);
 
   // ── 移动端滑动手势 ──
   const sidebarRef = useRef<HTMLElement>(null);
@@ -157,17 +157,11 @@ export function Sidebar({
       .catch(() => setFirstProfileId(null));
   }, []);
 
-  // 同步 currentPath：React Router 正常导航时从这里更新
+  // 同步 currentPath：所有路由变化（含 onSessionCreated 里的 navigate(replace)）都由 React Router 驱动，
+  // 不再需要监听 session-list-changed + 读 window.location 的旁路（那是 BrowserRouter + replaceState 时代的遗留）
   useEffect(() => {
     setCurrentPath(location.pathname);
   }, [location.pathname]);
-
-  // 同步 currentPath：session-list-changed 事件（window.history.replaceState 后触发）
-  useEffect(() => {
-    const handler = () => setCurrentPath(window.location.pathname);
-    window.addEventListener("session-list-changed", handler);
-    return () => window.removeEventListener("session-list-changed", handler);
-  }, []);
 
   // 点击删除 icon：进入待确认状态（icon 切换为「确认」按钮），不立即删除
   function startConfirmDelete(s: SessionView, e: React.MouseEvent) {
