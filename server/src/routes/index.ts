@@ -47,6 +47,7 @@ import {
   mintToken,
   type RelayConfig,
 } from "../channels/relay.js";
+import { getDevices } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
@@ -959,6 +960,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     return reply.send(status);
+  });
+
+  // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，10 分钟无活动移除）
+  app.get("/api/relay/devices", async (_req, reply) => {
+    return reply.send({ devices: getDevices() });
   });
 
   // GET /api/relay/stream —— 隧道状态实时推送（SSE，全局频道）

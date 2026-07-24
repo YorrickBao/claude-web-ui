@@ -94,6 +94,17 @@ func (h *Hub) unregister(accessKey string, t *Tunnel) {
 	}
 }
 
+// Stats 返回当前活跃隧道数与未消费（且未过期）的 token 数，供 /stats 状态页展示。
+func (h *Hub) Stats() (tunnels, tokens int) {
+	h.mu.Lock()
+	tunnels = len(h.tunnels)
+	h.mu.Unlock()
+	h.tokensMu.Lock()
+	tokens = len(h.tokens)
+	h.tokensMu.Unlock()
+	return
+}
+
 // storeToken 登记一个短命访问令牌：token → accessKey，存活 ttlSec 秒。
 // accessKey 来自隧道自身（注册时已认证），可信，无需再次校验。
 func (h *Hub) storeToken(token, accessKey string, ttlSec int) {

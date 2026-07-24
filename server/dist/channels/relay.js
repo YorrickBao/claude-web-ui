@@ -18,6 +18,7 @@
  */
 import { LOG_ENABLED } from "../env.js";
 import { emitRelayStatus } from "../lib/eventBus.js";
+import { clearDevices } from "../lib/relayDevices.js";
 // ── 模块级单例状态 ──
 let ws = null;
 let currentConfig = null;
@@ -147,6 +148,7 @@ function stopInternal(clearEnabled) {
     reqBodyBuffers.clear();
     reqBodyResolvers.clear();
     clearToken();
+    clearDevices(); // 隧道停止：远程设备无法再访问，清空设备列表
     if (clearEnabled) {
         enabled = false;
     }
@@ -206,6 +208,7 @@ function connect() {
         // token 与隧道会话绑定：断开后 relay 侧映射可能已丢（如 relay 重启），
         // 清空本地 token，避免前端展示「有效却打不开」的链接。重连后需重新生成。
         clearToken();
+        clearDevices(); // 隧道断开：远程设备列表与本次会话绑定，一并清空
         if (!enabled) {
             // 用户主动停止，不重连（状态已由 stopInternal 广播）
             return;
@@ -333,6 +336,9 @@ async function handleReq(f) {
             headers.set(k, v);
         }
     }
+    // 注入标识头，让本地 preHandler hook 识别这是经 relay 转发的请求，
+    // 据此解析 UA/IP 记录远程设备信息（功能：设备列表）。
+    headers.set("X-CWU-Via", "relay");
     const url = `${localBase}${path}`;
     let resp;
     try {

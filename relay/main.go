@@ -50,6 +50,9 @@ func main() {
 	// 隧道端点：本地 WebUI 主动出站连这里注册
 	mux.HandleFunc("/tunnel", hub.handleTunnel)
 
+	// 中转状态页：显示活跃隧道数与未消费 token 数，供运维直连查看
+	mux.HandleFunc("/stats", hub.handleStats)
+
 	// 远程浏览器入口：所有其它请求（含根路径）走 HTTP 透明代理，
 	// 经隧道转发到本地 WebUI。?t= 一次性令牌换 cookie；cookie 携带 accessKey。
 	mux.HandleFunc("/", hub.handleProxy)

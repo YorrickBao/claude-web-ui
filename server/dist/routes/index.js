@@ -9,6 +9,7 @@ import { setInflight, clearInflight, getInflight, getInflightStatus, takePending
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, mintToken, } from "../channels/relay.js";
+import { getDevices } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
@@ -830,6 +831,10 @@ export async function apiRoutes(app) {
             }
         }
         return reply.send(status);
+    });
+    // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，10 分钟无活动移除）
+    app.get("/api/relay/devices", async (_req, reply) => {
+        return reply.send({ devices: getDevices() });
     });
     // GET /api/relay/stream —— 隧道状态实时推送（SSE，全局频道）
     // 前端 RemoteControlDialog 的左下角图标订阅本端点，状态变化即时变色，无需轮询。

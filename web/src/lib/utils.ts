@@ -25,3 +25,19 @@ export function uuid(): string {
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
 }
+
+/**
+ * 相对时间格式化：ts（ms 时间戳）→ "刚刚 / N 秒前 / N 分钟前 / N 小时前 / N 天前"。
+ * 用于设备列表等「最后活跃」展示。
+ */
+export function timeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 10_000) return "刚刚";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec} 秒前`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  return `${Math.floor(hr / 24)} 天前`;
+}

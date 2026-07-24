@@ -11,6 +11,9 @@ import {
   Smartphone,
   KeyRound,
   Clock,
+  Monitor,
+  Tablet,
+  Globe,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -25,7 +28,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
+
+/** 远程接入设备记录（与 server/src/lib/relayDevices.ts 的 DeviceEntry 同构） */
+interface DeviceEntry {
+  id: string;
+  browser: string;
+  deviceType: string;
+  os: string;
+  ip: string;
+  firstSeen: number;
+  lastSeen: number;
+}
 
 interface RelayStatus {
   enabled: boolean;
@@ -36,6 +50,21 @@ interface RelayStatus {
   remoteUrl: string;
   tokenExpiresAt: number | null;
   error: string | null;
+}
+
+/** 按 deviceType 返回对应设备图标 */
+function DeviceTypeIcon({ type }: { type: string }) {
+  const cls = "h-3.5 w-3.5 shrink-0 text-muted-foreground";
+  switch (type) {
+    case "mobile":
+      return <Smartphone className={cls} />;
+    case "tablet":
+      return <Tablet className={cls} />;
+    case "desktop":
+      return <Monitor className={cls} />;
+    default:
+      return <Globe className={cls} />;
+  }
 }
 
 /**
@@ -55,6 +84,7 @@ export function RemoteControlDialog() {
   const [regenerating, setRegenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [devices, setDevices] = useState<DeviceEntry[]>([]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -88,6 +118,7 @@ export function RemoteControlDialog() {
     return () => es.close();
   }, []);
 
+
   // 打开对话框且尚无状态时，拉一次兜底（SSE 首帧可能稍晚）
   useEffect(() => {
     if (open && !status) {
@@ -101,6 +132,31 @@ export function RemoteControlDialog() {
   const connecting = status?.connecting ?? false;
   const remoteUrl = status?.remoteUrl ?? "";
   const tokenExpiresAt = status?.tokenExpiresAt ?? null;
+
+  // 设备列表：对话框打开且已连接时每 10s 轮询一次（设备数少，无需 SSE）
+  useEffect(() => {
+    if (!open || !connected) {
+      setDevices([]);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("api/relay/devices");
+        if (!res.ok) return;
+        const data = (await res.json()) as { devices: DeviceEntry[] };
+        if (!cancelled) setDevices(data.devices);
+      } catch {
+        /* 静默 */
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [open, connected]);
 
   // 倒计时：token 有效期内的剩余秒数。每秒刷新一次，到期归零。
   // tokenExpiresAt 变化（重新生成/清空）时重建定时器，unmount 时清理。
@@ -419,6 +475,37 @@ export function RemoteControlDialog() {
                       链接是一次性令牌，首次打开后即失效；在任意浏览器或手机扫码打开即可远程操作。
                     </p>
                   </>
+                )}
+              </div>
+            )}
+
+            {/* 已连接：已接入设备列表 */}
+            {connected && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/40 px-3 py-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Monitor className="h-3.5 w-3.5" /> 已接入设备
+                  <span className="ml-auto text-muted-foreground/70">{devices.length}</span>
+                </div>
+                {devices.length === 0 ? (
+                  <p className="px-1 py-1.5 text-[11px] text-muted-foreground">暂无设备接入</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {devices.map((d) => (
+                      <div key={d.id} className="flex items-center gap-2 rounded bg-background px-2 py-1.5">
+                        <DeviceTypeIcon type={d.deviceType} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[11px] font-medium">{d.browser}</div>
+                          <div className="truncate text-[10px] text-muted-foreground">
+                            {d.os}
+                            {d.ip ? ` · ${d.ip}` : ""}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {timeAgo(d.lastSeen)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

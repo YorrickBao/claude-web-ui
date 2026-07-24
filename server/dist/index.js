@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { HOST, START_PORT, WEB_DIST_DIR, DATA_DIR, LOG_ENABLED } from "./env.js";
 import { apiRoutes } from "./routes/index.js";
 import { startFeishuChannel } from "./channels/feishu.js";
+import { recordDevice } from "./lib/relayDevices.js";
 /** 尝试监听端口，占用则 +1 重试（最多试 100 个） */
 async function tryListen(app, host, startPort) {
     for (let port = startPort; port < startPort + 100; port++) {
@@ -45,6 +46,21 @@ async function main() {
                     },
                 }
             : false,
+    });
+    // 远程设备追踪：识别经 relay 转发的请求（X-CWU-Via 头），解析 UA/IP 记录设备。
+    // 放在路由注册前，对所有 /api/* 请求生效。静默失败，不影响请求处理。
+    app.addHook("preHandler", async (req) => {
+        try {
+            if (req.headers["x-cwu-via"] !== "relay")
+                return;
+            const ua = req.headers["user-agent"] ?? "";
+            const ip = req.headers["x-real-ip"] || req.ip;
+            if (ua || ip)
+                recordDevice(ua, ip);
+        }
+        catch (err) {
+            console.warn("[relay-devices] record failed:", err instanceof Error ? err.message : err);
+        }
     });
     // 业务路由
     await app.register(apiRoutes);

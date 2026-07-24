@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -93,6 +94,13 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	// 收集请求头，剥离 hop-by-hop
 	headers := collectHeaders(r.Header)
+	// 补充客户端真实 IP：nginx 终止 TLS 时会设 X-Real-IP，直连时缺失，
+	// 从 r.RemoteAddr 解析并注入，让本地能追踪远程设备（功能：设备列表）。
+	if headers["X-Real-IP"] == "" && headers["X-Real-Ip"] == "" {
+		if ip := clientIPFromAddr(r.RemoteAddr); ip != "" {
+			headers["X-Real-IP"] = ip
+		}
+	}
 
 	connId := generateConnId()
 	p := newPendingHTTP(w)
@@ -217,4 +225,40 @@ func renderTokenExpired(w http.ResponseWriter) {
 <h2>访问链接已失效</h2>
 <p>该链接是一次性访问令牌，已过期或已被使用。</p>
 <p>请在本地 WebUI 的「远程控制」面板点击「生成访问链接」获取新链接。</p>`)
+}
+
+// handleStats 返回中转状态页：当前活跃隧道数与未消费 token 数。
+// 简单 HTML + 5 秒自动刷新，供运维直连查看。不含敏感信息，无需鉴权。
+func (h *Hub) handleStats(w http.ResponseWriter, r *http.Request) {
+	tunnels, tokens := h.Stats()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, fmt.Sprintf(`<!doctype html>
+<html lang="zh"><meta charset="utf-8">
+<meta http-equiv="refresh" content="5">
+<title>Claude WebUI Relay · 状态</title>
+<body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#333;max-width:36rem;margin:0 auto">
+<h2>Claude WebUI 中转状态</h2>
+<table style="font-size:1rem;border-collapse:collapse">
+<tr><td style="padding:4px 16px 4px 0;color:#888">活跃隧道</td><td><b>%d</b></td></tr>
+<tr><td style="padding:4px 16px 4px 0;color:#888">待消费令牌</td><td><b>%d</b></td></tr>
+</table>
+<p style="color:#888;font-size:0.85rem;margin-top:1.5rem">页面每 5 秒自动刷新</p>`, tunnels, tokens))
+}
+
+// clientIPFromAddr 从 host:port 形式的地址解析出 IP（去掉端口）。
+func clientIPFromAddr(addr string) string {
+	// IPv6 形如 [::1]:1234
+	if i := strings.LastIndexByte(addr, ':'); i >= 0 {
+		// 区分 IPv6 [::]:port 与 IPv4 1.2.3.4:port
+		if strings.Contains(addr[:i], ":") && !strings.HasPrefix(addr, "[") {
+			// 裸 IPv6 无端口（少见），原样返回
+			return addr
+		}
+		host := addr[:i]
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+		return host
+	}
+	return addr
 }
