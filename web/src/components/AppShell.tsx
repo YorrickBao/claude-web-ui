@@ -1,17 +1,34 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { Menu } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/Sidebar";
-import { NewSessionView } from "@/components/NewSessionView";
-import { ChatView } from "@/components/ChatView";
-import { SettingsPage } from "@/components/SettingsPage";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
 import type { SessionView } from "@/lib/types";
+
+// 路由级懒加载：把会话渲染栈（@assistant-ui / markdown / highlight.js）和设置页
+// 隔离到独立 async chunk，首屏 /new 不再加载这些重组件。
+const NewSessionView = lazy(() =>
+  import("@/components/NewSessionView").then((m) => ({ default: m.NewSessionView })),
+);
+const ChatView = lazy(() =>
+  import("@/components/ChatView").then((m) => ({ default: m.ChatView })),
+);
+const SettingsPage = lazy(() =>
+  import("@/components/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
 /**
  * 整个应用的布局壳：左 Sidebar + 右主内容区。
@@ -84,7 +101,22 @@ export function AppShell() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageFallback />}>{renderShell(children)}</Suspense>;
+}
+
+/** 加载懒加载视图时的占位骨架，复用 ChatViewWithMeta 的骨架样式。 */
+function PageFallback() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+      <Skeleton className="h-6 w-64" />
+      <Skeleton className="h-4 w-48" />
+      <Skeleton className="h-4 w-56" />
+    </div>
+  );
+}
+
+function renderShell(children: ReactNode) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = localStorage.getItem("sidebarWidth");
