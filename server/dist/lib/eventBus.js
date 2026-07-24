@@ -12,6 +12,9 @@
  * 另有一条全局频道：
  *   relay               —— 远程控制隧道状态变更（非会话级）
  *   sessions-changed    —— 会话列表/状态变更通知（驱动 Sidebar 刷新）
+ *   session-lifecycle   —— 会话查询开始/结束的精确信号（带 sessionId），
+ *                          驱动观察方窗口接入实时流，取代靠 sessions-changed
+ *                          拉取状态再翻转推断的脆弱链路
  */
 import { EventEmitter } from "node:events";
 const bus = new EventEmitter();
@@ -74,5 +77,23 @@ export function onSessionsChanged(listener) {
     bus.on("sessions-changed", listener);
     return () => {
         bus.off("sessions-changed", listener);
+    };
+}
+/** 广播：某会话查询开始（仅当 inflight 状态真正从无→有时发） */
+export function emitSessionStarted(sessionId) {
+    bus.emit("session-lifecycle", { type: "session_started", sessionId });
+}
+/** 广播：某会话查询结束（仅当 inflight 状态真正从有→无时发） */
+export function emitSessionEnded(sessionId) {
+    bus.emit("session-lifecycle", { type: "session_ended", sessionId });
+}
+/**
+ * 订阅会话查询生命周期信号。
+ * @returns 取消订阅的函数
+ */
+export function onSessionLifecycle(listener) {
+    bus.on("session-lifecycle", listener);
+    return () => {
+        bus.off("session-lifecycle", listener);
     };
 }
