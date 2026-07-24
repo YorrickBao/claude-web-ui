@@ -145,6 +145,10 @@ export async function apiRoutes(app) {
         // 阶段1：订阅 bus，暂存所有事件到缓冲区（不丢弃）
         const buffer = [];
         let buffering = true;
+        // 会话在 replay 期间结束：不能立即关闭流，否则后续 sendSSE(history)
+        // 会写已关闭的流（write-after-end）。先标记，待 replay 完成后由正常
+        // 流程 flush buffer 并经 getInflight 检查兜底关闭。
+        let endedDuringReplay = false;
         const onEvent = (evt) => {
             if (buffering) {
                 buffer.push(evt);
@@ -161,11 +165,17 @@ export async function apiRoutes(app) {
             unsubEnd();
         };
         unsubEnd = onSessionEnd(sessionId, () => {
-            cleanup();
-            try {
-                endSSE(reply);
+            if (buffering) {
+                // replay 尚未完成：延后关闭，避免 write-after-end
+                endedDuringReplay = true;
             }
-            catch { /* 可能已经 close */ }
+            else {
+                cleanup();
+                try {
+                    endSSE(reply);
+                }
+                catch { /* 可能已经 close */ }
+            }
         });
         // 客户端正常断开时清理（仅注册一次）
         req.raw.on("close", cleanup);
@@ -229,8 +239,11 @@ export async function apiRoutes(app) {
                     decisionReason: pending.decisionReason,
                 });
             }
-            // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭
-            if (!getInflight(sessionId)) {
+            // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭。
+            // endedDuringReplay 表示 onSessionEnd 在 buffering 阶段触发过，
+            // 此时 inflight 必已清除（emitSessionEnd 在 clearInflight 之后调用），
+            // 两个条件等价，合并表达更清晰。
+            if (endedDuringReplay || !getInflight(sessionId)) {
                 cleanup();
                 try {
                     endSSE(reply);
@@ -396,6 +409,9 @@ export async function apiRoutes(app) {
                 emitSessionEnd(sessionId);
                 clearInflight(sessionId, ctrl);
                 await touchSession(sessionId);
+                // 会话结束（running→completed），通知 Sidebar 刷新。
+                // 本路由不走 runQueryToBus（首条消息用独立 for-await），需手动补发。
+                emitSessionsChanged();
             }
             try {
                 endSSE(reply);
@@ -688,10 +704,15 @@ export async function apiRoutes(app) {
         const valid = await validateFeishuCredentials(config.appId, config.appSecret).catch(() => false);
         return reply.send({ connected: valid, appId: config.appId, domain: config.domain });
     });
-    app.post("/api/feishu/connect", async (_req, reply) => {
+    app.post("/api/feishu/connect", async (req, reply) => {
         console.log("[feishu] connect request received");
         initSSE(reply);
         const ctrl = new AbortController();
+        // 客户端断开（关对话框/切页）时中止二维码轮询，避免继续写死 socket
+        req.raw.on("close", () => {
+            if (!ctrl.signal.aborted)
+                ctrl.abort();
+        });
         function sendFeishuEvent(type, data) {
             reply.raw.write(`event: ${type}\n`);
             reply.raw.write(`data: ${JSON.stringify({ ...data, type })}\n\n`);
