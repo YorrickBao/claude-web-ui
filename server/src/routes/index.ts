@@ -49,7 +49,7 @@ import {
 } from "../channels/relay.js";
 import { getDevices } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
-import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged } from "../lib/eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 
 // 启动僵尸子代理扫描器（全局单例）
@@ -94,7 +94,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /api/events/stream —— 全局消息总线（SSE，单条长连接）
-  // 收敛所有「全局低频控制面信号」到一条连接：sessions 列表/状态变更、relay 隧道状态。
+  // 收敛所有「全局低频控制面信号」到一条连接：
+  //   - sessions_changed：会话列表/状态变更（无负载）
+  //   - relay_status：远程控制隧道状态快照
+  //   - session_started/session_ended：会话查询生命周期（带 sessionId），
+  //     驱动观察方窗口接入 GET /:id/stream 实时流
   // 原则：新出现的全局信号一律复用本端点（追加事件类型 + bus 频道），不要再开新的 SSE
   // 长连接（见 AGENTS.md「SSE 端点纪律」）。会话级高频数据流走独立的
   // GET /api/sessions/:id/stream，不并入本端点。
@@ -120,6 +124,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         console.warn("[events] relay_status sendSSE error:", err instanceof Error ? err.message : err);
       }
     });
+    // 会话查询生命周期（开始/结束）：精确带 sessionId，驱动观察方接入实时流。
+    // 不发订阅瞬间首帧——观察方挂载时若会话已在跑，由 GET :id 的 runningStatus 兜底。
+    const unsubLifecycle = onSessionLifecycle((evt) => {
+      try {
+        sendSSE(reply, evt);
+      } catch (err) {
+        console.warn("[events] session-lifecycle sendSSE error:", err instanceof Error ? err.message : err);
+      }
+    });
 
     // 心跳防中间代理 idle 关闭
     const heartbeat = setInterval(() => {
@@ -132,6 +145,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       clearInterval(heartbeat);
       unsubSessions();
       unsubRelay();
+      unsubLifecycle();
     });
   });
 
@@ -406,7 +420,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
       const register = async (id: string) => {
         sessionId = id;
-        setInflight(id, ctrl);
+        if (setInflight(id, ctrl)) emitSessionStarted(id);
         // 记录 clientId→sessionId 映射，供断线重连时反查 sessionId 续流
         if (clientId) rememberClientSession(clientId, id);
         // 标题：用户指定的优先，其次用首条消息截断
@@ -484,7 +498,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (sessionId) {
         finalizeSession(sessionId);
         emitSessionEnd(sessionId);
-        clearInflight(sessionId, ctrl);
+        if (clearInflight(sessionId, ctrl)) emitSessionEnded(sessionId);
         await touchSession(sessionId);
         // 会话结束（running→completed），通知 Sidebar 刷新。
         // 本路由不走 runQueryToBus（首条消息用独立 for-await），需手动补发。
@@ -517,7 +531,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     initSSE(reply);
     const ctrl = new AbortController();
-    setInflight(sessionId, ctrl);
+    // setInflight 返回「无→有」状态变化时，广播 session_started，
+    // 驱动观察方窗口（本地第二标签页 / 远程端）接入实时流。
+    if (setInflight(sessionId, ctrl)) emitSessionStarted(sessionId);
 
     // 订阅总线：所有事件（含查询事件、子代理事件）统一转发到客户端
     let closed = false;
@@ -596,7 +612,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       // 中止进行中的（如果有）
       const ctrl = getInflight(sessionId);
       if (ctrl && !ctrl.signal.aborted) ctrl.abort();
-      clearInflight(sessionId);
+      // 强制清除 inflight；若有变化，通知观察方该会话流已结束
+      if (clearInflight(sessionId)) emitSessionEnded(sessionId);
 
       // 真删 CLI 转录文件（含子代理）。
       // 有 cwd 时传 dir 精确删除；无 cwd 时不传 dir，让 SDK 全局搜索。
@@ -1166,7 +1183,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     initSSE(reply);
     const ctrl = new AbortController();
-    setInflight(sessionId, ctrl);
+    if (setInflight(sessionId, ctrl)) emitSessionStarted(sessionId);
 
     // 订阅总线：统一转发所有事件，session_created 替换为 mode_changed
     let closed = false;

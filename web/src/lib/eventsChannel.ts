@@ -20,15 +20,23 @@ import type { RelayStatusSnapshot } from "./types";
 
 type SessionsListener = () => void;
 type RelayListener = (status: RelayStatusSnapshot) => void;
+type LifecycleListener = (sessionId: string) => void;
 
 let sessionsListeners: Set<SessionsListener> | null = null;
 let relayListeners: Set<RelayListener> | null = null;
+let lifecycleStartedListeners: Set<LifecycleListener> | null = null;
+let lifecycleEndedListeners: Set<LifecycleListener> | null = null;
 let es: EventSource | null = null;
 /** 最近一帧 relay 状态，新订阅者立即可用，避免等下一次变更 */
 let lastRelayStatus: RelayStatusSnapshot | null = null;
 
 function hasSubscribers(): boolean {
-  return !!sessionsListeners?.size || !!relayListeners?.size;
+  return (
+    !!sessionsListeners?.size ||
+    !!relayListeners?.size ||
+    !!lifecycleStartedListeners?.size ||
+    !!lifecycleEndedListeners?.size
+  );
 }
 
 function ensureChannel(): void {
@@ -59,6 +67,40 @@ function ensureChannel(): void {
         fn(status);
       } catch {
         // 单个订阅者出错不影响其他订阅者与频道本身
+      }
+    }
+  });
+  // 会话查询开始：通知观察方窗口接入实时流
+  es.addEventListener("session_started", (ev) => {
+    let sid: string | null = null;
+    try {
+      sid = (JSON.parse((ev as MessageEvent).data) as { sessionId: string }).sessionId;
+    } catch {
+      return;
+    }
+    if (!lifecycleStartedListeners) return;
+    for (const fn of [...lifecycleStartedListeners]) {
+      try {
+        fn(sid);
+      } catch {
+        // 忽略单个订阅者错误
+      }
+    }
+  });
+  // 会话查询结束
+  es.addEventListener("session_ended", (ev) => {
+    let sid: string | null = null;
+    try {
+      sid = (JSON.parse((ev as MessageEvent).data) as { sessionId: string }).sessionId;
+    } catch {
+      return;
+    }
+    if (!lifecycleEndedListeners) return;
+    for (const fn of [...lifecycleEndedListeners]) {
+      try {
+        fn(sid);
+      } catch {
+        // 忽略单个订阅者错误
       }
     }
   });
@@ -103,6 +145,33 @@ export function subscribeRelayStatus(fn: RelayListener): () => void {
   }
   return () => {
     relayListeners?.delete(fn);
+    maybeClose();
+  };
+}
+
+/**
+ * 订阅 session_started 信号（某会话查询开始）。返回取消订阅函数。
+ * 用于驱动观察方窗口接入实时流。
+ */
+export function subscribeSessionStarted(fn: LifecycleListener): () => void {
+  if (!lifecycleStartedListeners) lifecycleStartedListeners = new Set();
+  lifecycleStartedListeners.add(fn);
+  ensureChannel();
+  return () => {
+    lifecycleStartedListeners?.delete(fn);
+    maybeClose();
+  };
+}
+
+/**
+ * 订阅 session_ended 信号（某会话查询结束）。返回取消订阅函数。
+ */
+export function subscribeSessionEnded(fn: LifecycleListener): () => void {
+  if (!lifecycleEndedListeners) lifecycleEndedListeners = new Set();
+  lifecycleEndedListeners.add(fn);
+  ensureChannel();
+  return () => {
+    lifecycleEndedListeners?.delete(fn);
     maybeClose();
   };
 }

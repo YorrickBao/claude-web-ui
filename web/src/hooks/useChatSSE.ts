@@ -7,6 +7,7 @@ import {
 import { createSession, sendMessage, respondToPermission, approvePlan, abortSession, resolveSessionByClient, listSessions } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
 import { uuid } from "@/lib/utils";
+import { subscribeSessionStarted } from "@/lib/eventsChannel";
 import type { SSEEvent } from "@/lib/types";
 
 export type { ThreadMessageLike };
@@ -124,6 +125,10 @@ export function useChatSSE({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     sessionId,
   );
+  /** isRunning 的 ref 镜像，供 lifecycle effect 闭包读取最新值，
+   *  避免 isRunning 进依赖导致订阅 effect 反复重建。 */
+  const isRunningRef = useRef(false);
+  isRunningRef.current = isRunning;
 
   const stop = useCallback(() => {
     stoppedByUserRef.current = true;
@@ -247,6 +252,35 @@ export function useChatSSE({
       window.dispatchEvent(new CustomEvent("session-list-changed"));
     }
   }, []);
+
+  // 观察方接入实时流的核心机制：订阅全局总线的 session_started 信号。
+  // 当别的窗口（本地第二标签页 / 远程端）在该会话发了消息，后端广播
+  // session_started，本窗口收到且 sessionId 匹配时，自动 subscribe 接入
+  // GET /:id/stream 实时流。取代原先靠 sessions_changed 拉状态再翻转推断的脆弱链路。
+  // !isRunningRef.current 闸门：发消息方自身（POST 期间 isRunning=true）不重复订阅。
+  useEffect(() => {
+    const unsub = subscribeSessionStarted((sid) => {
+      if (sid && sid === sessionIdRef.current && !isRunningRef.current && !disposedRef.current) {
+        void subscribe(sid);
+      }
+    });
+    // 竞态兜底：若本组件挂载时（ChatView 懒加载，尤其经 relay 有延迟）会话已经在跑，
+    // session_started 信号可能在监听器注册前就已发出并被丢弃。注册后立即查一次状态，
+    // running 则补订阅。与上面的监听器互斥（isRunningRef 闸门）不会重复。
+    const sid = sessionIdRef.current;
+    if (sid && !isRunningRef.current && !disposedRef.current) {
+      void querySessionStatus(sid).then((status) => {
+        if (
+          !disposedRef.current &&
+          !isRunningRef.current &&
+          (status === "running" || status === "unknown")
+        ) {
+          void subscribe(sid);
+        }
+      });
+    }
+    return unsub;
+  }, [subscribe]);
 
   /**
    * 共享的 SSE 事件处理。供 subscribe 和 plan approval 续流复用。

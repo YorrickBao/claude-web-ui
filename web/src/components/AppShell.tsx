@@ -353,10 +353,10 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, navigate]);
 
-  // 跨窗口/标签页同步：监听 sessions_changed（全局单例 SSE 频道，跨 JS 上下文
-  // 唯一可靠信号），仅刷新当前会话的 runningStatus，不动 messages（避免用陈旧
-  // 快照覆盖实时流）。这是"观察方窗口能在对方发消息后接到实时流"的关键：父组件
-  // 把最新状态以 prop 形式喂给 ChatView，触发其订阅 effect。
+  // 跨窗口/标签页同步：监听 sessions_changed（全局单例 SSE 频道），刷新当前
+  // 会话的 token 统计（inputTokens/outputTokens）与 runningStatus（供 ChatView
+  // 挂载兜底）。实时流接入由 useChatSSE 内部订阅 session_started 信号驱动，
+  // 不再依赖这里的 runningStatus 翻转推断。
   useEffect(() => {
     if (!sessionId) return;
     const refreshStatus = async () => {

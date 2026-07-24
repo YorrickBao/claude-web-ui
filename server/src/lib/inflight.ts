@@ -18,11 +18,16 @@ interface InflightEntry {
 
 const inflight = new Map<string, InflightEntry>();
 
-export function setInflight(sessionId: string, ctrl: AbortController): void {
+/**
+ * 设置会话为 inflight（running）。
+ * @returns 是否发生了「无→有」的状态变化（用于决定是否广播 session_started）
+ */
+export function setInflight(sessionId: string, ctrl: AbortController): boolean {
   // 如果之前有挂着的，先 abort（理论上不应该）
   const old = inflight.get(sessionId);
   if (old && !old.ctrl.signal.aborted) old.ctrl.abort();
   inflight.set(sessionId, { ctrl, status: "running" });
+  return !old;
 }
 
 /** 标记会话为 waiting。@returns 状态是否实际发生了变化 */
@@ -51,16 +56,17 @@ export function setInflightRunning(sessionId: string): boolean {
  * @param sessionId 会话 ID
  * @param ctrl      可选：仅当 inflight 中存储的 AbortController === ctrl 时才清除。
  *                  不传则强制清除（DELETE 路由等场景）。
+ * @returns 是否实际发生了清除（有→无的状态变化，用于决定是否广播 session_ended）
  */
-export function clearInflight(sessionId: string, ctrl?: AbortController): void {
+export function clearInflight(sessionId: string, ctrl?: AbortController): boolean {
   if (ctrl) {
     const entry = inflight.get(sessionId);
     // 只有当控制器匹配时才清除 —— 防止旧请求的 finally 误删新请求的 inflight
-    if (!entry || entry.ctrl !== ctrl) return;
+    if (!entry || entry.ctrl !== ctrl) return false;
   }
   // 清理该会话所有 pending permissions
   clearPendingPermissions(sessionId);
-  inflight.delete(sessionId);
+  return inflight.delete(sessionId);
 }
 
 export function getInflight(sessionId: string): AbortController | undefined {

@@ -126,7 +126,11 @@ export type SSEEvent =
   /** 远程控制隧道状态变更（全局频道，GET /api/events/stream 推送） */
   | { type: "relay_status"; status: RelayStatusSnapshot }
   /** 会话列表/状态变更通知（全局频道，GET /api/events/stream 推送，无数据负载） */
-  | { type: "sessions_changed" };
+  | { type: "sessions_changed" }
+  /** 会话查询开始（全局频道，GET /api/events/stream 推送，驱动观察方接入实时流） */
+  | { type: "session_started"; sessionId: string }
+  /** 会话查询结束（全局频道，GET /api/events/stream 推送） */
+  | { type: "session_ended"; sessionId: string };
 
 /** relay_status 事件里的隧道状态快照（与 channels/relay.ts 的 RelayStatus 同构） */
 export interface RelayStatusSnapshot {

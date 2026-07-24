@@ -6,7 +6,7 @@
  */
 
 import { runQuery, type RunQueryParams } from "./sdk.js";
-import { emitSessionEvent, emitSessionEnd, emitSessionsChanged } from "./eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionEnded } from "./eventBus.js";
 import { setInflightWaiting, setInflightRunning, clearInflight } from "./inflight.js";
 import { accumulateTokens, getSession } from "./store.js";
 import { finalizeSession } from "./agentRegistry.js";
@@ -85,7 +85,9 @@ export async function runQueryToBus(
     finalizeSession(sessionId);
     // 传入当前查询的 AbortController，防止旧请求的 finally
     // 误删已被新请求 setInflight 覆盖的 inflight 记录
-    clearInflight(sessionId, params.abortController);
+    // clearInflight 返回「有→无」状态变化时，广播 session_ended，
+    // 通知观察方窗口该会话的实时流已结束。
+    if (clearInflight(sessionId, params.abortController)) emitSessionEnded(sessionId);
     emitSessionEnd(sessionId);
     // 会话结束（running→completed），通知 Sidebar 刷新
     emitSessionsChanged();
