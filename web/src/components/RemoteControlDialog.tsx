@@ -57,7 +57,7 @@ export function RemoteControlDialog() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/relay/status");
+      const res = await fetch("api/relay/status");
       if (!res.ok) return;
       const data = (await res.json()) as RelayStatus;
       setStatus(data);
@@ -69,17 +69,23 @@ export function RemoteControlDialog() {
     }
   }, []);
 
-  // 打开时拉取一次，并启动轮询
+  // 始终后台轮询 relay 状态：让左下角图标颜色随连接状态变化（即使对话框未打开）
   useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    void fetchStatus().finally(() => setLoading(false));
+    void fetchStatus();
     pollRef.current = setInterval(() => void fetchStatus(), 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, fetchStatus]);
+  }, [fetchStatus]);
+
+  // 打开对话框且尚无状态时显示骨架 loading
+  useEffect(() => {
+    if (open && !status) {
+      setLoading(true);
+      void fetchStatus().finally(() => setLoading(false));
+    }
+  }, [open, status, fetchStatus]);
 
   const enabled = status?.enabled ?? false;
   const connected = status?.connected ?? false;
@@ -90,11 +96,11 @@ export function RemoteControlDialog() {
     setToggling(true);
     try {
       if (enabled) {
-        const res = await fetch("/api/relay/stop", { method: "POST" });
+        const res = await fetch("api/relay/stop", { method: "POST" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast.success("已停止远程控制");
       } else {
-        const res = await fetch("/api/relay/start", {
+        const res = await fetch("api/relay/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ relayUrl, accessKey }),
@@ -116,7 +122,7 @@ export function RemoteControlDialog() {
   async function handleRegenerate() {
     setRegenerating(true);
     try {
-      const res = await fetch("/api/relay/regenerate-key", {
+      const res = await fetch("api/relay/regenerate-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ relayUrl }),
@@ -172,8 +178,17 @@ export function RemoteControlDialog() {
           <Button
             variant="ghost"
             size="icon"
-            title="远程控制"
-            className={cn(enabled && connected && "text-primary")}
+            title={
+              connected
+                ? "远程控制：已接入"
+                : enabled
+                  ? "远程控制：等待接入"
+                  : "远程控制"
+            }
+            className={cn(
+              enabled && connected && "text-emerald-500",
+              enabled && !connected && "text-amber-500",
+            )}
           />
         }
       >

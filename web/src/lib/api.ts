@@ -2,7 +2,7 @@ import type { BrowseResult, SessionView } from "@/lib/types";
 
 /** 列出所有会话 */
 export async function listSessions(): Promise<SessionView[]> {
-  const res = await fetch("/api/sessions");
+  const res = await fetch("api/sessions");
   if (!res.ok) throw new Error(`listSessions: ${res.status}`);
   const data = (await res.json()) as { sessions: SessionView[] };
   return data.sessions;
@@ -12,21 +12,21 @@ export async function listSessions(): Promise<SessionView[]> {
 export async function getSession(
   id: string,
 ): Promise<SessionView & { messages: unknown[] }> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  const res = await fetch(`api/sessions/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`getSession: ${res.status}`);
   return res.json() as Promise<SessionView & { messages: unknown[] }>;
 }
 
 /** 中止进行中的会话 */
 export async function abortSession(id: string): Promise<void> {
-  await fetch(`/api/sessions/${encodeURIComponent(id)}/abort`, {
+  await fetch(`api/sessions/${encodeURIComponent(id)}/abort`, {
     method: "POST",
   });
 }
 
 /** 删除会话（CLI 转录文件 + sessions.json 记录 + 中止进行中的） */
 export async function deleteSessionApi(id: string): Promise<void> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`api/sessions/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) {
@@ -39,7 +39,7 @@ export async function updateSessionTitle(
   sessionId: string,
   title: string | null,
 ): Promise<void> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/title`, {
+  const res = await fetch(`api/sessions/${encodeURIComponent(sessionId)}/title`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title }),
@@ -52,7 +52,7 @@ import type { SlashCommand } from "@/lib/types";
 
 /** 获取当前项目可用的斜杠命令列表（前端缓存，5 分钟内不重复请求） */
 export async function fetchSlashCommands(cwd: string): Promise<SlashCommand[]> {
-  const res = await fetch(`/api/slash-commands?cwd=${encodeURIComponent(cwd)}`);
+  const res = await fetch(`api/slash-commands?cwd=${encodeURIComponent(cwd)}`);
   if (!res.ok) return [];
   const data = (await res.json()) as { commands: SlashCommand[] };
   return data.commands;
@@ -61,7 +61,7 @@ export async function fetchSlashCommands(cwd: string): Promise<SlashCommand[]> {
 /** 列目录 */
 export async function browse(path: string): Promise<BrowseResult> {
   const res = await fetch(
-    `/api/browse?path=${encodeURIComponent(path)}`,
+    `api/browse?path=${encodeURIComponent(path)}`,
   );
   if (!res.ok) throw new Error(`browse: ${res.status}`);
   return res.json() as Promise<BrowseResult>;
@@ -76,7 +76,7 @@ export function sendMessage(
   message: string,
   signal?: AbortSignal,
 ): Promise<Response> {
-  return fetch(`/api/sessions/${encodeURIComponent(id(sessionId))}/messages`, {
+  return fetch(`api/sessions/${encodeURIComponent(id(sessionId))}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
@@ -94,7 +94,7 @@ export function createSession(
   opts: { title?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string; clientId?: string } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
-  return fetch("/api/sessions", {
+  return fetch("api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -126,7 +126,7 @@ export async function resolveSessionByClient(
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetch(
-        `/api/sessions/by-client/${encodeURIComponent(clientId)}`,
+        `api/sessions/by-client/${encodeURIComponent(clientId)}`,
       );
       if (res.ok) {
         const data = (await res.json()) as { sessionId: string };
@@ -153,7 +153,7 @@ function id(s: string): string {
 import type { EnvProfile } from "@/lib/types";
 
 export async function listProfiles(): Promise<EnvProfile[]> {
-  const res = await fetch("/api/profiles");
+  const res = await fetch("api/profiles");
   if (!res.ok) throw new Error(`listProfiles: ${res.status}`);
   const data = (await res.json()) as { profiles: EnvProfile[] };
   return data.profiles;
@@ -163,7 +163,7 @@ export async function createProfile(
   name: string,
   env: Record<string, string>,
 ): Promise<EnvProfile> {
-  const res = await fetch("/api/profiles", {
+  const res = await fetch("api/profiles", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, env }),
@@ -177,7 +177,7 @@ export async function updateProfile(
   profileId: string,
   patch: { name?: string; env?: Record<string, string> },
 ): Promise<EnvProfile> {
-  const res = await fetch(`/api/profiles/${id(profileId)}`, {
+  const res = await fetch(`api/profiles/${id(profileId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -188,7 +188,7 @@ export async function updateProfile(
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {
-  const res = await fetch(`/api/profiles/${id(profileId)}`, {
+  const res = await fetch(`api/profiles/${id(profileId)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`deleteProfile: ${res.status}`);
@@ -199,7 +199,7 @@ export async function setSessionProfile(
   sessionId: string,
   profileId: string | null,
 ): Promise<void> {
-  const res = await fetch(`/api/sessions/${id(sessionId)}/profile`, {
+  const res = await fetch(`api/sessions/${id(sessionId)}/profile`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profileId }),
@@ -212,7 +212,7 @@ export async function setSessionPermissionMode(
   sessionId: string,
   permissionMode: string,
 ): Promise<void> {
-  const res = await fetch(`/api/sessions/${id(sessionId)}/permission-mode`, {
+  const res = await fetch(`api/sessions/${id(sessionId)}/permission-mode`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ permissionMode }),
@@ -225,7 +225,7 @@ export async function setSessionThinkingLevel(
   sessionId: string,
   effortLevel: string,
 ): Promise<void> {
-  const res = await fetch(`/api/sessions/${id(sessionId)}/thinking-level`, {
+  const res = await fetch(`api/sessions/${id(sessionId)}/thinking-level`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ effortLevel }),
@@ -248,7 +248,7 @@ export async function respondToPermission(
   }>,
 ): Promise<void> {
   const res = await fetch(
-    `/api/sessions/${id(sessionId)}/permission-response`,
+    `api/sessions/${id(sessionId)}/permission-response`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -268,7 +268,7 @@ export function approvePlan(
   opts: { editedPlan?: string; prompt?: string } = {},
   signal?: AbortSignal,
 ): Promise<Response> {
-  return fetch(`/api/sessions/${id(sessionId)}/approve-plan`, {
+  return fetch(`api/sessions/${id(sessionId)}/approve-plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

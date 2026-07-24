@@ -68,7 +68,7 @@ export function SettingsPage() {
   );
 
   useEffect(() => {
-    fetch("/api/feishu/status")
+    fetch("api/feishu/status")
       .then((res) => res.json())
       .then(setFeishuStatus)
       .catch(() => setFeishuStatus({ connected: false }));
@@ -80,7 +80,7 @@ export function SettingsPage() {
     setFeishuBindingStatus(null);
 
     try {
-      const res = await fetch("/api/feishu/connect", {
+      const res = await fetch("api/feishu/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -171,7 +171,7 @@ export function SettingsPage() {
     )
       return;
     try {
-      await fetch("/api/feishu/disconnect", { method: "POST" });
+      await fetch("api/feishu/disconnect", { method: "POST" });
       setFeishuStatus({ connected: false });
     } catch (e) {
       setErr((e as Error).message);

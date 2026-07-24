@@ -122,6 +122,40 @@ sudo nginx -t && sudo systemctl reload nginx
 
 验证：`curl https://relay.your-domain.com/healthz` → `{"ok":true}`
 
+### 3b. 部署在子路径下（可选）
+
+如果无法给中转分配独立端口或子域名，可以让它挂在某个现有站点的一个 location 下（例如 `/relay/`）。前端已用相对路径 + HashRouter，同一份产物在子路径下无需任何路径重写。
+
+关键点：
+- nginx `location /relay/` 用尾斜杠 `proxy_pass` **裁掉前缀**，让中转仍看到根路径；
+- 必须有一条 `location = /relay` 把无斜杠访问 301 到 `/relay/`——相对路径解析依赖文档 URL 以斜杠结尾。
+
+```nginx
+# 无斜杠访问重定向到带斜杠（相对路径解析的前提）
+location = /relay { return 301 /relay/; }
+
+location /relay/ {
+    proxy_pass http://127.0.0.1:8787/;   # 尾斜杠 = 裁掉 /relay/ 前缀
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    # WS 长连接，关闭缓冲，加大超时
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+验证：
+- `curl https://your-domain.com/relay/healthz` → `{"ok":true}`
+- 浏览器打开远程访问地址（形如 `https://your-domain.com/relay/?k=KEY`）应正常加载
+
+> 本地面板「中转地址」填 `wss://your-domain.com/relay`：客户端会自动拼出
+> `wss://your-domain.com/relay/tunnel`，经 nginx 裁前缀后命中中转的 `/tunnel`。
+
 ### 4. 在本地 WebUI 启用
 
 打开 WebUI → 左下角 Smartphone 图标 → 远程控制面板：

@@ -284,7 +284,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     async function load() {
       try {
         const res = await fetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}`,
+          `api/sessions/${encodeURIComponent(sessionId)}`,
         );
         // 会话不存在（已删除/从未创建）：提示后自动跳回首页
         if (res.status === 404) {

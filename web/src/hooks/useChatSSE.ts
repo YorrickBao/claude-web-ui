@@ -151,7 +151,7 @@ export function useChatSSE({
 
     try {
       const res = await fetch(
-        `/api/sessions/${encodeURIComponent(targetSessionId)}/stream`,
+        `api/sessions/${encodeURIComponent(targetSessionId)}/stream`,
         { signal: ctrl.signal },
       );
 
