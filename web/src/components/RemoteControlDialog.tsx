@@ -8,7 +8,6 @@ import {
   Wifi,
   WifiOff,
   ExternalLink,
-  QrCode,
   Smartphone,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -52,7 +51,6 @@ export function RemoteControlDialog() {
   const [toggling, setToggling] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showQR, setShowQR] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -325,16 +323,6 @@ export function RemoteControlDialog() {
                     )}
                     复制
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-[11px]"
-                    onClick={() => setShowQR((v) => !v)}
-                    title="二维码"
-                  >
-                    <QrCode className="h-3.5 w-3.5" />
-                    二维码
-                  </Button>
                   <a
                     href={remoteUrl}
                     target="_blank"
@@ -346,11 +334,9 @@ export function RemoteControlDialog() {
                     打开
                   </a>
                 </div>
-                {showQR && (
-                  <div className="flex justify-center rounded-lg bg-white p-3">
-                    <QRCodeSVG value={remoteUrl} size={160} />
-                  </div>
-                )}
+                <div className="flex justify-center rounded-lg bg-white p-3">
+                  <QRCodeSVG value={remoteUrl} size={160} />
+                </div>
                 <p className="text-[11px] text-muted-foreground">
                   在任意浏览器或手机扫码打开，即可远程操作。
                 </p>
