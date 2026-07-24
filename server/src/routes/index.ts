@@ -1017,13 +1017,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   }>("/api/relay/start", async (req, reply) => {
     const saved = await loadRelayConfig();
     const relayUrl = (req.body?.relayUrl ?? saved?.relayUrl ?? "").trim();
-    const accessKey = (req.body?.accessKey ?? saved?.accessKey ?? "").trim();
+    // accessKey 对用户无感：请求体/落盘都没有时自动生成（用户无需关心此凭证）
+    let accessKey = (req.body?.accessKey ?? saved?.accessKey ?? "").trim();
+    if (!accessKey) {
+      const crypto = await import("node:crypto");
+      accessKey = crypto.randomBytes(24).toString("base64url");
+    }
 
     if (!relayUrl) {
       return reply.code(400).send({ error: "中转地址不能为空" });
-    }
-    if (!accessKey) {
-      return reply.code(400).send({ error: "accessKey 不能为空" });
     }
     if (!/^wss?:\/\//i.test(relayUrl)) {
       return reply.code(400).send({ error: "中转地址必须以 ws:// 或 wss:// 开头" });

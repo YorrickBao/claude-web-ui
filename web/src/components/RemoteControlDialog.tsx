@@ -3,7 +3,6 @@ import {
   Loader2,
   Copy,
   Check,
-  RefreshCw,
   Power,
   Wifi,
   WifiOff,
@@ -14,6 +13,8 @@ import {
   Monitor,
   Tablet,
   Globe,
+  ShieldCheck,
+  RotateCcw,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -24,6 +25,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,9 +85,8 @@ export function RemoteControlDialog() {
   const [status, setStatus] = useState<RelayStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [relayUrl, setRelayUrl] = useState("");
-  const [accessKey, setAccessKey] = useState("");
   const [toggling, setToggling] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [devices, setDevices] = useState<DeviceEntry[]>([]);
@@ -92,9 +97,8 @@ export function RemoteControlDialog() {
       if (!res.ok) return;
       const data = (await res.json()) as RelayStatus;
       setStatus(data);
-      // 同步表单（仅在没有用户未提交的编辑时）
+      // 同步中转地址（仅在没有用户未提交的编辑时）
       setRelayUrl((prev) => prev || data.relayUrl);
-      setAccessKey((prev) => prev || data.accessKey);
     } catch {
       // 静默：状态拉取失败不弹 toast
     }
@@ -109,7 +113,6 @@ export function RemoteControlDialog() {
         const data = (JSON.parse((ev as MessageEvent).data) as { status: RelayStatus }).status;
         setStatus(data);
         setRelayUrl((prev) => prev || data.relayUrl);
-        setAccessKey((prev) => prev || data.accessKey);
       } catch {
         /* 忽略格式异常 */
       }
@@ -132,6 +135,11 @@ export function RemoteControlDialog() {
   const connecting = status?.connecting ?? false;
   const remoteUrl = status?.remoteUrl ?? "";
   const tokenExpiresAt = status?.tokenExpiresAt ?? null;
+  // accessKey 指纹（首尾 4 位），仅用于与 relay 日志对照，不展示完整值
+  const accessKey = status?.accessKey ?? "";
+  const keyFingerprint = accessKey
+    ? `${accessKey.slice(0, 4)}…${accessKey.slice(-4)}`
+    : "—";
 
   // 设备列表：对话框打开且已连接时每 10s 轮询一次（设备数少，无需 SSE）
   useEffect(() => {
@@ -210,7 +218,7 @@ export function RemoteControlDialog() {
         const res = await fetch("api/relay/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ relayUrl, accessKey }),
+          body: JSON.stringify({ relayUrl }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -226,8 +234,8 @@ export function RemoteControlDialog() {
     }
   }
 
-  async function handleRegenerate() {
-    setRegenerating(true);
+  async function handleResetKey() {
+    setResetting(true);
     try {
       const res = await fetch("api/relay/regenerate-key", {
         method: "POST",
@@ -238,14 +246,13 @@ export function RemoteControlDialog() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as { accessKey: string };
-      setAccessKey(data.accessKey);
-      toast.success("已重新生成 accessKey");
+      // 成功后状态由 SSE 推送的快照驱动（指纹随之更新）
+      toast.success("已重置密钥，所有已接入设备需重新生成访问链接");
       await fetchStatus();
     } catch (err) {
-      toast.error(`重新生成失败：${(err as Error).message}`);
+      toast.error(`重置失败：${(err as Error).message}`);
     } finally {
-      setRegenerating(false);
+      setResetting(false);
     }
   }
 
@@ -341,53 +348,45 @@ export function RemoteControlDialog() {
               </p>
             </div>
 
-            {/* accessKey */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="relay-key" className="text-xs">
-                  Access Key
-                </Label>
+            {/* 安全（折叠）：accessKey 对用户无感，仅提供指纹查看与重置 */}
+            <Collapsible>
+              <CollapsibleTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  />
+                }
+              >
+                <ShieldCheck className="h-3 w-3" /> 安全
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-1">
+                <div className="flex items-center justify-between rounded bg-muted/40 px-2 py-1.5">
+                  <span className="text-[11px] text-muted-foreground">密钥指纹</span>
+                  <code className="font-mono text-[11px]">{keyFingerprint}</code>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleRegenerate}
-                  disabled={regenerating || enabled}
-                  className="h-6 gap-1 px-2 text-[11px]"
-                  title={enabled ? "停止后才能重新生成" : "重新生成"}
+                  onClick={handleResetKey}
+                  disabled={resetting}
+                  className="h-6 gap-1 px-2 text-[11px] text-destructive hover:text-destructive"
+                  title="重置后所有已接入设备需重新生成访问链接"
                 >
-                  {regenerating ? (
+                  {resetting ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
-                    <RefreshCw className="h-3 w-3" />
+                    <RotateCcw className="h-3 w-3" />
                   )}
-                  重新生成
+                  重置密钥
                 </Button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Input
-                  id="relay-key"
-                  readOnly
-                  value={accessKey}
-                  className="font-mono text-xs"
-                  placeholder="点击「重新生成」创建"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => accessKey && handleCopy(accessKey, "Access Key")}
-                  disabled={!accessKey}
-                  title="复制"
-                  className="h-8 w-8 shrink-0"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
+              </CollapsibleContent>
+            </Collapsible>
 
             {/* 启用/停止按钮 */}
             <Button
               onClick={handleToggle}
-              disabled={toggling || !relayUrl || !accessKey}
+              disabled={toggling || !relayUrl}
               variant={enabled ? "destructive" : "default"}
               className="w-full gap-2"
             >
