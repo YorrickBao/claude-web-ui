@@ -266,6 +266,9 @@ function connect(): void {
       clearInterval(pingTimer);
       pingTimer = null;
     }
+    // token 与隧道会话绑定：断开后 relay 侧映射可能已丢（如 relay 重启），
+    // 清空本地 token，避免前端展示「有效却打不开」的链接。重连后需重新生成。
+    clearToken();
     if (!enabled) {
       // 用户主动停止，不重连（状态已由 stopInternal 广播）
       return;
