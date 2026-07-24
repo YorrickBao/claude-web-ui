@@ -85,6 +85,9 @@ export function Sidebar({
   const navigate = useNavigate();
   const location = useLocation();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // 待确认删除的会话 id（内联两步确认：点击删除 icon → icon 切换为「确认」按钮 → 再次点击才真正删除）
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirm = useConfirm();
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -166,19 +169,29 @@ export function Sidebar({
     return () => window.removeEventListener("session-list-changed", handler);
   }, []);
 
-  async function handleDelete(s: SessionView, e: React.MouseEvent) {
+  // 点击删除 icon：进入待确认状态（icon 切换为「确认」按钮），不立即删除
+  function startConfirmDelete(s: SessionView, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (
-      !(await confirm({
-        title: "删除会话",
-        description: `确定删除会话「${s.title}」？\n\n此操作将同时删除 CLI 历史记录，不可恢复。`,
-        variant: "destructive",
-        confirmLabel: "删除",
-      }))
-    ) {
-      return;
+    if (deletingId) return; // 有删除正在进行，忽略
+    setConfirmDeleteId(s.sessionId);
+    // 3 秒未确认则自动取消，避免状态卡住
+    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+    confirmDeleteTimerRef.current = setTimeout(() => {
+      setConfirmDeleteId(null);
+      confirmDeleteTimerRef.current = null;
+    }, 3000);
+  }
+
+  // 再次点击「确认」：真正执行删除
+  async function confirmDelete(s: SessionView, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (confirmDeleteTimerRef.current) {
+      clearTimeout(confirmDeleteTimerRef.current);
+      confirmDeleteTimerRef.current = null;
     }
+    setConfirmDeleteId(null);
     setDeletingId(s.sessionId);
     try {
       await deleteSessionApi(s.sessionId);
@@ -438,7 +451,11 @@ export function Sidebar({
                         <li key={s.sessionId}>
                           <Link
                             to={`/c/${s.sessionId}`}
-                            onClick={() => onOverlayClose?.()}
+                            onClick={() => {
+                              onOverlayClose?.();
+                              // 导航即视为放弃删除，清除待确认状态（确认按钮的点击已 stopPropagation，不会走到这里）
+                              setConfirmDeleteId(null);
+                            }}
                             className={cn(
                               "group/item flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors",
                               currentPath === `/c/${s.sessionId}`
@@ -458,16 +475,29 @@ export function Sidebar({
                             <div className="min-w-0 flex-1">
                               <div className="truncate">{s.title}</div>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => void handleDelete(s, e)}
-                              disabled={deletingId === s.sessionId}
-                              title="删除会话"
-                              className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100 disabled:opacity-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {confirmDeleteId === s.sessionId ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => void confirmDelete(s, e)}
+                                disabled={deletingId === s.sessionId}
+                                title="再次点击确认删除"
+                                className="shrink-0 h-8 min-w-8 px-2 text-xs font-medium text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                              >
+                                确认
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => startConfirmDelete(s, e)}
+                                disabled={deletingId === s.sessionId}
+                                title="删除会话"
+                                className="hover-show-on-desktop shrink-0 opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100 disabled:opacity-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </Link>
                         </li>
                       ))}
