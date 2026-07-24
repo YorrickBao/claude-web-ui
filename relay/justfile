@@ -2,9 +2,12 @@
 #
 # 用法：
 #   just build              # 编译当前平台
+#   just build-all          # 交叉编译全部 5 个平台（对齐 CI）
 #   just build-linux        # 交叉编译 Linux amd64（最常见 VPS）
 #   just build-linux-arm64  # 交叉编译 Linux arm64（ARM VPS）
-#   just build-darwin-arm64 # 交叉编译 macOS arm64（本地测试）
+#   just build-darwin-amd64 # 交叉编译 macOS amd64（Intel Mac）
+#   just build-darwin-arm64 # 交叉编译 macOS arm64（Apple Silicon）
+#   just build-windows-amd64 # 交叉编译 Windows amd64
 #   just run                # 本地直接运行
 #   just vet                # 静态检查
 #   just fmt                # 格式化
@@ -31,10 +34,24 @@ build-linux-arm64:
     mkdir -p {{DIST}}
     GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-linux-arm64 .
 
-# 交叉编译 macOS arm64（本地测试）
+# 交叉编译 macOS amd64（Intel Mac）
+build-darwin-amd64:
+    mkdir -p {{DIST}}
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-darwin-amd64 .
+
+# 交叉编译 macOS arm64（Apple Silicon）
 build-darwin-arm64:
     mkdir -p {{DIST}}
     GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-darwin-arm64 .
+
+# 交叉编译 Windows amd64
+build-windows-amd64:
+    mkdir -p {{DIST}}
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build {{GOFLAGS}} -ldflags "{{LDFLAGS}}" -o {{DIST}}/{{BIN}}-windows-amd64.exe .
+
+# 交叉编译全部 5 个平台（对齐 .github/workflows/build-relay.yml）
+build-all: build-linux build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64
+    @echo "✓ 全部平台构建完成，产物在 {{DIST}}/"
 
 # 本地直接运行（不落产物）
 run:
