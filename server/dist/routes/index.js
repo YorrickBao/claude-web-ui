@@ -10,7 +10,7 @@ import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, buildRemoteUrl, } from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
-import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd } from "../lib/eventBus.js";
+import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd, onRelayStatus } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -778,6 +778,48 @@ export async function apiRoutes(app) {
             }
         }
         return reply.send(status);
+    });
+    // GET /api/relay/stream —— 隧道状态实时推送（SSE，全局频道）
+    // 前端 RemoteControlDialog 的左下角图标订阅本端点，状态变化即时变色，无需轮询。
+    app.get("/api/relay/stream", async (_req, reply) => {
+        initSSE(reply);
+        // 先发当前快照，保证订阅瞬间就能反映正确状态
+        const status = getRelayStatus();
+        // 运行时没配置时回退到落盘配置，与 /status 行为一致
+        let snapshot = status;
+        if (!status.relayUrl || !status.accessKey) {
+            const saved = await loadRelayConfig();
+            if (saved) {
+                snapshot = {
+                    ...status,
+                    relayUrl: saved.relayUrl,
+                    accessKey: saved.accessKey,
+                    remoteUrl: buildRemoteUrl(saved.relayUrl, saved.accessKey),
+                };
+            }
+        }
+        sendSSE(reply, { type: "relay_status", status: snapshot });
+        // 之后转发 bus 上的状态变更
+        const unsub = onRelayStatus((s) => {
+            try {
+                sendSSE(reply, { type: "relay_status", status: s });
+            }
+            catch (err) {
+                console.warn("[relay] stream sendSSE error:", err instanceof Error ? err.message : err);
+            }
+        });
+        // 周期性心跳防止中间代理 idle 超时关闭连接（: 结尾行会被 SSE 解析为注释）
+        const heartbeat = setInterval(() => {
+            try {
+                reply.raw.write(": ping\n\n");
+            }
+            catch { /* 连接已断 */ }
+        }, 15000);
+        const cleanup = () => {
+            clearInterval(heartbeat);
+            unsub();
+        };
+        _req.raw.on("close", cleanup);
     });
     // POST /api/relay/start —— 启用隧道
     app.post("/api/relay/start", async (req, reply) => {

@@ -17,6 +17,7 @@
  * 本地 HTTP API 间接复用，无需直接调 SDK）。
  */
 import { LOG_ENABLED } from "../env.js";
+import { emitRelayStatus } from "../lib/eventBus.js";
 // ── 模块级单例状态 ──
 let ws = null;
 let currentConfig = null;
@@ -55,6 +56,10 @@ export function getRelayStatus() {
         error: lastError,
     };
 }
+/** 取最新快照并广播到全局 relay 频道（驱动前端图标颜色实时变化） */
+function notifyStatus() {
+    emitRelayStatus(getRelayStatus());
+}
 /** 启动隧道。重复调用会先停止旧连接。 */
 export function startRelayTunnel(config) {
     // 若已在运行，先停（但不清 enabled 意图）
@@ -66,6 +71,7 @@ export function startRelayTunnel(config) {
     lastError = null;
     reconnectAttempts = 0;
     connect();
+    notifyStatus();
 }
 /** 停止隧道。保留 config 落盘，仅断开连接。 */
 export function stopRelayTunnel() {
@@ -97,6 +103,7 @@ function stopInternal(clearEnabled) {
     if (clearEnabled) {
         enabled = false;
     }
+    notifyStatus();
 }
 /** 建立到中转的连接并发 register 帧 */
 function connect() {
@@ -108,6 +115,7 @@ function connect() {
     // 构造隧道端点 URL：中转约定 /tunnel 路径
     const tunnelUrl = buildTunnelUrl(relayUrl);
     connecting = true;
+    notifyStatus();
     let socket;
     try {
         socket = new WebSocket(tunnelUrl);
@@ -117,12 +125,14 @@ function connect() {
         console.warn(`[relay] ${msg}`);
         lastError = msg;
         connecting = false;
+        notifyStatus();
         scheduleReconnect();
         return;
     }
     ws = socket;
     socket.onopen = () => {
         connecting = false;
+        notifyStatus();
         // 立即发 register
         send({ type: "register", accessKey });
         // 启动心跳
@@ -146,9 +156,12 @@ function connect() {
             clearInterval(pingTimer);
             pingTimer = null;
         }
-        if (!enabled)
-            return; // 用户主动停止，不重连
+        if (!enabled) {
+            // 用户主动停止，不重连（状态已由 stopInternal 广播）
+            return;
+        }
         lastError = `closed (code=${ev.code}${ev.reason ? `, reason=${ev.reason}` : ""})`;
+        notifyStatus();
         scheduleReconnect();
     };
 }
@@ -201,6 +214,7 @@ async function handleFrame(data) {
                 lastError = f.message ?? "register rejected";
                 console.warn(`[relay] register rejected: ${lastError}`);
             }
+            notifyStatus();
             break;
         case "ping":
             send({ type: "pong" });
