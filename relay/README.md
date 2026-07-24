@@ -49,8 +49,14 @@ just build-linux
 ```bash
 scp claude-web-ui-relay-linux-amd64 user@your-vps:~/
 ssh user@your-vps
-mv claude-web-ui-relay-linux-amd64 claude-web-ui-relay
-chmod +x claude-web-ui-relay
+
+# 放到 /opt 下（下方 ProtectHome=true 会屏蔽 /home，二进制必须挪出登录目录）
+sudo mkdir -p /opt/claude-web-ui-relay
+sudo mv claude-web-ui-relay-linux-amd64 /opt/claude-web-ui-relay/claude-web-ui-relay
+sudo chmod +x /opt/claude-web-ui-relay/claude-web-ui-relay
+
+# 专用低权用户，不要复用登录账号
+sudo useradd -r -s /usr/sbin/nologin cwu-relay
 ```
 
 ### 2. 用 systemd 托管
@@ -60,13 +66,40 @@ chmod +x claude-web-ui-relay
 ```ini
 [Unit]
 Description=Claude WebUI Relay
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/home/user/claude-web-ui-relay --listen 127.0.0.1:8787
+Type=simple
+ExecStart=/opt/claude-web-ui-relay/claude-web-ui-relay --listen 127.0.0.1:8787
+WorkingDirectory=/opt/claude-web-ui-relay
+User=cwu-relay
+Group=cwu-relay
+
 Restart=on-failure
 RestartSec=3
-User=user
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# WebSocket 长连接吃 fd，默认 1024 不够
+LimitNOFILE=65536
+
+# ── 基础加固（与 bao-auth 一致）──
+NoNewPrivileges=true       # 禁止提权
+ProtectSystem=strict       # 全盘只读（relay 无状态，无需 ReadWritePaths）
+ProtectHome=true           # 屏蔽 /home（故二进制须放 /opt）
+PrivateTmp=true            # 独立 /tmp
+
+# ── 内核篡改防护（systemd 官方：对所有服务零副作用）──
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+
+# ── seccomp：唯一真正缩小攻击面的项（RCE 后限制可调用 syscall）──
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
