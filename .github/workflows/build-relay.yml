@@ -106,5 +106,5 @@ jobs:
 
             ```bash
             ./claude-web-ui-relay --listen 127.0.0.1:8787
-            curl http://127.0.0.1:8787/healthz  # {"ok":true}
+            curl -i http://127.0.0.1:8787/  # 期望 HTTP 200（/healthz 已于 v0.1.4 移除，根路径返回空 200 作探活）
             ```
