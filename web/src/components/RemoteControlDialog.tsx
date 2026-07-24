@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn, timeAgo } from "@/lib/utils";
+import { subscribeRelayStatus } from "@/lib/eventsChannel";
 
 /** 远程接入设备记录（与 server/src/lib/relayDevices.ts 的 DeviceEntry 同构） */
 interface DeviceEntry {
@@ -104,21 +105,14 @@ export function RemoteControlDialog() {
     }
   }, []);
 
-  // 订阅 relay 状态 SSE 流：状态变化即时推送，驱动左下角图标颜色，无需轮询。
+  // 订阅 relay 状态：经全局消息总线（eventsChannel 单例）推送，状态变化即时变色。
   // 本组件挂在 Sidebar 里是常驻单例，故挂载即订阅、卸载即断开。
+  // 全应用共用一条 SSE 长连接（/api/events/stream），不再单独开 /api/relay/stream。
   useEffect(() => {
-    const es = new EventSource("api/relay/stream");
-    es.addEventListener("relay_status", (ev) => {
-      try {
-        const data = (JSON.parse((ev as MessageEvent).data) as { status: RelayStatus }).status;
-        setStatus(data);
-        setRelayUrl((prev) => prev || data.relayUrl);
-      } catch {
-        /* 忽略格式异常 */
-      }
+    return subscribeRelayStatus((status) => {
+      setStatus(status);
+      setRelayUrl((prev) => prev || status.relayUrl);
     });
-    // EventSource 遇到网络错误会自动重连，无需手动处理
-    return () => es.close();
   }, []);
 
 

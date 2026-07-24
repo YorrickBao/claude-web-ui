@@ -65,6 +65,44 @@ git push origin relay-v0.x.0
 - 仅本地使用，无认证，不要暴露到公网
 - **后端代码严禁静默 catch 错误**：所有 `catch` 块必须用 `console.warn`/`console.error` 打印可读的错误信息（`err.message`），必要时附加上下文（如 sessionId），确保出现问题时能从终端日志快速定位
 
+## SSE 端点纪律（重要）
+
+**如无必要不要新增 SSE 长连接端点。** 每个浏览器打开的标签页都会为每条 SSE 端点建立一条独立 TCP 长连接，叠加远程链路（relay 隧道）会放大抖动。已有端点应复用，不要为单个信号单独开流。
+
+### 现有 SSE 端点（仅两类，各司其职）
+
+| 端点 | 用途 | 频率 |
+|---|---|---|
+| `GET /api/events/stream` | **全局消息总线**，收敛所有全局低频控制面信号（`sessions_changed`、`relay_status` 等） | 低频 |
+| `GET /api/sessions/:id/stream` | 单会话实时数据流（文本/工具/思考/权限/计划等），含三阶段续流去重 | 高频 |
+
+另有 `POST` 类 SSE（`/api/sessions`、`/api/sessions/:id/messages`、`/approve-plan`、`/feishu/connect`）是**一次性执行型流**：POST 触发一次 SDK 查询、流式返回结果、查完即关，不计入长连接，这是合理模式。
+
+### 新增 SSE 信号的决策树
+
+1. **是会话级高频业务数据吗？** → 走 `GET /api/sessions/:id/stream`（或对应 POST 执行型流），不要新开端点。
+2. **是全局低频控制面信号吗？**（列表变更、状态翻转、设备列表变化等）→ **并入 `GET /api/events/stream`**：后端加一个 bus 频道 + 在该端点订阅转发，前端在 `web/src/lib/eventsChannel.ts` 加 `subscribeXxx`，不要新开端点。
+3. **上述都不符合**才考虑新开端点，且必须在 PR/commit 说明里讲清楚为什么不能复用。
+
+### 全局总线的扩展方式（标准模式）
+
+后端（`server/src/routes/index.ts` 的 `/api/events/stream` 内）：
+
+```ts
+// 订阅瞬间先发一帧（覆盖订阅间错过的变更）
+sendSSE(reply, { type: "your_signal", ... });
+// 之后转发 bus 频道
+const unsub = onYourSignal((payload) => sendSSE(reply, { type: "your_signal", ... }));
+```
+
+前端（`web/src/lib/eventsChannel.ts`）：加 `subscribeYourSignal(fn)`，复用模块级单例 EventSource，**不要自己 `new EventSource`**。事件类型加到两端 `types.ts` 的 `SSEEvent` 联合。
+
+### 禁止的模式
+
+- ❌ 在组件里 `new EventSource("api/xxx/stream")` —— 必须经 `eventsChannel.ts` 单例。
+- ❌ 为单个全局信号新开 `GET /api/xxx/stream` —— 并入 `/api/events/stream`。
+- ❌ 不带 15s 心跳的常驻 SSE —— 中间代理会因 idle 切断（参考现有端点实现）。
+
 ## UI 组件库
 
 - 使用 **shadcn/ui**（底层引擎为 `@base-ui/react`，不是 Radix UI）

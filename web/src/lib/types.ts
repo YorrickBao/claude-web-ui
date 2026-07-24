@@ -39,9 +39,9 @@ export type SSEEvent =
   | { type: "plan_proposed"; planContent: string }
   /** 权限模式已变更 */
   | { type: "mode_changed"; mode: string }
-  /** 远程控制隧道状态变更（全局频道，GET /api/relay/stream 推送） */
+  /** 远程控制隧道状态变更（全局频道，GET /api/events/stream 推送） */
   | { type: "relay_status"; status: RelayStatusSnapshot }
-  /** 会话列表/状态变更通知（全局频道，GET /api/sessions/stream 推送，无数据负载） */
+  /** 会话列表/状态变更通知（全局频道，GET /api/events/stream 推送，无数据负载） */
   | { type: "sessions_changed" };
 
 /** relay_status 事件里的隧道状态快照 */

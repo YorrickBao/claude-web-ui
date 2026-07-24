@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ThreadMessageLike } from "@/hooks/useChatSSE";
-import { subscribeSessionsChanged } from "@/lib/sessionsChannel";
+import { subscribeSessionsChanged } from "@/lib/eventsChannel";
 import type { SessionView } from "@/lib/types";
 
 // 路由级懒加载：把会话渲染栈（@assistant-ui / markdown / highlight.js）和设置页

@@ -93,21 +93,31 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ sessions: views });
   });
 
-  // GET /api/sessions/stream —— 会话列表/状态变更通知（SSE，全局频道）
-  // 前端 useSessions 订阅本端点，收到变更信号后自行 GET /api/sessions 拉最新列表，
-  // 替代原先的 2 秒短轮询。
-  app.get("/api/sessions/stream", async (_req, reply) => {
+  // GET /api/events/stream —— 全局消息总线（SSE，单条长连接）
+  // 收敛所有「全局低频控制面信号」到一条连接：sessions 列表/状态变更、relay 隧道状态。
+  // 原则：新出现的全局信号一律复用本端点（追加事件类型 + bus 频道），不要再开新的 SSE
+  // 长连接（见 AGENTS.md「SSE 端点纪律」）。会话级高频数据流走独立的
+  // GET /api/sessions/:id/stream，不并入本端点。
+  // 前端 eventsChannel.ts 把本端点收敛为模块级单例 EventSource，全应用共享一条连接。
+  app.get("/api/events/stream", async (_req, reply) => {
     initSSE(reply);
 
-    // 订阅成功即通知前端拉一次（覆盖订阅期间可能错过的变更）
+    // 订阅瞬间先各发一帧，覆盖订阅期间可能错过的变更
     sendSSE(reply, { type: "sessions_changed" });
+    sendSSE(reply, { type: "relay_status", status: await getRelaySnapshot() });
 
-    // 转发后续变更信号
-    const unsub = onSessionsChanged(() => {
+    const unsubSessions = onSessionsChanged(() => {
       try {
         sendSSE(reply, { type: "sessions_changed" });
       } catch (err) {
-        console.warn("[sessions] stream sendSSE error:", err instanceof Error ? err.message : err);
+        console.warn("[events] sessions_changed sendSSE error:", err instanceof Error ? err.message : err);
+      }
+    });
+    const unsubRelay = onRelayStatus((s) => {
+      try {
+        sendSSE(reply, { type: "relay_status", status: s });
+      } catch (err) {
+        console.warn("[events] relay_status sendSSE error:", err instanceof Error ? err.message : err);
       }
     });
 
@@ -120,7 +130,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
     _req.raw.on("close", () => {
       clearInterval(heartbeat);
-      unsub();
+      unsubSessions();
+      unsubRelay();
     });
   });
 
@@ -218,7 +229,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
       // 心跳防中间代理 idle 关闭：会话在等待权限/SDK 思考期间可能数十秒无事件，
       // 远程链路（nginx/relay）若无数据会被当作 idle 切断，触发前端秒级重连风暴。
-      // 与 /api/sessions/stream、/api/relay/stream 对齐，15s 发一行 SSE 注释。
+      // 与全局总线 /api/events/stream 对齐，15s 发一行 SSE 注释。
       const heartbeat = setInterval(() => {
         try { reply.raw.write(": ping\n\n"); } catch { /* 连接已断 */ }
       }, 15000);
@@ -953,21 +964,24 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     }
   }
 
-  // GET /api/relay/status —— 当前隧道状态 + 已保存配置
-  app.get("/api/relay/status", async (_req, reply) => {
+  /**
+   * 取 relay 状态快照：运行时状态优先，若 relayUrl/accessKey 缺失则回退到落盘配置
+   * （此时尚无 token，remoteUrl 为空）。供 /api/relay/status 与全局总线首帧复用。
+   */
+  async function getRelaySnapshot() {
     const status = getRelayStatus();
-    // 若运行时未启用，回退到落盘配置供前端展示（此时尚无 token，remoteUrl 为空）
     if (!status.relayUrl || !status.accessKey) {
       const saved = await loadRelayConfig();
       if (saved) {
-        return reply.send({
-          ...status,
-          relayUrl: saved.relayUrl,
-          accessKey: saved.accessKey,
-        });
+        return { ...status, relayUrl: saved.relayUrl, accessKey: saved.accessKey };
       }
     }
-    return reply.send(status);
+    return status;
+  }
+
+  // GET /api/relay/status —— 当前隧道状态 + 已保存配置
+  app.get("/api/relay/status", async (_req, reply) => {
+    return reply.send(await getRelaySnapshot());
   });
 
   // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，1 天无活动移除）
@@ -975,49 +989,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ devices: getDevices() });
   });
 
-  // GET /api/relay/stream —— 隧道状态实时推送（SSE，全局频道）
-  // 前端 RemoteControlDialog 的左下角图标订阅本端点，状态变化即时变色，无需轮询。
-  app.get("/api/relay/stream", async (_req, reply) => {
-    initSSE(reply);
-
-    // 先发当前快照，保证订阅瞬间就能反映正确状态
-    const status = getRelayStatus();
-    // 运行时没配置时回退到落盘配置，与 /status 行为一致
-    let snapshot = status;
-    if (!status.relayUrl || !status.accessKey) {
-      const saved = await loadRelayConfig();
-      if (saved) {
-        snapshot = {
-          ...status,
-          relayUrl: saved.relayUrl,
-          accessKey: saved.accessKey,
-        };
-      }
-    }
-    sendSSE(reply, { type: "relay_status", status: snapshot });
-
-    // 之后转发 bus 上的状态变更
-    const unsub = onRelayStatus((s) => {
-      try {
-        sendSSE(reply, { type: "relay_status", status: s });
-      } catch (err) {
-        console.warn("[relay] stream sendSSE error:", err instanceof Error ? err.message : err);
-      }
-    });
-
-    // 周期性心跳防止中间代理 idle 超时关闭连接（: 结尾行会被 SSE 解析为注释）
-    const heartbeat = setInterval(() => {
-      try {
-        reply.raw.write(": ping\n\n");
-      } catch { /* 连接已断 */ }
-    }, 15000);
-
-    const cleanup = () => {
-      clearInterval(heartbeat);
-      unsub();
-    };
-    _req.raw.on("close", cleanup);
-  });
+  // relay 隧道状态的实时推送已并入全局总线 GET /api/events/stream（relay_status 事件），
+  // 不再单独开 SSE 长连接。
 
   // POST /api/relay/start —— 启用隧道
   app.post<{

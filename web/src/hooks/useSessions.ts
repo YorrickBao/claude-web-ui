@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listSessions } from "@/lib/api";
-import { subscribeSessionsChanged } from "@/lib/sessionsChannel";
+import { subscribeSessionsChanged } from "@/lib/eventsChannel";
 import type { SessionView } from "@/lib/types";
 
 export function useSessions() {
