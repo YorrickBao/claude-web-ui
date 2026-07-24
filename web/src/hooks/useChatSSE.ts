@@ -6,6 +6,7 @@ import {
 } from "@assistant-ui/react";
 import { createSession, sendMessage, respondToPermission, approvePlan, abortSession, resolveSessionByClient } from "@/lib/api";
 import { parseSSE } from "@/lib/sse";
+import { uuid } from "@/lib/utils";
 import type { SSEEvent } from "@/lib/types";
 
 export type { ThreadMessageLike };
@@ -330,7 +331,7 @@ export function useChatSSE({
       setMessages((prev) => [...prev, userMsg, placeholder]);
 
       // 新建会话时生成 clientId，用于 session_created 未送达即断线时反查 sessionId
-      const clientId = crypto.randomUUID();
+      const clientId = uuid();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       /** 是否已把生命周期交给 subscribe（断线重连）。true 时 finally 不清理。 */
