@@ -59,9 +59,9 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 	accessKey := accessKeyFromRequest(r)
 
 	if accessKey == "" {
-		// 无 key：根路径展示落地页，其它路径 401
+		// 无 key：根路径返回 200 空体（可当探活、不泄露信息），其它路径 401
 		if r.URL.Path == "/" {
-			renderLanding(w)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -195,23 +195,6 @@ func collectHeaders(h http.Header) map[string]string {
 		}
 	}
 	return out
-}
-
-// renderLanding 返回中转的落地说明页（无 accessKey/cookie 时访问根路径所见）。
-func renderLanding(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, `<!doctype html>
-<html lang="zh"><meta charset="utf-8">
-<title>Claude WebUI Relay</title>
-<body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#333;max-width:36rem;margin:0 auto">
-<h2>Claude WebUI 中转服务</h2>
-<p>这是远程控制中转。请通过本地 WebUI 的「远程控制」面板生成访问链接：</p>
-<ol>
-<li>在本地 WebUI 左下角点击 <b>📱 远程控制</b>；</li>
-<li>填写中转地址并启用；</li>
-<li>点击「生成访问链接」（链接 60 秒内有效），在浏览器打开或扫码。</li>
-</ol>
-<p style="color:#888;font-size:0.85rem">部署中转见仓库 relay/README.md</p>`)
 }
 
 // renderTokenExpired 返回令牌失效页（?t= token 无效或已过期时）。

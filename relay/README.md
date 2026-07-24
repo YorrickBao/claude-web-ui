@@ -111,7 +111,9 @@ sudo systemctl enable --now claude-web-ui-relay
 sudo systemctl status claude-web-ui-relay
 ```
 
-健康检查：`curl http://127.0.0.1:8787/healthz` → `{"ok":true}`
+健康检查：`curl http://127.0.0.1:8787/` → HTTP 200（根路径无凭证时返回空 200，可作探活）
+
+> 可选 `--basic-auth user:pass` 给 `/stats` 状态页加 Basic Auth（默认不启用）。详见下方[启动参数](#2-用-systemd-托管)。
 
 ### 3. Nginx 反代（WebSocket + TLS）
 
@@ -162,7 +164,7 @@ server {
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-验证：`curl https://relay.your-domain.com/healthz` → `{"ok":true}`
+验证：`curl https://relay.your-domain.com/` → HTTP 200
 
 ### 3b. 部署在子路径下（可选）
 
@@ -203,8 +205,26 @@ ExecStart=/opt/claude-web-ui-relay/claude-web-ui-relay --listen 127.0.0.1:8787 -
 
 > 根路径部署（3a）不用加 `--prefix`，留空即可——内部路由和对外输出都在根路径，行为不变。
 
+#### 启动参数速查
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--listen` | `127.0.0.1:8787` | 监听地址，绑定 127.0.0.1 放在 Nginx 后 |
+| `--prefix` | （空） | 子路径部署的外部前缀，如 `/relay`；根路径留空 |
+| `--basic-auth` | （空，不启用） | `/stats` 状态页的 Basic Auth，格式 `user:pass`（pass 可含冒号）；默认不启用 |
+| `--quiet` | `false` | 静默应用层日志（systemd 下已有 journal，可关） |
+
+示例（子路径 + 状态页 Basic Auth）：
+
+```ini
+ExecStart=/opt/claude-web-ui-relay/claude-web-ui-relay \
+    --listen 127.0.0.1:8787 \
+    --prefix /relay \
+    --basic-auth admin:your-secret
+```
+
 验证：
-- `curl https://your-domain.com/relay/healthz` → `{"ok":true}`
+- `curl https://your-domain.com/relay/` → HTTP 200（根路径探活）
 - 在本地 WebUI 生成访问链接后，浏览器打开（形如 `https://your-domain.com/relay/?t=<TOKEN>`）应正常加载，并 302 跳回 `/relay/`（剥掉 token）
 
 > 本地面板「中转地址」填 `wss://your-domain.com/relay`：客户端会自动拼出

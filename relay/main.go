@@ -22,6 +22,8 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8787", "listen address (bind 127.0.0.1 behind Nginx)")
 	prefix := flag.String("prefix", "", "external URL prefix when deployed behind a sub-path "+
 		"(e.g. /relay). Empty = root deployment. Nginx must strip this prefix before proxying.")
+	basicAuthFlag := flag.String("basic-auth", "", `Basic Auth protecting the web pages (/ and /stats), format "user:pass". `+
+		`Empty = disabled. Does NOT cover /tunnel (has accessKey) or /healthz (monitoring).`)
 	quiet := flag.Bool("quiet", false, "suppress log output")
 	flag.Parse()
 
@@ -33,6 +35,17 @@ func main() {
 	// 规范化外部前缀：确保以 / 开头、不以 / 结尾；空串表示根路径部署。
 	extPrefix := normalizePrefix(*prefix)
 
+	// 解析 Basic Auth（可选）：仅保护展示给人看的页面（/ 和 /stats）。
+	var wrapAuth func(http.HandlerFunc) http.HandlerFunc
+	if *basicAuthFlag != "" {
+		u, p, ok := parseBasicAuth(*basicAuthFlag)
+		if !ok {
+			log.Fatalf("[relay] invalid --basic-auth %q: expected non-empty user:pass (pass may contain ':')", *basicAuthFlag)
+		}
+		wrapAuth = func(h http.HandlerFunc) http.HandlerFunc { return basicAuth(u, p, h) }
+		log.Printf("[relay] basic auth enabled for / and /stats (user=%s)", u)
+	}
+
 	hub := NewHub(extPrefix)
 
 	// 启动 token 清扫器：定时回收「铸造但从未被消费」的过期令牌，防止内存堆积。
@@ -41,20 +54,20 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// 健康检查（Nginx / 监控用）
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	})
-
-	// 隧道端点：本地 WebUI 主动出站连这里注册
+	// 隧道端点：本地 WebUI 主动出站连这里注册（WebSocket，自有 accessKey 鉴权）
 	mux.HandleFunc("/tunnel", hub.handleTunnel)
 
-	// 中转状态页：显示活跃隧道数与未消费 token 数，供运维直连查看
-	mux.HandleFunc("/stats", hub.handleStats)
+	// 中转状态页：显示活跃隧道数与未消费 token 数，供运维直连查看。
+	// --basic-auth 启用时加 Basic Auth 保护（仅此页面，其它路径不保护）。
+	statsHandler := http.HandlerFunc(hub.handleStats)
+	if wrapAuth != nil {
+		statsHandler = wrapAuth(hub.handleStats)
+	}
+	mux.HandleFunc("/stats", statsHandler)
 
 	// 远程浏览器入口：所有其它请求（含根路径）走 HTTP 透明代理，
 	// 经隧道转发到本地 WebUI。?t= 一次性令牌换 cookie；cookie 携带 accessKey。
+	// 根路径无 key 时返回 200 空（既可当探活，又不泄露信息）。
 	mux.HandleFunc("/", hub.handleProxy)
 
 	srv := &http.Server{
