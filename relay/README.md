@@ -92,6 +92,12 @@ server {
     ssl_certificate     /etc/letsencrypt/live/relay.your-domain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/relay.your-domain.com/privkey.pem;
 
+    # ── 安全相关响应头 ──
+    # HSTS：强制后续访问走 HTTPS（首次访问仍可能被中间人，但锁定后不再降级）
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    # 不向任何外站泄露 Referer（避免 accessKey 经 Referer 流出，见下方安全说明）
+    add_header Referrer-Policy "no-referrer" always;
+
     # 关键：WebSocket 升级头
     location / {
         proxy_pass http://127.0.0.1:8787;
@@ -100,6 +106,9 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # relay 依赖此头判断客户端是否走 HTTPS，决定 cookie 的 Secure 标记
+        proxy_set_header X-Forwarded-Proto $scheme;
 
         # WS 长连接，关闭缓冲，加大超时
         proxy_buffering off;
@@ -171,3 +180,49 @@ location /relay/ {
 - 日志：`journalctl -u claude-web-ui-relay -f`
 - 二进制升级：重新 `just build-linux` + `scp` + `systemctl restart claude-web-ui-relay`
 - 无状态、无持久化，重启不丢配置（配置在本地 WebUI 端）
+
+## 安全说明
+
+远程控制把绑定 `127.0.0.1` 的本地服务暴露到公网，远程浏览器可执行与本地终端 `claude` 完全等效的操作（含执行命令、读写文件）。唯一屏障是 accessKey，请务必读完本节再决定是否部署到公网。
+
+### accessKey 的安全性
+
+- **强度**：24 字节随机数（192 bit 熵），穷举不可行
+- **保护**：cookie 为 `HttpOnly` + `SameSite=Lax`，防 XSS 读取和部分 CSRF
+- **判定 HTTPS**：relay 直连时看连接 TLS 标记，经 Nginx 终止 TLS 时看 `X-Forwarded-Proto` 头（上面的 nginx 配置已透传该头），据此决定 cookie 的 `Secure` 标记
+
+### accessKey 的主要泄露途径（务必注意）
+
+远程访问地址形如 `https://relay.example.com/?k=<KEY>`，首次访问后 key 种入 cookie，但 **URL 里的 `?k=` 可能被记录到多处**：
+
+| 途径 | 说明 | 缓解 |
+|------|------|------|
+| **Nginx access log** | 默认记录完整 query，key 明文落盘 | 见下方「日志脱敏」 |
+| **浏览器历史** | 本地历史记录明文存 key | 在敏感环境定期清理；泄漏后立即「重新生成」key |
+| **Referer 头** | 点击远程页面内任何外链时，`Referer` 可能携带 key | 上方配置已加 `Referrer-Policy: no-referrer` |
+| **长期有效** | cookie 有效期 30 天，key 不自动轮换 | 定期在面板「重新生成」key |
+
+### 日志脱敏（强烈建议）
+
+默认 access log 会把 `?k=` 记录下来。对 relay 站点，建议不记 access log，或过滤掉 query：
+
+```nginx
+# 方式一：直接不记 relay 站点的 access log（最简单、最彻底）
+location / {
+    access_log off;
+    # ... 其余 proxy 配置 ...
+}
+
+# 方式二：保留访问计数但脱敏 query（需定义不含 $query_string 的 log_format）
+# 在 http {} 块定义：
+#   log_format noquery '$remote_addr - $remote_user [$time_local] '
+#                      '"$request_method $uri" $status $body_bytes_sent';
+# 站点内引用：
+#   access_log /var/log/nginx/relay.log noquery;
+```
+
+### 风险判断
+
+- **个人/临时远程访问**：按上方配置部署（HSTS + Referrer-Policy + 日志脱敏 + 透传 `X-Forwarded-Proto`），风险可接受
+- **长期挂公网 / 多人 / 敏感机器**：不建议。等效本地 shell 的权限配合单一长期 key，一旦 key 泄露即等于本机沦陷，且无审计告警
+- **不要**把 relay 地址和 key 同时分享到群聊、截图、提交进仓库——拿到地址+key 即可远程操作你的本机

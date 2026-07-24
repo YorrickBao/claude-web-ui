@@ -38,15 +38,19 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 首次 ?k= 访问：种 cookie（Secure 仅在 wss/https 下生效，http 本地测试会被忽略）
+	// 首次 ?k= 访问：种 cookie
 	if qk := r.URL.Query().Get("k"); qk != "" {
+		// 判断是否走 HTTPS：直连时看 r.TLS；经 Nginx 终止 TLS 时 relay 收到明文 HTTP，
+		// 需看代理透传的 X-Forwarded-Proto。两者皆无（本地 http 测试）则不设 Secure，
+		// 否则浏览器会拒绝在 http 下携带 cookie。
+		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    accessKey,
 			Path:     "/",
 			MaxAge:   cookieMaxAge,
 			HttpOnly: true,
-			Secure:   r.TLS != nil,
+			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,
 		})
 	}
