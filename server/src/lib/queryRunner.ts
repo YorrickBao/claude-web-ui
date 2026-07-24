@@ -36,7 +36,9 @@ export async function emitEventToBus(
   // done 事件：先累加 token，再发送累加后的值
   if (evt.type === "done") {
     await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
-      () => {},
+      (err: unknown) => {
+        console.warn(`[queryRunner] accumulateTokens failed for ${sessionId}:`, err instanceof Error ? err.message : err);
+      },
     );
     const updated = await getSession(sessionId);
     const doneEvt: SSEEvent = {
