@@ -38,7 +38,20 @@ export type SSEEvent =
   /** Plan mode 退出：LLM 产出了计划，等待用户审批 */
   | { type: "plan_proposed"; planContent: string }
   /** 权限模式已变更 */
-  | { type: "mode_changed"; mode: string };
+  | { type: "mode_changed"; mode: string }
+  /** 远程控制隧道状态变更（全局频道，GET /api/relay/stream 推送） */
+  | { type: "relay_status"; status: RelayStatusSnapshot };
+
+/** relay_status 事件里的隧道状态快照 */
+export interface RelayStatusSnapshot {
+  enabled: boolean;
+  connected: boolean;
+  connecting: boolean;
+  relayUrl: string;
+  accessKey: string;
+  remoteUrl: string;
+  error: string | null;
+}
 
 /** 会话列表/详情里的单条会话 */
 export interface SessionView {

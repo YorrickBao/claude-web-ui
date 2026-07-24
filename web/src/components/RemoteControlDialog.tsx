@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Loader2,
   Copy,
@@ -53,7 +53,6 @@ export function RemoteControlDialog() {
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -65,21 +64,29 @@ export function RemoteControlDialog() {
       setRelayUrl((prev) => prev || data.relayUrl);
       setAccessKey((prev) => prev || data.accessKey);
     } catch {
-      // 静默：状态轮询失败不弹 toast
+      // 静默：状态拉取失败不弹 toast
     }
   }, []);
 
-  // 始终后台轮询 relay 状态：让左下角图标颜色随连接状态变化（即使对话框未打开）
+  // 订阅 relay 状态 SSE 流：状态变化即时推送，驱动左下角图标颜色，无需轮询。
+  // 本组件挂在 Sidebar 里是常驻单例，故挂载即订阅、卸载即断开。
   useEffect(() => {
-    void fetchStatus();
-    pollRef.current = setInterval(() => void fetchStatus(), 2000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
-    };
-  }, [fetchStatus]);
+    const es = new EventSource("api/relay/stream");
+    es.addEventListener("relay_status", (ev) => {
+      try {
+        const data = (JSON.parse((ev as MessageEvent).data) as { status: RelayStatus }).status;
+        setStatus(data);
+        setRelayUrl((prev) => prev || data.relayUrl);
+        setAccessKey((prev) => prev || data.accessKey);
+      } catch {
+        /* 忽略格式异常 */
+      }
+    });
+    // EventSource 遇到网络错误会自动重连，无需手动处理
+    return () => es.close();
+  }, []);
 
-  // 打开对话框且尚无状态时显示骨架 loading
+  // 打开对话框且尚无状态时，拉一次兜底（SSE 首帧可能稍晚）
   useEffect(() => {
     if (open && !status) {
       setLoading(true);

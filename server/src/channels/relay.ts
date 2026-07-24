@@ -18,6 +18,7 @@
  */
 
 import { LOG_ENABLED } from "../env.js";
+import { emitRelayStatus } from "../lib/eventBus.js";
 
 /** 远程控制配置（落盘到 DATA_DIR/relay-config.json） */
 export interface RelayConfig {
@@ -100,6 +101,11 @@ export function getRelayStatus(): RelayStatus {
   };
 }
 
+/** 取最新快照并广播到全局 relay 频道（驱动前端图标颜色实时变化） */
+function notifyStatus(): void {
+  emitRelayStatus(getRelayStatus());
+}
+
 /** 启动隧道。重复调用会先停止旧连接。 */
 export function startRelayTunnel(config: RelayConfig): void {
   // 若已在运行，先停（但不清 enabled 意图）
@@ -111,6 +117,7 @@ export function startRelayTunnel(config: RelayConfig): void {
   lastError = null;
   reconnectAttempts = 0;
   connect();
+  notifyStatus();
 }
 
 /** 停止隧道。保留 config 落盘，仅断开连接。 */
@@ -143,6 +150,7 @@ function stopInternal(clearEnabled: boolean): void {
   if (clearEnabled) {
     enabled = false;
   }
+  notifyStatus();
 }
 
 /** 建立到中转的连接并发 register 帧 */
@@ -156,6 +164,7 @@ function connect(): void {
   // 构造隧道端点 URL：中转约定 /tunnel 路径
   const tunnelUrl = buildTunnelUrl(relayUrl);
   connecting = true;
+  notifyStatus();
 
   let socket: WebSocket;
   try {
@@ -165,6 +174,7 @@ function connect(): void {
     console.warn(`[relay] ${msg}`);
     lastError = msg;
     connecting = false;
+    notifyStatus();
     scheduleReconnect();
     return;
   }
@@ -172,6 +182,7 @@ function connect(): void {
 
   socket.onopen = () => {
     connecting = false;
+    notifyStatus();
     // 立即发 register
     send({ type: "register", accessKey });
     // 启动心跳
@@ -197,8 +208,12 @@ function connect(): void {
       clearInterval(pingTimer);
       pingTimer = null;
     }
-    if (!enabled) return; // 用户主动停止，不重连
+    if (!enabled) {
+      // 用户主动停止，不重连（状态已由 stopInternal 广播）
+      return;
+    }
     lastError = `closed (code=${ev.code}${ev.reason ? `, reason=${ev.reason}` : ""})`;
+    notifyStatus();
     scheduleReconnect();
   };
 }
@@ -247,6 +262,7 @@ async function handleFrame(data: unknown): Promise<void> {
         lastError = f.message ?? "register rejected";
         console.warn(`[relay] register rejected: ${lastError}`);
       }
+      notifyStatus();
       break;
 
     case "ping":

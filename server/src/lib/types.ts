@@ -122,7 +122,20 @@ export type SSEEvent =
   /** Plan mode 退出：LLM 产出了计划，等待用户审批后切到执行模式 */
   | { type: "plan_proposed"; planContent: string }
   /** 权限模式已变更 */
-  | { type: "mode_changed"; mode: PermissionMode };
+  | { type: "mode_changed"; mode: PermissionMode }
+  /** 远程控制隧道状态变更（全局频道，GET /api/relay/stream 推送） */
+  | { type: "relay_status"; status: RelayStatusSnapshot };
+
+/** relay_status 事件里的隧道状态快照（与 channels/relay.ts 的 RelayStatus 同构） */
+export interface RelayStatusSnapshot {
+  enabled: boolean;
+  connected: boolean;
+  connecting: boolean;
+  relayUrl: string;
+  accessKey: string;
+  remoteUrl: string;
+  error: string | null;
+}
 
 /** 斜杠命令 */
 export interface SlashCommand {

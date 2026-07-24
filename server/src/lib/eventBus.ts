@@ -8,10 +8,14 @@
  * 每个 sessionId 有两条频道：
  *   s:<sessionId>       —— SSE 事件
  *   s:<sessionId>:end   —— 流结束信号
+ *
+ * 另有一条全局频道：
+ *   relay               —— 远程控制隧道状态变更（非会话级）
  */
 
 import { EventEmitter } from "node:events";
 import type { SSEEvent } from "./types.js";
+import type { RelayStatus } from "../channels/relay.js";
 
 const bus = new EventEmitter();
 bus.setMaxListeners(500);
@@ -51,5 +55,21 @@ export function onSessionEnd(
   bus.on(`s:${sessionId}:end`, listener);
   return () => {
     bus.off(`s:${sessionId}:end`, listener);
+  };
+}
+
+/** 广播远程控制隧道状态变更（全局频道） */
+export function emitRelayStatus(status: RelayStatus): void {
+  bus.emit("relay", status);
+}
+
+/**
+ * 订阅远程控制隧道状态变更。
+ * @returns 取消订阅的函数
+ */
+export function onRelayStatus(listener: (status: RelayStatus) => void): () => void {
+  bus.on("relay", listener);
+  return () => {
+    bus.off("relay", listener);
   };
 }
