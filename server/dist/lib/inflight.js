@@ -15,17 +15,23 @@ export function setInflight(sessionId, ctrl) {
         old.ctrl.abort();
     inflight.set(sessionId, { ctrl, status: "running" });
 }
+/** 标记会话为 waiting。@returns 状态是否实际发生了变化 */
 export function setInflightWaiting(sessionId) {
     const entry = inflight.get(sessionId);
-    if (entry) {
+    if (entry && entry.status !== "waiting") {
         entry.status = "waiting";
+        return true;
     }
+    return false;
 }
+/** 标记会话为 running。@returns 状态是否实际发生了变化 */
 export function setInflightRunning(sessionId) {
     const entry = inflight.get(sessionId);
-    if (entry) {
+    if (entry && entry.status !== "running") {
         entry.status = "running";
+        return true;
     }
+    return false;
 }
 /**
  * 清理 inflight 记录。

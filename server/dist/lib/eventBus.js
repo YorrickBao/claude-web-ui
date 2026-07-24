@@ -11,6 +11,7 @@
  *
  * 另有一条全局频道：
  *   relay               —— 远程控制隧道状态变更（非会话级）
+ *   sessions-changed    —— 会话列表/状态变更通知（驱动 Sidebar 刷新）
  */
 import { EventEmitter } from "node:events";
 const bus = new EventEmitter();
@@ -55,5 +56,23 @@ export function onRelayStatus(listener) {
     bus.on("relay", listener);
     return () => {
         bus.off("relay", listener);
+    };
+}
+/**
+ * 广播会话列表/状态变更通知（全局频道）。
+ * 只发信号不带数据：前端收到后自行 GET /api/sessions 拉最新列表。
+ * 触发点：新建会话、删除会话、inflight 状态流转、会话结束。
+ */
+export function emitSessionsChanged() {
+    bus.emit("sessions-changed");
+}
+/**
+ * 订阅会话列表/状态变更通知。
+ * @returns 取消订阅的函数
+ */
+export function onSessionsChanged(listener) {
+    bus.on("sessions-changed", listener);
+    return () => {
+        bus.off("sessions-changed", listener);
     };
 }

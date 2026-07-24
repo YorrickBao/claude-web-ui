@@ -10,7 +10,7 @@ import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, buildRemoteUrl, } from "../channels/relay.js";
 import { DATA_DIR } from "../env.js";
-import { emitSessionEvent, emitSessionEnd, onSessionEvent, onSessionEnd, onRelayStatus } from "../lib/eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -47,6 +47,34 @@ export async function apiRoutes(app) {
             };
         });
         return reply.send({ sessions: views });
+    });
+    // GET /api/sessions/stream —— 会话列表/状态变更通知（SSE，全局频道）
+    // 前端 useSessions 订阅本端点，收到变更信号后自行 GET /api/sessions 拉最新列表，
+    // 替代原先的 2 秒短轮询。
+    app.get("/api/sessions/stream", async (_req, reply) => {
+        initSSE(reply);
+        // 订阅成功即通知前端拉一次（覆盖订阅期间可能错过的变更）
+        sendSSE(reply, { type: "sessions_changed" });
+        // 转发后续变更信号
+        const unsub = onSessionsChanged(() => {
+            try {
+                sendSSE(reply, { type: "sessions_changed" });
+            }
+            catch (err) {
+                console.warn("[sessions] stream sendSSE error:", err instanceof Error ? err.message : err);
+            }
+        });
+        // 心跳防中间代理 idle 关闭
+        const heartbeat = setInterval(() => {
+            try {
+                reply.raw.write(": ping\n\n");
+            }
+            catch { /* 连接已断 */ }
+        }, 15000);
+        _req.raw.on("close", () => {
+            clearInterval(heartbeat);
+            unsub();
+        });
     });
     // ───────────────────────────────────────────────────────────
     // GET /api/sessions/:id —— 单会话详情（标题来自 SDK）
@@ -302,6 +330,8 @@ export async function apiRoutes(app) {
                     inputTokens: 0,
                     outputTokens: 0,
                 });
+                // 会话已落盘，通知 Sidebar 新增
+                emitSessionsChanged();
                 // 通过 SDK 设置标题（写入 jsonl 转录，CLI 也能看到）
                 if (initialTitle) {
                     try {
@@ -492,6 +522,8 @@ export async function apiRoutes(app) {
         await deleteSessionRecord(sessionId);
         // 清理子代理注册记录
         cleanupSession(sessionId);
+        // 通知 Sidebar 会话已删除
+        emitSessionsChanged();
         return reply.send({ ok: true });
     });
     // ───────────────────────────────────────────────────────────
