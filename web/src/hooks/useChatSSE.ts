@@ -186,6 +186,9 @@ export function useChatSSE({
     setStats(null);
     setError(null);
     setStatusMessage(null);
+    // 切会话/静态加载时重置时间戳，防上一轮空闲期的陈旧值在下一次
+    // visibilitychange 时误触发冻结重连。
+    lastEventAtRef.current = Date.now();
   }, []);
 
   /**
@@ -203,6 +206,7 @@ export function useChatSSE({
     setIsRunning(true);
     sessionIdRef.current = targetSessionId;
     setActiveSessionId(targetSessionId);
+    lastEventAtRef.current = Date.now(); // 重置，防陈旧值触发误冻结重连
     window.dispatchEvent(new CustomEvent("session-list-changed"));
 
     let consecutiveFailures = 0;
@@ -348,6 +352,10 @@ export function useChatSSE({
    * 同理，onPermissionRef / onPlanRef / onModeRef 通过 ref.current 读取最新值。
    */
   function handleSSEEvent(evt: SSEEvent, targetSessionId: string) {
+    // 所有流（subscribe GET 流 + onNew POST 流 + plan 续流）的事件都经此，
+    // 在此刷新时间戳，确保冻结补偿能正确感知活跃事件（POST 流期间 subscribe
+    // 循环没跑，否则会误判冻结）。
+    lastEventAtRef.current = Date.now();
     switch (evt.type) {
       case "history":
         setMessages(evt.messages as ChatMessage[]);
@@ -537,7 +545,12 @@ export function useChatSSE({
         }
       } catch (err) {
         const e = err as Error;
-        const isUserStop = e.name === "AbortError" || stoppedByUserRef.current;
+        // 冻结补偿主动发起的重连请求：POST 流被中断，但查询仍在后端跑，
+        // 不能当 user-stop 终结——清掉标记后走 handoff 续流（同网络断线）。
+        const isReconnectRequest = reconnectRequestedRef.current && e.name === "AbortError";
+        if (isReconnectRequest) reconnectRequestedRef.current = false;
+        // user-stop = AbortError 但不是冻结重连，或显式 stoppedByUserRef
+        const isUserStop = !isReconnectRequest && (e.name === "AbortError" || stoppedByUserRef.current);
         if (isUserStop) {
           setMessages((prev) => completeLast(prev));
         } else {
