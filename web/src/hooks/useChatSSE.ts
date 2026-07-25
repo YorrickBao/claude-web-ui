@@ -198,6 +198,9 @@ export function useChatSSE({
           // 流成功建立：重置失败计数与退避
           consecutiveFailures = 0;
           reconnectDelay = SUBSCRIBE_RECONNECT_DELAY_MS;
+          // 重连成功：清掉"重连中…"提示（若有）。SDK 的 status 事件
+          // （压缩/重试）也会经此通道，这里只清重连标记，不影响它们。
+          setStatusMessage(null);
 
           for await (const evt of parseSSE(res.body, ctrl.signal)) {
             // 标记正常结束，用于区分"意外断开"与"会话跑完"
@@ -229,6 +232,10 @@ export function useChatSSE({
 
         if (status === "running" || status === "unknown") {
           consecutiveFailures++;
+          // 进入重连：给用户可见反馈。复用 statusMessage 脉冲徽章通道，
+          // 下次流成功建立时清除。重连期间流已断，不会和 SDK 的压缩/重试
+          // status 信号冲突。
+          setStatusMessage("连接已断开，正在重连…");
           if (consecutiveFailures > MAX_SUBSCRIBE_RECONNECTS) {
             // 连续失败超上限：放弃，避免对 stale/异常会话无限重连打服务器
             if (!stoppedByUserRef.current && streamError) {
@@ -252,6 +259,8 @@ export function useChatSSE({
       }
     } finally {
       setIsRunning(false);
+      // 兜底清掉重连/压缩等任何残留瞬态提示（用户停止/会话终结/卸载都走这里）
+      setStatusMessage(null);
       abortRef.current = null;
       window.dispatchEvent(new CustomEvent("session-list-changed"));
     }
