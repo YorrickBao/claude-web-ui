@@ -4,9 +4,10 @@ import { ChatThread } from "@/components/ChatThread";
 import { PermissionRequestBanner, type PendingPermission } from "@/components/PermissionRequestBanner";
 import { PlanApprovalBanner, type PendingPlanApproval } from "@/components/PlanApprovalBanner";
 import { Badge } from "@/components/ui/badge";
-import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, setSessionThinkingLevel, updateSessionTitle } from "@/lib/api";
+import { setSessionProfile as setSessionProfileApi, setSessionPermissionMode, setSessionThinkingLevel, updateSessionTitle, forkSessionApi } from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Pencil } from "lucide-react";
+import { GitFork, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -237,6 +238,18 @@ export function ChatView({
   // session_started 信号，匹配当前 sessionId 时自动 subscribe。不再需要
   // 这里靠 sessions_changed 拉状态 + 翻转推断（旧机制脆弱且易断信号）。
 
+  // 分叉当前会话：复制历史到新 sessionId 并跳转，原会话不动
+  async function handleFork() {
+    if (!activeSessionId || isRunning) return;
+    try {
+      const { sessionId: newId } = await forkSessionApi(activeSessionId);
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+      navigate(`/c/${newId}`); // 跳进 fork，历史由 ChatViewWithMeta 自动加载
+    } catch (err) {
+      toast.error(`分叉失败：${(err as Error).message}`);
+    }
+  }
+
   // 切换 profile：调后端绑定接口，成功后刷新本地
   async function handleChangeProfile(newId: string | null) {
     if (!activeSessionId) {
@@ -288,6 +301,8 @@ export function ChatView({
         initialInputTokens={initialInputTokens}
         initialOutputTokens={initialOutputTokens}
         error={error}
+        isRunning={isRunning}
+        onFork={handleFork}
       />
       <div className="min-h-0 flex-1">
         <AssistantRuntimeProvider runtime={runtime}>
@@ -332,6 +347,8 @@ function Header({
   initialInputTokens,
   initialOutputTokens,
   error,
+  isRunning,
+  onFork,
 }: {
   sessionId: string | null;
   title?: string;
@@ -340,6 +357,8 @@ function Header({
   initialInputTokens?: number;
   initialOutputTokens?: number;
   error: string | null;
+  isRunning: boolean;
+  onFork: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -397,6 +416,7 @@ function Header({
   }
 
   const canEdit = sessionId !== null;
+  const canFork = sessionId !== null && !isRunning;
 
   return (
     <div className="sticky top-0 z-10 flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-3 py-2 pl-14 md:pl-4 md:py-2.5 backdrop-blur">
@@ -451,6 +471,22 @@ function Header({
             </div>
           )}
         </div>
+        {sessionId && (
+          <button
+            type="button"
+            onClick={onFork}
+            disabled={!canFork}
+            title={isRunning ? "会话运行中，结束后再分叉" : "分叉此会话"}
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded p-1 text-muted-foreground transition-colors",
+              canFork
+                ? "hover:bg-accent hover:text-foreground cursor-pointer"
+                : "opacity-40 cursor-not-allowed",
+            )}
+          >
+            <GitFork className="h-3.5 w-3.5" />
+          </button>
+        )}
         <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {stats && (

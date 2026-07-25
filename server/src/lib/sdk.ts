@@ -4,6 +4,7 @@ import {
   listSubagents,
   getSessionInfo,
   renameSession,
+  forkSession,
   type SDKMessage,
   type SubagentStartHookInput,
   type SubagentStopHookInput,
@@ -15,7 +16,7 @@ import { createPendingPermission } from "./inflight.js";
 import { emitSessionEvent } from "./eventBus.js";
 
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
-export { listSessions, listSubagents, getSessionInfo, renameSession };
+export { listSessions, listSubagents, getSessionInfo, renameSession, forkSession };
 
 // PermissionRequest hook 的回调返回类型与泛型 HookJSONOutput 不兼容
 // （SDK 类型系统尚未完全统一），单独构建此 hook 的闭包后用 any 注入

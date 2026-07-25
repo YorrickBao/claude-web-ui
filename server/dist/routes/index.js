@@ -1,7 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, resolveSessionEnv, resolveProfileEnv, setSessionProfile, } from "../lib/store.js";
-import { runQuery, renameSession, getSessionInfo, listSessions as sdkListSessions, listSubagents } from "../lib/sdk.js";
+import { runQuery, renameSession, forkSession, getSessionInfo, listSessions as sdkListSessions, listSubagents } from "../lib/sdk.js";
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
@@ -512,6 +512,52 @@ export async function apiRoutes(app) {
                 endSSE(reply);
             }
             catch { /* 连接可能已关闭 */ }
+        }
+    });
+    // ───────────────────────────────────────────────────────────
+    // POST /api/sessions/:id/fork —— 分叉会话
+    //
+    // 调用 SDK forkSession 复制源会话 transcript 到一个全新 sessionId
+    // （重映射所有 message UUID、保留 parentUuid 链）。返回新 sessionId，
+    // 并 upsert 一张继承源会话 profile/权限/思考级别的名片。之后用户在新
+    // 会话发消息走现有 `resume: sessionId` 路径，SDK 自动加载 fork 历史。
+    // upToMessageId 预留给「从某条消息处分叉」的未来 UI。
+    // ───────────────────────────────────────────────────────────
+    app.post("/api/sessions/:id/fork", async (req, reply) => {
+        const sourceId = req.params.id;
+        const body = req.body ?? {};
+        const rec = await getSession(sourceId);
+        if (!rec) {
+            return reply.code(404).send({ error: "session not found" });
+        }
+        // 进行中的会话 transcript 仍在写，分叉可能拷到半截状态——拒绝
+        if (getInflight(sourceId)) {
+            return reply.code(409).send({ error: "session is running, wait for it to finish before forking" });
+        }
+        try {
+            const { sessionId: newId } = await forkSession(sourceId, {
+                dir: rec.cwd,
+                ...(body.upToMessageId ? { upToMessageId: body.upToMessageId } : {}),
+                ...(body.title ? { title: body.title } : {}),
+            });
+            // 继承源会话的 profile/权限/思考级别，避免 fork 出来掉回默认值
+            upsertSession({
+                sessionId: newId,
+                cwd: rec.cwd,
+                profileId: rec.profileId,
+                permissionMode: rec.permissionMode,
+                effortLevel: rec.effortLevel,
+                createdAt: Date.now(),
+                lastModified: Date.now(),
+                inputTokens: 0,
+                outputTokens: 0,
+            });
+            emitSessionsChanged(); // 侧栏跨标签页即时刷新
+            return reply.send({ sessionId: newId });
+        }
+        catch (err) {
+            console.warn(`[fork] failed for ${sourceId}:`, err?.message);
+            return reply.code(500).send({ error: err?.message ?? "fork failed" });
         }
     });
     // ───────────────────────────────────────────────────────────

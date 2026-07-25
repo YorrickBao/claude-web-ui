@@ -34,6 +34,23 @@ export async function deleteSessionApi(id: string): Promise<void> {
   }
 }
 
+/** 分叉会话：复制源会话历史到全新 sessionId，原会话不变 */
+export async function forkSessionApi(
+  sourceId: string,
+  opts?: { upToMessageId?: string; title?: string },
+): Promise<{ sessionId: string }> {
+  const res = await fetch(`api/sessions/${encodeURIComponent(sourceId)}/fork`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`fork failed: ${res.status}${detail ? ` - ${detail}` : ""}`);
+  }
+  return res.json() as Promise<{ sessionId: string }>;
+}
+
 /** 更新会话标题 */
 export async function updateSessionTitle(
   sessionId: string,
