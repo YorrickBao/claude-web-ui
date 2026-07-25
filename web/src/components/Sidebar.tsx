@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   X,
+  WifiOff,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { RemoteControlDialog } from "@/components/RemoteControlDialog";
+import { subscribeBusHealth } from "@/lib/eventsChannel";
 import type { SessionView } from "@/lib/types";
 
 /** 取路径的最后一个组件（目录名） */
@@ -97,6 +99,14 @@ export function Sidebar({
   const [pathPopup, setPathPopup] = useState<string | null>(null);
   // 当前路由 pathname（取自 React Router 的 useLocation，HashRouter 下反映 hash 路由，用于高亮当前会话）
   const [currentPath, setCurrentPath] = useState(() => location.pathname);
+  // 全局总线连接健康：reconnecting 时在页脚显示"实时连接已断开"提示。
+  // 总线断开 → 侧栏停止接收 sessions_changed 实时推送，需让用户知情。
+  const [busReconnecting, setBusReconnecting] = useState(false);
+  useEffect(() => {
+    return subscribeBusHealth((health) => {
+      setBusReconnecting(health === "reconnecting");
+    });
+  }, []);
 
   // ── 移动端滑动手势 ──
   const sidebarRef = useRef<HTMLElement>(null);
@@ -509,6 +519,20 @@ export function Sidebar({
         "border-t border-border px-2 py-2",
         (!isMobile && isCollapsed) && "px-1"
       )}>
+        {busReconnecting && (
+          <div
+            className={cn(
+              "mb-1.5 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400",
+              (!isMobile && isCollapsed) && "justify-center px-1",
+            )}
+            title="实时连接已断开，正在自动重连。重连成功后会话列表会自动刷新。"
+          >
+            <WifiOff className="h-3 w-3 shrink-0 animate-pulse" />
+            {!(isMobile === false && isCollapsed) && (
+              <span className="truncate">实时连接已断开，重连中…</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"

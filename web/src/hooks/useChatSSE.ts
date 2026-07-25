@@ -108,6 +108,12 @@ export function useChatSSE({
   }, []);
   /** 用户是否主动点击了停止按钮：用于抑制后续所有 error 事件 */
   const stoppedByUserRef = useRef(false);
+  /** 主动重连请求（区别于用户停止）：visibilitychange 冻结补偿时置 true，
+   *  中断当前 fetch 后让循环走重连路径（带"重连中"徽章）而非直接终结。 */
+  const reconnectRequestedRef = useRef(false);
+  /** 最近一次收到流事件的时间戳，用于 visibilitychange 冻结补偿判定
+   *  流是否疑似被浏览器冻结（长时间无事件 = 可能卡死）。 */
+  const lastEventAtRef = useRef<number>(Date.now());
   const sessionIdRef = useRef<string | null>(sessionId);
   const onCreatedRef = useRef(onSessionCreated);
   onCreatedRef.current = onSessionCreated;
@@ -132,6 +138,34 @@ export function useChatSSE({
    *  避免 isRunning 进依赖导致订阅 effect 反复重建。 */
   const isRunningRef = useRef(false);
   isRunningRef.current = isRunning;
+
+  /**
+   * 后台冻结补偿：标签切入后台时浏览器会冻结/暂停 JS 与网络，切回前台后
+   * 进行中的 fetch 可能卡死（既不报错也不恢复）。切回可见时若距上次事件
+   * 已超过 3 个心跳周期（~45s），判定流疑似被冻结，主动中断当前 fetch
+   * 触发重连（走"重连中"徽章路径），而非干等永远不会到来的报错。
+   * 用 ref 读最新值，避免闭包陈旧；不依赖 isRunning state（可能滞后）。
+   */
+  useEffect(() => {
+    const FROZEN_THRESHOLD_MS = 45_000; // 3 × 15s 心跳
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (disposedRef.current || stoppedByUserRef.current) return;
+      const sid = sessionIdRef.current;
+      if (!sid || !isRunningRef.current) return;
+      const elapsed = Date.now() - lastEventAtRef.current;
+      if (elapsed > FROZEN_THRESHOLD_MS) {
+        // 标记"重连请求"，中断当前 fetch；循环 catch 会走重连路径
+        reconnectRequestedRef.current = true;
+        abortRef.current?.abort();
+      } else {
+        // 未冻结：刷新事件时间戳，避免短时间内多次切换反复触发
+        lastEventAtRef.current = Date.now();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   const stop = useCallback(() => {
     stoppedByUserRef.current = true;
@@ -205,19 +239,28 @@ export function useChatSSE({
           for await (const evt of parseSSE(res.body, ctrl.signal)) {
             // 标记正常结束，用于区分"意外断开"与"会话跑完"
             if (evt.type === "done") doneReceived = true;
+            lastEventAtRef.current = Date.now();
             handleSSEEvent(evt, targetSessionId);
           }
         } catch (err) {
           const e = err as Error;
           if (e.name === "AbortError") {
-            // 组件卸载（disposedRef）或用户主动停止：终结并退出
-            if (!disposedRef.current) {
-              setMessages((prev) => completeLast(prev));
+            // 冻结补偿主动发起的重连请求：不当作"用户停止"终结，
+            // 清掉标记后落到下面的 querySessionStatus 重连路径（带"重连中"徽章）。
+            if (reconnectRequestedRef.current) {
+              reconnectRequestedRef.current = false;
+              // streamError 留空，重连判定不依赖具体错误文本
+            } else {
+              // 组件卸载（disposedRef）或用户主动停止：终结并退出
+              if (!disposedRef.current) {
+                setMessages((prev) => completeLast(prev));
+              }
+              break;
             }
-            break;
+          } else {
+            // 非 abort 的网络/HTTP 错误：交给下面的重连判定
+            streamError = e.message;
           }
-          // 非 abort 的网络/HTTP 错误：交给下面的重连判定
-          streamError = e.message;
         }
 
         if (disposedRef.current) break;
@@ -261,6 +304,7 @@ export function useChatSSE({
       setIsRunning(false);
       // 兜底清掉重连/压缩等任何残留瞬态提示（用户停止/会话终结/卸载都走这里）
       setStatusMessage(null);
+      reconnectRequestedRef.current = false; // 防残留标记影响下次订阅
       abortRef.current = null;
       window.dispatchEvent(new CustomEvent("session-list-changed"));
     }

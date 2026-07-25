@@ -13,7 +13,9 @@
  *
  * 这里把频道收敛为模块级单例：全应用共享一条 EventSource，内部用 Set 分事件类型
  * 维护订阅者，并缓存最近一帧 relay_status 供新订阅者立即取用。EventSource 自带
- * 断线重连，无需手动处理。
+ * 断线重连，但默认无任何可观测性——这里额外监听 onerror/onopen，把连接健康状态
+ * 暴露出去（订阅者可据此显示"实时连接已断开"提示），并在重连成功时重发一帧
+ * sessions_changed 以补齐断线期间错过的列表变更。
  */
 
 import type { RelayStatusSnapshot } from "./types";
@@ -21,27 +23,74 @@ import type { RelayStatusSnapshot } from "./types";
 type SessionsListener = () => void;
 type RelayListener = (status: RelayStatusSnapshot) => void;
 type LifecycleListener = (sessionId: string) => void;
+/** 总线连接健康状态：connected 正常 / reconnecting 自动重连中 */
+type BusHealth = "connected" | "reconnecting";
+type BusHealthListener = (health: BusHealth) => void;
 
 let sessionsListeners: Set<SessionsListener> | null = null;
 let relayListeners: Set<RelayListener> | null = null;
 let lifecycleStartedListeners: Set<LifecycleListener> | null = null;
 let lifecycleEndedListeners: Set<LifecycleListener> | null = null;
+let busHealthListeners: Set<BusHealthListener> | null = null;
 let es: EventSource | null = null;
 /** 最近一帧 relay 状态，新订阅者立即可用，避免等下一次变更 */
 let lastRelayStatus: RelayStatusSnapshot | null = null;
+/** 当前总线健康状态，新订阅者立即可用 */
+let busHealth: BusHealth = "connected";
 
 function hasSubscribers(): boolean {
   return (
     !!sessionsListeners?.size ||
     !!relayListeners?.size ||
     !!lifecycleStartedListeners?.size ||
-    !!lifecycleEndedListeners?.size
+    !!lifecycleEndedListeners?.size ||
+    !!busHealthListeners?.size
   );
+}
+
+function notifyBusHealth(health: BusHealth): void {
+  if (busHealth === health) return; // 仅在状态变化时通知，避免 onerror 抖动反复刷
+  busHealth = health;
+  if (!busHealthListeners) return;
+  for (const fn of [...busHealthListeners]) {
+    try {
+      fn(health);
+    } catch {
+      // 忽略单个订阅者错误
+    }
+  }
 }
 
 function ensureChannel(): void {
   if (es) return;
+  busHealth = "connected";
   es = new EventSource("api/events/stream");
+  es.addEventListener("open", () => {
+    // 重连成功：补齐断线期间可能错过的 sessions_changed（拉一次最新列表），
+    // 并把健康状态切回 connected（订阅者据此隐藏"实时连接已断开"提示）。
+    notifyBusHealth("connected");
+    if (sessionsListeners) {
+      for (const fn of [...sessionsListeners]) {
+        try {
+          fn();
+        } catch {
+          // 忽略
+        }
+      }
+    }
+  });
+  es.addEventListener("error", () => {
+    // EventSource 进入 CONNECTING 态自动重连，readyState===0 即重连中。
+    // 通知订阅者显示"重连中"提示；真正恢复由 open 事件处理。
+    if (es && es.readyState === EventSource.CONNECTING) {
+      notifyBusHealth("reconnecting");
+    } else if (es && es.readyState === EventSource.CLOSED) {
+      // CLOSED 不会自动恢复（理论上不该发生，maybeClose 之外没人 close）。
+      // 兜底：清掉 es 以便下次 ensureChannel 重建。
+      es = null;
+      notifyBusHealth("reconnecting");
+    }
+  });
   es.addEventListener("sessions_changed", () => {
     if (!sessionsListeners) return;
     // 复制一份再遍历：回调里可能 unsubscribe 改动集合
@@ -110,6 +159,7 @@ function maybeClose(): void {
   if (!hasSubscribers() && es) {
     es.close();
     es = null;
+    busHealth = "connected"; // 下次建立即视为正常
   }
 }
 
@@ -172,6 +222,27 @@ export function subscribeSessionEnded(fn: LifecycleListener): () => void {
   ensureChannel();
   return () => {
     lifecycleEndedListeners?.delete(fn);
+    maybeClose();
+  };
+}
+
+/**
+ * 订阅全局总线的连接健康状态。返回取消订阅函数。
+ * 订阅瞬间立即回调一次当前状态（connected / reconnecting），
+ * 便于订阅者初始化 UI。状态仅在实际变化时再次回调。
+ */
+export function subscribeBusHealth(fn: BusHealthListener): () => void {
+  if (!busHealthListeners) busHealthListeners = new Set();
+  busHealthListeners.add(fn);
+  ensureChannel();
+  // 立即回放当前状态
+  try {
+    fn(busHealth);
+  } catch {
+    // 忽略
+  }
+  return () => {
+    busHealthListeners?.delete(fn);
     maybeClose();
   };
 }
