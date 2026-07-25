@@ -596,18 +596,29 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         ...(body.title ? { title: body.title } : {}),
       });
 
-      // 继承源会话的 profile/权限/思考级别，避免 fork 出来掉回默认值
-      upsertSession({
-        sessionId: newId,
-        cwd: rec.cwd,
-        profileId: rec.profileId,
-        permissionMode: rec.permissionMode,
-        effortLevel: rec.effortLevel,
-        createdAt: Date.now(),
-        lastModified: Date.now(),
-        inputTokens: 0,
-        outputTokens: 0,
-      });
+      // 继承源会话的 profile/权限/思考级别，避免 fork 出来掉回默认值。
+      // 必须 await：emitSessionsChanged 和前端跳转都依赖 sessions.json 已落盘，
+      // 否则前端 GET /api/sessions/:newId 会 404（竞态）。
+      try {
+        await upsertSession({
+          sessionId: newId,
+          cwd: rec.cwd,
+          profileId: rec.profileId,
+          permissionMode: rec.permissionMode,
+          effortLevel: rec.effortLevel,
+          createdAt: Date.now(),
+          lastModified: Date.now(),
+          inputTokens: 0,
+          outputTokens: 0,
+        });
+      } catch (err) {
+        // 记录写入失败不应让整个 fork 失败（transcript 已生成），
+        // 但必须按 AGENTS.md 纪律打印 err.message，不能静默吞掉。
+        console.warn(
+          `[fork] upsertSession failed for ${newId} (source ${sourceId}):`,
+          err instanceof Error ? err.message : err,
+        );
+      }
 
       emitSessionsChanged(); // 侧栏跨标签页即时刷新
       return reply.send({ sessionId: newId });

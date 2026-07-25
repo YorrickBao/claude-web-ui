@@ -328,9 +328,8 @@ export function useChatSSE({
         // 供"从此处分叉"使用（forkSession 的 upToMessageId）。历史回放时
         // replay 已在 ReplayMessage 上带 assistantUuid，无需这里处理。
         if (evt.lastAssistantUuid) {
-          setMessages((prev) =>
-            stampAssistantUuid(prev, evt.lastAssistantUuid!),
-          );
+          const uuid = evt.lastAssistantUuid;
+          setMessages((prev) => stampAssistantUuid(prev, uuid));
         }
         setMessages((prev) => completeLast(prev));
         break;
