@@ -12,6 +12,14 @@ export type ReplayPart = AssistantPart;
 export interface ReplayMessage {
   role: "user" | "assistant";
   content: ReplayPart[];
+  /**
+   * assistant 消息专用：把最终答案的 transcript uuid 放进 metadata.custom，
+   * 这样经 assistant-ui 的 fromThreadMessageLike 转换后仍被保留
+   * （它只保留 role/id/createdAt/content/status/metadata 等已知字段，
+   * 顶层的自定义字段会被丢弃，但 metadata.custom 会透传）。
+   * 前端"从此处分叉"用它作为 forkSession 的 upToMessageId。
+   */
+  metadata?: { custom: { assistantUuid?: string } };
 }
 
 /**
@@ -87,6 +95,9 @@ export async function replaySession(
       // 合并进同一条前端消息，避免把一个回合碎成几十条消息。
       const last = out[out.length - 1];
       let msgIdx: number;
+      // 记录本条 SDK assistant 消息的 transcript uuid（来自 SessionMessage.uuid），
+      // 供前端"从此处分叉"作为 upToMessageId 使用。
+      const sdkUuid = typeof m.uuid === "string" ? m.uuid : undefined;
       if (last && last.role === "assistant") {
         // 追加到已有 assistant 消息
         msgIdx = out.length - 1;
@@ -97,10 +108,18 @@ export async function replaySession(
             pendingTools.set(p.toolCallId, { msgIdx, partIdx: baseLen + i });
           }
         });
+        // 覆盖：最终落点是该回合最后一条 assistant 消息（含文本答案）的 uuid
+        if (sdkUuid) {
+          last.metadata = { custom: { assistantUuid: sdkUuid } };
+        }
       } else {
         // 开新的 assistant 消息
         msgIdx = out.length;
-        out.push({ role: "assistant", content: [...parts] });
+        out.push({
+          role: "assistant",
+          content: [...parts],
+          ...(sdkUuid ? { metadata: { custom: { assistantUuid: sdkUuid } } } : {}),
+        });
         parts.forEach((p, partIdx) => {
           if (p.type === "tool-call") {
             pendingTools.set(p.toolCallId, { msgIdx, partIdx });

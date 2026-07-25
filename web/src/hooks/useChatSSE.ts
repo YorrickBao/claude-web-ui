@@ -324,6 +324,14 @@ export function useChatSSE({
           outputTokens: evt.outputTokens,
           durationMs: evt.durationMs,
         });
+        // 把本回合最终答案的 assistant uuid 盖到最后一条 assistant 消息上，
+        // 供"从此处分叉"使用（forkSession 的 upToMessageId）。历史回放时
+        // replay 已在 ReplayMessage 上带 assistantUuid，无需这里处理。
+        if (evt.lastAssistantUuid) {
+          setMessages((prev) =>
+            stampAssistantUuid(prev, evt.lastAssistantUuid!),
+          );
+        }
         setMessages((prev) => completeLast(prev));
         break;
       case "waiting_for_user":
@@ -658,6 +666,32 @@ function completeLast(msgs: ChatMessage[]): ChatMessage[] {
     ...msgs.slice(0, lastIdx),
     { ...last, status: { type: "complete", reason: "stop" } },
   ];
+}
+
+/** 把本回合最终答案的 transcript uuid 盖到最后一条 assistant 消息的
+ *  metadata.custom.assistantUuid 上（assistant-ui 的 fromThreadMessageLike
+ *  只保留 metadata.custom 等已知字段，顶层自定义字段会被丢弃）。 */
+function stampAssistantUuid(
+  msgs: ChatMessage[],
+  assistantUuid: string,
+): ChatMessage[] {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== "assistant") continue;
+    const last = msgs[i];
+    const meta =
+      (last as { metadata?: { custom?: Record<string, unknown> } }).metadata ??
+      {};
+    const custom = meta.custom ?? {};
+    return [
+      ...msgs.slice(0, i),
+      {
+        ...last,
+        metadata: { ...meta, custom: { ...custom, assistantUuid } },
+      } as ChatMessage,
+      ...msgs.slice(i + 1),
+    ];
+  }
+  return msgs;
 }
 
 /** 把最后一条 assistant 消息标记为错误（incomplete + error，保留已有 content） */

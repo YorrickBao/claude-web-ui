@@ -141,6 +141,9 @@ export async function* runQuery(params) {
             },
         },
     });
+    // 本回合最后一条主线程 assistant 消息的 transcript uuid（含文本答案的那条）。
+    // done 时带给前端，前端盖到最后一条 assistant 消息上作为 forkSession 的 upToMessageId。
+    let lastAssistantUuid;
     for await (const msg of stream) {
         switch (msg.type) {
             case "system": {
@@ -208,6 +211,11 @@ export async function* runQuery(params) {
                 const content = msg.message.content;
                 if (!Array.isArray(content))
                     break;
+                // 记录本回合最后一条主线程 assistant 消息的 uuid（覆盖式），
+                // 忽略子代理消息（parent_tool_use_id 非空）。
+                if (!msg.parent_tool_use_id && typeof msg.uuid === "string") {
+                    lastAssistantUuid = msg.uuid;
+                }
                 for (const block of content) {
                     const b = block;
                     // 只发 tool_use（保证参数完整），text/thinking 流式已发过
@@ -263,6 +271,7 @@ export async function* runQuery(params) {
                         inputTokens: s.usage?.input_tokens ?? 0,
                         outputTokens: s.usage?.output_tokens ?? 0,
                         durationMs: msg.duration_ms,
+                        ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
                     };
                 }
                 else {
@@ -272,6 +281,7 @@ export async function* runQuery(params) {
                         inputTokens: e.usage?.input_tokens ?? 0,
                         outputTokens: e.usage?.output_tokens ?? 0,
                         durationMs: msg.duration_ms,
+                        ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
                     };
                     yield {
                         type: "error",

@@ -18,6 +18,8 @@ export type SSEEvent =
       inputTokens: number;
       outputTokens: number;
       durationMs: number;
+      /** 本回合最终答案的 assistant message uuid，用作 forkSession 的 upToMessageId */
+      lastAssistantUuid?: string;
     }
   | { type: "waiting_for_user" }
   | { type: "history"; messages: unknown[] }

@@ -250,6 +250,21 @@ export function ChatView({
     }
   }
 
+  // 从某条 assistant 答处分叉：用该消息的 transcript uuid 作为 upToMessageId，
+  // forkSession 会切到该消息为止的历史。运行中禁用（避免拷到半截状态）。
+  async function handleForkFromMessage(upToMessageId: string) {
+    if (!activeSessionId || isRunning) return;
+    try {
+      const { sessionId: newId } = await forkSessionApi(activeSessionId, {
+        upToMessageId,
+      });
+      window.dispatchEvent(new CustomEvent("session-list-changed"));
+      navigate(`/c/${newId}`);
+    } catch (err) {
+      toast.error(`分叉失败：${(err as Error).message}`);
+    }
+  }
+
   // 切换 profile：调后端绑定接口，成功后刷新本地
   async function handleChangeProfile(newId: string | null) {
     if (!activeSessionId) {
@@ -332,6 +347,7 @@ export function ChatView({
             onProfileChange={handleChangeProfile}
             onPermissionModeChange={handleChangePermissionMode}
             onEffortLevelChange={handleChangeEffortLevel}
+            onForkFromMessage={handleForkFromMessage}
           />
         </AssistantRuntimeProvider>
       </div>

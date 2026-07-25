@@ -98,6 +98,9 @@ export type SSEEvent =
       outputTokens: number;
       /** 本轮耗时（ms） */
       durationMs: number;
+      /** 本回合最终答案的 assistant message uuid（transcript uuid），
+       *  前端盖到最后一条 assistant 消息上，作为 forkSession 的 upToMessageId */
+      lastAssistantUuid?: string;
     }
   | { type: "waiting_for_user" }
   /** GET /stream 订阅时，先发历史消息再转发现场事件 */

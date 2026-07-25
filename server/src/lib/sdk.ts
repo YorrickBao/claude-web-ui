@@ -192,6 +192,10 @@ export async function* runQuery(
     },
   });
 
+  // 本回合最后一条主线程 assistant 消息的 transcript uuid（含文本答案的那条）。
+  // done 时带给前端，前端盖到最后一条 assistant 消息上作为 forkSession 的 upToMessageId。
+  let lastAssistantUuid: string | undefined;
+
   for await (const msg of stream as AsyncIterable<SDKMessage>) {
     switch (msg.type) {
       case "system": {
@@ -270,6 +274,11 @@ export async function* runQuery(
         // delta 发出，这里不重复发，避免重复。
         const content = (msg.message as { content?: unknown[] }).content;
         if (!Array.isArray(content)) break;
+        // 记录本回合最后一条主线程 assistant 消息的 uuid（覆盖式），
+        // 忽略子代理消息（parent_tool_use_id 非空）。
+        if (!msg.parent_tool_use_id && typeof (msg as { uuid?: string }).uuid === "string") {
+          lastAssistantUuid = (msg as { uuid: string }).uuid;
+        }
         for (const block of content) {
           const b = block as {
             type: string;
@@ -346,6 +355,7 @@ export async function* runQuery(
             inputTokens: s.usage?.input_tokens ?? 0,
             outputTokens: s.usage?.output_tokens ?? 0,
             durationMs: msg.duration_ms,
+            ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
           };
         } else {
           const e = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultError;
@@ -354,6 +364,7 @@ export async function* runQuery(
             inputTokens: e.usage?.input_tokens ?? 0,
             outputTokens: e.usage?.output_tokens ?? 0,
             durationMs: msg.duration_ms,
+            ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
           };
           yield {
             type: "error",

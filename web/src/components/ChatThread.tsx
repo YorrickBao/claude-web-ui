@@ -7,7 +7,7 @@ import {
   useMessage,
   useComposerRuntime,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,19 @@ import {
  * assistant-ui Primitive 搭 Tailwind 的 Thread。
  * 使用 shadcn/ui (Base UI) Button。
  */
+
+/**
+ * 模块级"从此处分叉"回调槽。
+ *
+ * assistant-ui 的 <ThreadPrimitive.Messages components={{AssistantMessage}}>
+ * 不支持给 message 组件透传自定义 props，但 AssistantMessage 是本模块
+ * 顶层函数。ChatView 渲染 ChatThread 时把回调塞进这个 ref，
+ * AssistantActionBar 读它（并从 metadata.custom.assistantUuid 取本条消息
+ * 的 transcript uuid）来触发 forkSession。
+ */
+const forkFromMessageRef: { current: ((upToMessageId: string) => void) | null } = {
+  current: null,
+};
 interface ChatThreadProps {
   /** 当前会话的工作目录，用于获取项目特定的斜杠命令 */
   cwd: string | null;
@@ -47,6 +60,8 @@ interface ChatThreadProps {
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
+  /** "从此处分叉"回调：把本条 assistant 消息的 transcript uuid 作为 upToMessageId */
+  onForkFromMessage?: (upToMessageId: string) => void;
 }
 
 export function ChatThread({
@@ -59,9 +74,20 @@ export function ChatThread({
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
+  onForkFromMessage,
 }: ChatThreadProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 把"从此处分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
+  // 用 effect 而非 render 期赋值，避免在渲染中途改动可变 ref。
+  // 会话运行中（isRunning）时清空槽，让按钮隐藏——避免拷到正在写的半截状态。
+  useEffect(() => {
+    forkFromMessageRef.current = onForkFromMessage && !isRunning ? onForkFromMessage : null;
+    return () => {
+      forkFromMessageRef.current = null;
+    };
+  }, [onForkFromMessage, isRunning]);
 
   useEffect(() => {
     listProfiles()
@@ -540,7 +566,35 @@ function AssistantActionBar() {
     <>
       <AssistantErrorIfAny />
       <CopyButton />
+      <ForkFromHereButton />
     </>
+  );
+}
+
+/**
+ * "从此处分叉"按钮：仅当本条 assistant 消息带 metadata.custom.assistantUuid
+ * （即本回合已结束、有最终答案）且外部注入了 forkFromMessageRef 回调时渲染。
+ * 与复制按钮共享同一组 hover/absolute 定位样式，靠右排布。
+ */
+function ForkFromHereButton() {
+  const assistantUuid = useMessage(
+    (s) =>
+      (s as { metadata?: { custom?: { assistantUuid?: string } } })
+        .metadata?.custom?.assistantUuid,
+  );
+  const handle = forkFromMessageRef.current;
+  // 无 uuid 或未注入回调时不渲染
+  if (!assistantUuid || !handle) return null;
+
+  return (
+    <button
+      type="button"
+      title="从此处分叉：复制到该回答为止的历史，原会话不变"
+      onClick={() => handle(assistantUuid)}
+      className="absolute -bottom-2.5 left-12 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100"
+    >
+      <GitFork className="size-3" /> 从此处分叉
+    </button>
   );
 }
 
