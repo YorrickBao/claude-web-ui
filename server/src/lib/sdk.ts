@@ -243,8 +243,10 @@ export async function* runQuery(
           };
           if (s.status === "compacting") {
             yield { type: "status", kind: "compacting", message: "上下文压缩中…" };
-          } else if (s.status === null) {
-            // 回到空闲：清除压缩/重试等瞬态提示
+          } else if (s.status === null || s.status === "requesting") {
+            // 回到空闲或转入请求：清除压缩/重试等瞬态提示。
+            // requesting 语义上已离开压缩态，归入清除更稳妥（防 SDK 某些
+            // 路径不发 null 直接发 requesting 时徽章卡住）。done 也兜底清。
             if (s.compact_result === "failed" && s.compact_error) {
               yield { type: "status", kind: "idle", message: "" };
               // 压缩失败也作为 error 显式提示，避免无声失败
