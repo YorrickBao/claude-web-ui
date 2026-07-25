@@ -103,6 +103,16 @@ export type SSEEvent =
       lastAssistantUuid?: string;
     }
   | { type: "waiting_for_user" }
+  /**
+   * 进行中的瞬态状态（压缩 / API 重试 / 限流提示）。
+   * 非关键，仅用于前端展示"为何在等"。kind: "idle" 为清除信号。
+   */
+  | {
+      type: "status";
+      kind: "compacting" | "api_retry" | "rate_limit" | "idle";
+      message: string;
+      detail?: { attempt?: number; maxRetries?: number };
+    }
   /** GET /stream 订阅时，先发历史消息再转发现场事件 */
   | { type: "history"; messages: unknown[] }
   /** 工具权限请求：agent 想执行某个操作，需要用户审批 */

@@ -85,6 +85,9 @@ export function useChatSSE({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 进行中的瞬态状态（压缩 / API 重试 / 限流），Header 用脉冲徽章展示。
+   *  null = 无状态。done/error 时清除。 */
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [stats, setStats] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -148,6 +151,7 @@ export function useChatSSE({
     setMessages(history);
     setStats(null);
     setError(null);
+    setStatusMessage(null);
   }, []);
 
   /**
@@ -315,8 +319,12 @@ export function useChatSSE({
         // 用户主动中止后的所有 error 事件都不显示
         if (stoppedByUserRef.current) break;
         setError(evt.message);
+        setStatusMessage(null); // 出错：清掉瞬态提示，error 自己会显示
         // 正式化错误状态：把最后一条 assistant 标为 error，而非文本拼接
         setMessages((prev) => errorLast(prev, evt.message));
+        break;
+      case "status":
+        setStatusMessage(evt.kind === "idle" ? null : evt.message);
         break;
       case "done":
         setStats({
@@ -324,6 +332,7 @@ export function useChatSSE({
           outputTokens: evt.outputTokens,
           durationMs: evt.durationMs,
         });
+        setStatusMessage(null); // 终结：清掉压缩/重试等瞬态提示
         // 把本回合最终答案的 assistant uuid 盖到最后一条 assistant 消息上，
         // 供"从此处分叉"使用（forkSession 的 upToMessageId）。历史回放时
         // replay 已在 ReplayMessage 上带 assistantUuid，无需这里处理。
@@ -425,6 +434,7 @@ export function useChatSSE({
       setError(null);
       stoppedByUserRef.current = false;
       setStats(null);
+      setStatusMessage(null);
       setIsRunning(true);
       // 通知侧栏：当前会话进入 inflight 状态
       window.dispatchEvent(new CustomEvent("session-list-changed"));
@@ -523,6 +533,7 @@ export function useChatSSE({
     messages,
     isRunning,
     error,
+    statusMessage,
     stats,
     stop,
     loadHistory,

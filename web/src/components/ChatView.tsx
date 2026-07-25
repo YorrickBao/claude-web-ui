@@ -130,7 +130,7 @@ export function ChatView({
     [],
   );
 
-  const { runtime, error, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
+  const { runtime, error, statusMessage, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
       cwd,
@@ -316,6 +316,7 @@ export function ChatView({
         initialInputTokens={initialInputTokens}
         initialOutputTokens={initialOutputTokens}
         error={error}
+        statusMessage={statusMessage}
         isRunning={isRunning}
         onFork={handleFork}
       />
@@ -363,6 +364,7 @@ function Header({
   initialInputTokens,
   initialOutputTokens,
   error,
+  statusMessage,
   isRunning,
   onFork,
 }: {
@@ -373,6 +375,7 @@ function Header({
   initialInputTokens?: number;
   initialOutputTokens?: number;
   error: string | null;
+  statusMessage: string | null;
   isRunning: boolean;
   onFork: () => void;
 }) {
@@ -505,6 +508,11 @@ function Header({
         )}
         <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
+          {statusMessage && (
+            <Badge variant="secondary" className="h-4 animate-pulse text-[10px]">
+              {statusMessage}
+            </Badge>
+          )}
           {stats && (
             <>
               <Badge variant="secondary" className="text-[10px] h-4">

@@ -4,6 +4,31 @@ import { createPendingPermission } from "./inflight.js";
 import { emitSessionEvent } from "./eventBus.js";
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
 export { listSessions, listSubagents, getSessionInfo, renameSession, forkSession };
+/**
+ * SDK TerminalReason → 中文可读原因。
+ * 用于 result.error 分支：优先用 errors[] 真实文本，其次用此映射，兜底 subtype。
+ */
+const TERMINAL_REASON_LABEL = {
+    max_turns: "达到最大轮次上限",
+    budget_exhausted: "预算耗尽",
+    prompt_too_long: "输入过长",
+    model_error: "模型错误",
+    api_error: "API 错误",
+    aborted_streaming: "流式中止",
+    aborted_tools: "工具调用中止",
+    stop_hook_prevented: "被 Stop 钩子阻止",
+    hook_stopped: "被钩子停止",
+    tool_deferred: "工具调用被推迟",
+    tool_deferred_unavailable: "工具推迟不可用",
+    turn_setup_failed: "回合初始化失败",
+    malformed_tool_use_exhausted: "工具调用格式错误次数耗尽",
+    structured_output_retry_exhausted: "结构化输出重试耗尽",
+    blocking_limit: "触发限流",
+    rapid_refill_breaker: "限流保护（请求过快）",
+    image_error: "图片处理错误",
+    background_requested: "转入后台",
+    completed: "已完成",
+};
 // PermissionRequest hook 的回调返回类型与泛型 HookJSONOutput 不兼容
 // （SDK 类型系统尚未完全统一），单独构建此 hook 的闭包后用 any 注入
 function buildPermissionRequestHook(sessionIdRef) {
@@ -158,6 +183,34 @@ export async function* runQuery(params) {
                         yield { type: "waiting_for_user" };
                     }
                 }
+                else if (msg.subtype === "status") {
+                    // 压缩状态：compacting 时提示，status 回 null 时清除（无论是否带 compact_result）
+                    const s = msg;
+                    if (s.status === "compacting") {
+                        yield { type: "status", kind: "compacting", message: "上下文压缩中…" };
+                    }
+                    else if (s.status === null) {
+                        // 回到空闲：清除压缩/重试等瞬态提示
+                        if (s.compact_result === "failed" && s.compact_error) {
+                            yield { type: "status", kind: "idle", message: "" };
+                            // 压缩失败也作为 error 显式提示，避免无声失败
+                            yield { type: "error", message: `上下文压缩失败：${s.compact_error}` };
+                        }
+                        else {
+                            yield { type: "status", kind: "idle", message: "" };
+                        }
+                    }
+                }
+                else if (msg.subtype === "api_retry") {
+                    // API 请求失败自动重试（带退避）
+                    const r = msg;
+                    yield {
+                        type: "status",
+                        kind: "api_retry",
+                        message: `请求失败（HTTP ${r.error_status ?? "?"}），重试中…`,
+                        detail: { attempt: r.attempt, maxRetries: r.max_retries },
+                    };
+                }
                 break;
             }
             // Plan mode 退出：session 重置，准备进入执行阶段
@@ -174,6 +227,29 @@ export async function* runQuery(params) {
                     };
                     planTextBuffer = "";
                     planToolsBuffer = "";
+                }
+                break;
+            }
+            case "rate_limit_event": {
+                // claude.ai 订阅用户的限流信号。仅在 rejected / warning 时提示，
+                // allowed 不打扰。
+                const info = msg.rate_limit_info;
+                if (info?.status === "rejected") {
+                    const when = info.resetsAt
+                        ? `，预计 ${new Date(info.resetsAt).toLocaleTimeString("zh-CN")} 恢复`
+                        : "";
+                    yield {
+                        type: "status",
+                        kind: "rate_limit",
+                        message: `已达使用上限，请稍后再试${when}`,
+                    };
+                }
+                else if (info?.status === "allowed_warning") {
+                    yield {
+                        type: "status",
+                        kind: "rate_limit",
+                        message: "接近使用上限",
+                    };
                 }
                 break;
             }
@@ -283,10 +359,12 @@ export async function* runQuery(params) {
                         durationMs: msg.duration_ms,
                         ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
                     };
-                    yield {
-                        type: "error",
-                        message: `会话结束（${msg.subtype}）`,
-                    };
+                    // 丰富化错误原因：优先 errors[] 真实文本，其次 terminal_reason 中文映射，
+                    // 兜底 subtype。让用户看到"为何结束"而非裸枚举。
+                    const reason = (Array.isArray(e.errors) && e.errors[0]) ||
+                        TERMINAL_REASON_LABEL[e.terminal_reason ?? ""] ||
+                        `会话结束（${msg.subtype}）`;
+                    yield { type: "error", message: reason };
                 }
                 break;
             }
