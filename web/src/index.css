@@ -144,6 +144,9 @@ a, button, input, select, textarea, [role="button"] {
   height: 1.05em;
   margin-left: 1px;
   vertical-align: text-bottom;
+  /* text-bottom 把底钉在 descender 底，向上 1.05em 后中点会比文字墨迹
+     中线偏低约 0.07em；这里整体上移抵消，让光标与文字水平中线对齐。 */
+  transform: translateY(-0.07em);
   background: currentColor;
   opacity: 0.7;
   border-radius: 1px;

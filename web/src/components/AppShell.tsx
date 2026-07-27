@@ -300,6 +300,7 @@ type Meta = {
   inputTokens: number;
   outputTokens: number;
   lastDurationMs: number;
+  currentTurnStartedAt: number;
 };
 
 /**
@@ -378,6 +379,7 @@ function ChatViewWithMeta({
           inputTokens: data.inputTokens ?? 0,
           outputTokens: data.outputTokens ?? 0,
           lastDurationMs: data.lastDurationMs ?? 0,
+          currentTurnStartedAt: data.currentTurnStartedAt ?? 0,
         });
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
@@ -413,6 +415,7 @@ function ChatViewWithMeta({
                 inputTokens: data.inputTokens ?? prev.inputTokens,
                 outputTokens: data.outputTokens ?? prev.outputTokens,
                 lastDurationMs: data.lastDurationMs ?? prev.lastDurationMs,
+                currentTurnStartedAt: data.currentTurnStartedAt ?? prev.currentTurnStartedAt,
               }
             : prev,
         );
@@ -492,6 +495,7 @@ function ChatViewWithMeta({
       initialInputTokens={meta.inputTokens}
       initialOutputTokens={meta.outputTokens}
       initialDurationMs={meta.lastDurationMs}
+      initialCurrentTurnStartedAt={meta.currentTurnStartedAt}
     />
   );
 }

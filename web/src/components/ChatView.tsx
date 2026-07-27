@@ -31,6 +31,8 @@ export interface ChatViewProps {
   initialOutputTokens?: number;
   /** 最近一轮耗时 ms（用于首次渲染；后续由 SSE done 事件更新） */
   initialDurationMs?: number;
+  /** 当前进行中轮次的开始时刻（ms）；刷新后续流时用来恢复计时，不从 0 重来 */
+  initialCurrentTurnStartedAt?: number;
 }
 
 export function ChatView({
@@ -46,6 +48,7 @@ export function ChatView({
   initialInputTokens,
   initialOutputTokens,
   initialDurationMs,
+  initialCurrentTurnStartedAt,
 }: ChatViewProps) {
   const navigate = useNavigate();
   // 待处理的权限请求和计划审批
@@ -325,6 +328,7 @@ export function ChatView({
         initialInputTokens={initialInputTokens}
         initialOutputTokens={initialOutputTokens}
         initialDurationMs={initialDurationMs}
+        initialCurrentTurnStartedAt={initialCurrentTurnStartedAt}
         error={error}
         statusMessage={statusMessage}
         isRunning={isRunning}
@@ -374,6 +378,7 @@ function Header({
   initialInputTokens,
   initialOutputTokens,
   initialDurationMs,
+  initialCurrentTurnStartedAt,
   error,
   statusMessage,
   isRunning,
@@ -386,6 +391,7 @@ function Header({
   initialInputTokens?: number;
   initialOutputTokens?: number;
   initialDurationMs?: number;
+  initialCurrentTurnStartedAt?: number;
   error: string | null;
   statusMessage: string | null;
   isRunning: boolean;
@@ -450,16 +456,24 @@ function Header({
   const canFork = sessionId !== null && !isRunning;
 
   // 运行中走字计时器：isRunning 期间每 100ms 更新，填补 done 之前的空窗。
-  // 本地计时含网络开销，done 后切换到 stats.durationMs（SDK 纯模型时间），
-  // 两者会有 <1s 偏差——本地是"感知时间"，SDK 值是"测量时间"。
+  // 起点优先用后端的 currentTurnStartedAt（刷新后能接着走，不丢已流逝时间），
+  // 没有则退回本地 Date.now()（本地第一轮发消息）。
+  // 后端起点用 ref 收纳、不进 effect 依赖：它是"轮次起点"（生命周期信号），
+  // sessions_changed 在权限往返时会刷新 meta，若进依赖会反复重建 interval 丢精度。
+  // effect 只在 isRunning 翻转时建/拆，符合"一轮一个计时器"的语义。
+  const startedAtRef = useRef(initialCurrentTurnStartedAt ?? 0);
+  startedAtRef.current = initialCurrentTurnStartedAt ?? 0;
   const [runningElapsed, setRunningElapsed] = useState(0);
   useEffect(() => {
     if (!isRunning) {
       setRunningElapsed(0);
       return;
     }
-    const start = Date.now();
-    setRunningElapsed(0);
+    // 后端起点优先；relay 远程访问时浏览器与服务器时钟可能不一致，
+    // 用 Math.min 兜底——后端起点晚于本地现在时退回本地时刻，避免算出负数。
+    const now = Date.now();
+    const start = Math.min(startedAtRef.current > 0 ? startedAtRef.current : now, now);
+    setRunningElapsed(now - start);
     const id = setInterval(() => {
       setRunningElapsed(Date.now() - start);
     }, 100);

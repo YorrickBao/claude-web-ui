@@ -94,6 +94,8 @@ export interface SessionView {
   outputTokens: number;
   /** 最近一轮的耗时（ms） */
   lastDurationMs: number;
+  /** 当前进行中轮次的开始时刻（ms）；0 表示无进行中轮次 */
+  currentTurnStartedAt: number;
 }
 
 /** 一套环境变量配置 */

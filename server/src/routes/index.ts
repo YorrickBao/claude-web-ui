@@ -25,6 +25,7 @@ import {
   clearInflight,
   getInflight,
   getInflightStatus,
+  getInflightStartedAt,
   takePendingPermission,
   getPendingPermissions,
   rememberClientSession,
@@ -89,6 +90,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
         lastDurationMs: r.lastDurationMs ?? 0,
+        currentTurnStartedAt: getInflightStartedAt(r.sessionId) ?? 0,
       };
     });
     return reply.send({ sessions: views });
@@ -211,6 +213,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
         lastDurationMs: rec.lastDurationMs ?? 0,
+        currentTurnStartedAt: getInflightStartedAt(rec.sessionId) ?? 0,
         messages: history,
       });
     },

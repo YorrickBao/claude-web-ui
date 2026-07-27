@@ -14,6 +14,8 @@ export type InflightStatus = "running" | "waiting";
 interface InflightEntry {
   ctrl: AbortController;
   status: InflightStatus;
+  /** 本轮 query 开始时刻（ms）。供前端刷新后续流时恢复计时，不从 0 重来 */
+  startedAt: number;
 }
 
 const inflight = new Map<string, InflightEntry>();
@@ -26,7 +28,7 @@ export function setInflight(sessionId: string, ctrl: AbortController): boolean {
   // 如果之前有挂着的，先 abort（理论上不应该）
   const old = inflight.get(sessionId);
   if (old && !old.ctrl.signal.aborted) old.ctrl.abort();
-  inflight.set(sessionId, { ctrl, status: "running" });
+  inflight.set(sessionId, { ctrl, status: "running", startedAt: Date.now() });
   return !old;
 }
 
@@ -75,6 +77,11 @@ export function getInflight(sessionId: string): AbortController | undefined {
 
 export function getInflightStatus(sessionId: string): InflightStatus | undefined {
   return inflight.get(sessionId)?.status;
+}
+
+/** 取本轮 query 的开始时刻；非 inflight 返回 undefined。供 meta 端点回传。 */
+export function getInflightStartedAt(sessionId: string): number | undefined {
+  return inflight.get(sessionId)?.startedAt;
 }
 
 // ─────────────────────────────────────────────────────────────
