@@ -61,6 +61,24 @@ export function onRelayStatus(listener) {
         bus.off("relay", listener);
     };
 }
+// ─────────────────────────────────────────────────────────────
+// 远程设备列表变更（全局频道）
+// 设备上下线由 GET /api/events/stream 连接生命周期驱动，低频，走全局总线。
+// ─────────────────────────────────────────────────────────────
+/** 广播远程设备列表变更（设备上线/下线/清空） */
+export function emitDeviceChanged(devices) {
+    bus.emit("device_changed", devices);
+}
+/**
+ * 订阅远程设备列表变更。
+ * @returns 取消订阅的函数
+ */
+export function onDeviceChanged(listener) {
+    bus.on("device_changed", listener);
+    return () => {
+        bus.off("device_changed", listener);
+    };
+}
 /**
  * 广播会话列表/状态变更通知（全局频道）。
  * 只发信号不带数据：前端收到后自行 GET /api/sessions 拉最新列表。

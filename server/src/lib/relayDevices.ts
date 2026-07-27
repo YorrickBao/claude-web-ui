@@ -1,13 +1,19 @@
 /**
  * 远程设备追踪（Relay Devices）
  *
- * 远程浏览器经 relay 转发到本地的请求带有 X-CWU-Via: relay 标识头，
- * 本模块据此解析 User-Agent / 真实 IP，维护一张「活跃设备」表，
- * 供本地 WebUI 的「远程控制」面板展示已接入设备。
+ * 设备在线状态绑定在 GET /api/events/stream 这条 SSE 长连接的生命周期上：
+ *   - 远程浏览器建立 SSE 连接 → recordDevice（设备上线）
+ *   - SSE 连接关闭 → removeDevice（设备下线，带宽限期）
  *
- * 纯内存，不持久化：设备重新活动即恢复记录，重启不影响。
- * 按设备去重：UA + IP 相同视为同一设备，刷新 lastSeen 不新增。
+ * 这是"边缘触发"语义：同一设备开多个 tab，关任意一个即视为下线，
+ * 直到下一个请求到来重新上线。配合 REMOVE_GRACE_MS 宽限期过滤
+ * EventSource 断线重连抖动（单 tab 短暂断网不会假下线）。
+ *
+ * 不再使用 24h TTL + 请求推断：那条路无法得到 close 事件，设备永不消失。
+ * 纯内存，不持久化。
  */
+
+import { emitDeviceChanged } from "./eventBus.js";
 
 /** 单个接入设备记录 */
 export interface DeviceEntry {
@@ -30,17 +36,27 @@ export interface DeviceEntry {
 // 内存设备表：id → entry
 const devices = new Map<string, DeviceEntry>();
 
-// 空闲多久后移除设备（1 天）。远程控制是低频长尾场景，10 分钟过短（切个应用回来就空了）；
-// 1 天符合「今天用过的设备」心智模型。去重基于 UA+IP，移动网络切换会让同一设备累积多条，可接受。
-const IDLE_TTL_MS = 24 * 60 * 60 * 1000;
+// 下线宽限期：removeDevice 不立即删除，而是延后 N ms。
+// 若期间 recordDevice 再次命中同一 id（EventSource 重连），取消删除。
+// 用于过滤单 tab 断网→重连的抖动，避免假下线闪烁。
+const REMOVE_GRACE_MS = 1500;
+const pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
- * 记录一次远程请求对应的设备。
- * 按 UA + IP 去重：命中则刷新 lastSeen，未命中则新增。
+ * 记录一次远程设备活动（SSE 连接建立时调用）。
+ * 按 UA + IP 去重：命中则刷新 lastSeen 并取消待删除；未命中则新增。
  */
 export function recordDevice(ua: string, ip: string): void {
   const id = deviceId(ua, ip);
   const now = Date.now();
+
+  // 取消可能存在的下线宽限定时器（重连抖动过滤）
+  const pending = pendingRemovals.get(id);
+  if (pending) {
+    clearTimeout(pending);
+    pendingRemovals.delete(id);
+  }
+
   const existing = devices.get(id);
   if (existing) {
     existing.lastSeen = now;
@@ -48,26 +64,43 @@ export function recordDevice(ua: string, ip: string): void {
   }
   const { browser, deviceType, os } = parseUA(ua);
   devices.set(id, { id, browser, deviceType, os, ip, firstSeen: now, lastSeen: now });
+  emitDeviceChanged(getDevices());
 }
 
-/** 返回当前活跃设备列表（已剔除过期），按最近活跃倒序 */
-export function getDevices(): DeviceEntry[] {
-  const now = Date.now();
-  const list: DeviceEntry[] = [];
-  for (const [id, d] of devices) {
-    if (now - d.lastSeen > IDLE_TTL_MS) {
-      devices.delete(id);
-      continue;
+/**
+ * 标记设备下线（SSE 连接关闭时调用）。
+ * 不立即删除：延迟 REMOVE_GRACE_MS，期间若有新活动（recordDevice）则取消。
+ */
+export function removeDevice(ua: string, ip: string): void {
+  const id = deviceId(ua, ip);
+  if (!devices.has(id)) return;
+  if (pendingRemovals.has(id)) return; // 已在待删除队列
+  const timer = setTimeout(() => {
+    pendingRemovals.delete(id);
+    if (devices.delete(id)) {
+      emitDeviceChanged(getDevices());
     }
-    list.push(d);
-  }
+  }, REMOVE_GRACE_MS);
+  pendingRemovals.set(id, timer);
+}
+
+/** 返回当前在线设备列表，按最近活跃倒序 */
+export function getDevices(): DeviceEntry[] {
+  const list = [...devices.values()];
   list.sort((a, b) => b.lastSeen - a.lastSeen);
   return list;
 }
 
 /** 清空所有设备记录（隧道断开时调用，与 token 会话绑定一致） */
 export function clearDevices(): void {
+  // 取消所有待删除定时器
+  for (const timer of pendingRemovals.values()) {
+    clearTimeout(timer);
+  }
+  pendingRemovals.clear();
+  if (devices.size === 0) return;
   devices.clear();
+  emitDeviceChanged(getDevices());
 }
 
 // ── 工具函数 ──

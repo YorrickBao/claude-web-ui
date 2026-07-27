@@ -36,18 +36,8 @@ import { Label } from "@/components/ui/label";
 import { copyText } from "@/lib/clipboard";
 import { toast } from "sonner";
 import { cn, timeAgo } from "@/lib/utils";
-import { subscribeRelayStatus } from "@/lib/eventsChannel";
-
-/** 远程接入设备记录（与 server/src/lib/relayDevices.ts 的 DeviceEntry 同构） */
-interface DeviceEntry {
-  id: string;
-  browser: string;
-  deviceType: string;
-  os: string;
-  ip: string;
-  firstSeen: number;
-  lastSeen: number;
-}
+import { subscribeRelayStatus, subscribeDeviceChanged } from "@/lib/eventsChannel";
+import type { DeviceEntry } from "@/lib/types";
 
 interface RelayStatus {
   enabled: boolean;
@@ -136,30 +126,15 @@ export function RemoteControlDialog() {
     ? `${accessKey.slice(0, 4)}…${accessKey.slice(-4)}`
     : "—";
 
-  // 设备列表：对话框打开且已连接时每 10s 轮询一次（设备数少，无需 SSE）
+  // 设备列表：经全局消息总线（eventsChannel 单例）订阅 device_changed，
+  // 设备上下线即时推送（SSE 连接生命周期驱动）。隧道未连接时清空本地展示。
   useEffect(() => {
-    if (!open || !connected) {
+    if (!connected) {
       setDevices([]);
       return;
     }
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch("api/relay/devices");
-        if (!res.ok) return;
-        const data = (await res.json()) as { devices: DeviceEntry[] };
-        if (!cancelled) setDevices(data.devices);
-      } catch {
-        /* 静默 */
-      }
-    };
-    void poll();
-    const timer = setInterval(poll, 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [open, connected]);
+    return subscribeDeviceChanged((d) => setDevices(d));
+  }, [connected]);
 
   // 倒计时：token 有效期内的剩余秒数。每秒刷新一次，到期归零。
   // tokenExpiresAt 变化（重新生成/清空）时重建定时器，unmount 时清理。

@@ -143,7 +143,9 @@ export type SSEEvent =
   /** 会话查询开始（全局频道，GET /api/events/stream 推送，驱动观察方接入实时流） */
   | { type: "session_started"; sessionId: string }
   /** 会话查询结束（全局频道，GET /api/events/stream 推送） */
-  | { type: "session_ended"; sessionId: string };
+  | { type: "session_ended"; sessionId: string }
+  /** 远程设备列表变更（全局频道，设备上下线，GET /api/events/stream 推送） */
+  | { type: "device_changed"; devices: DeviceEntrySnapshot[] };
 
 /** relay_status 事件里的隧道状态快照（与 channels/relay.ts 的 RelayStatus 同构） */
 export interface RelayStatusSnapshot {
@@ -156,6 +158,17 @@ export interface RelayStatusSnapshot {
   /** 当前访问令牌的到期时间戳（ms）；null 表示无有效令牌 */
   tokenExpiresAt: number | null;
   error: string | null;
+}
+
+/** device_changed 事件里的单个设备快照（与 relayDevices.ts 的 DeviceEntry 同构） */
+export interface DeviceEntrySnapshot {
+  id: string;
+  browser: string;
+  deviceType: string;
+  os: string;
+  ip: string;
+  firstSeen: number;
+  lastSeen: number;
 }
 
 /** 斜杠命令 */

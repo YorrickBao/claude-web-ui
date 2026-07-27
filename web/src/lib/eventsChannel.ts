@@ -18,11 +18,12 @@
  * sessions_changed 以补齐断线期间错过的列表变更。
  */
 
-import type { RelayStatusSnapshot } from "./types";
+import type { RelayStatusSnapshot, DeviceEntry } from "./types";
 
 type SessionsListener = () => void;
 type RelayListener = (status: RelayStatusSnapshot) => void;
 type LifecycleListener = (sessionId: string) => void;
+type DevicesListener = (devices: DeviceEntry[]) => void;
 /** 总线连接健康状态：connected 正常 / reconnecting 自动重连中 */
 type BusHealth = "connected" | "reconnecting";
 type BusHealthListener = (health: BusHealth) => void;
@@ -31,10 +32,13 @@ let sessionsListeners: Set<SessionsListener> | null = null;
 let relayListeners: Set<RelayListener> | null = null;
 let lifecycleStartedListeners: Set<LifecycleListener> | null = null;
 let lifecycleEndedListeners: Set<LifecycleListener> | null = null;
+let devicesListeners: Set<DevicesListener> | null = null;
 let busHealthListeners: Set<BusHealthListener> | null = null;
 let es: EventSource | null = null;
 /** 最近一帧 relay 状态，新订阅者立即可用，避免等下一次变更 */
 let lastRelayStatus: RelayStatusSnapshot | null = null;
+/** 最近一帧设备列表，新订阅者立即可用 */
+let lastDevices: DeviceEntry[] | null = null;
 /** 当前总线健康状态，新订阅者立即可用 */
 let busHealth: BusHealth = "connected";
 
@@ -44,6 +48,7 @@ function hasSubscribers(): boolean {
     !!relayListeners?.size ||
     !!lifecycleStartedListeners?.size ||
     !!lifecycleEndedListeners?.size ||
+    !!devicesListeners?.size ||
     !!busHealthListeners?.size
   );
 }
@@ -153,6 +158,24 @@ function ensureChannel(): void {
       }
     }
   });
+  // 远程设备列表变更
+  es.addEventListener("device_changed", (ev) => {
+    let devices: DeviceEntry[] | null = null;
+    try {
+      devices = (JSON.parse((ev as MessageEvent).data) as { devices: DeviceEntry[] }).devices;
+      lastDevices = devices;
+    } catch {
+      return;
+    }
+    if (!devicesListeners) return;
+    for (const fn of [...devicesListeners]) {
+      try {
+        fn(devices);
+      } catch {
+        // 忽略单个订阅者错误
+      }
+    }
+  });
 }
 
 function maybeClose(): void {
@@ -222,6 +245,28 @@ export function subscribeSessionEnded(fn: LifecycleListener): () => void {
   ensureChannel();
   return () => {
     lifecycleEndedListeners?.delete(fn);
+    maybeClose();
+  };
+}
+
+/**
+ * 订阅远程设备列表变更（设备上下线）。返回取消订阅函数。
+ * 订阅瞬间若有缓存帧会立即回调一次（无需等下一次变更）。
+ */
+export function subscribeDeviceChanged(fn: DevicesListener): () => void {
+  if (!devicesListeners) devicesListeners = new Set();
+  devicesListeners.add(fn);
+  ensureChannel();
+  // 立即回放最近一帧，让新订阅者拿到当前列表
+  if (lastDevices) {
+    try {
+      fn(lastDevices);
+    } catch {
+      // 忽略
+    }
+  }
+  return () => {
+    devicesListeners?.delete(fn);
     maybeClose();
   };
 }

@@ -20,6 +20,7 @@
 import { EventEmitter } from "node:events";
 import type { SSEEvent } from "./types.js";
 import type { RelayStatus } from "../channels/relay.js";
+import type { DeviceEntry } from "./relayDevices.js";
 
 const bus = new EventEmitter();
 bus.setMaxListeners(500);
@@ -75,6 +76,27 @@ export function onRelayStatus(listener: (status: RelayStatus) => void): () => vo
   bus.on("relay", listener);
   return () => {
     bus.off("relay", listener);
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 远程设备列表变更（全局频道）
+// 设备上下线由 GET /api/events/stream 连接生命周期驱动，低频，走全局总线。
+// ─────────────────────────────────────────────────────────────
+
+/** 广播远程设备列表变更（设备上线/下线/清空） */
+export function emitDeviceChanged(devices: DeviceEntry[]): void {
+  bus.emit("device_changed", devices);
+}
+
+/**
+ * 订阅远程设备列表变更。
+ * @returns 取消订阅的函数
+ */
+export function onDeviceChanged(listener: (devices: DeviceEntry[]) => void): () => void {
+  bus.on("device_changed", listener);
+  return () => {
+    bus.off("device_changed", listener);
   };
 }
 

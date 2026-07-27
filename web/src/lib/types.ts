@@ -55,7 +55,9 @@ export type SSEEvent =
   /** 会话查询开始（全局频道，驱动观察方接入实时流） */
   | { type: "session_started"; sessionId: string }
   /** 会话查询结束（全局频道） */
-  | { type: "session_ended"; sessionId: string };
+  | { type: "session_ended"; sessionId: string }
+  /** 远程设备列表变更（全局频道，设备上下线） */
+  | { type: "device_changed"; devices: DeviceEntry[] };
 
 /** relay_status 事件里的隧道状态快照 */
 export interface RelayStatusSnapshot {
@@ -116,4 +118,15 @@ export interface DirEntry {
 export interface BrowseResult {
   path: string;
   entries: DirEntry[];
+}
+
+/** 远程接入设备记录（与 server/src/lib/relayDevices.ts 的 DeviceEntry 同构） */
+export interface DeviceEntry {
+  id: string;
+  browser: string;
+  deviceType: string;
+  os: string;
+  ip: string;
+  firstSeen: number;
+  lastSeen: number;
 }

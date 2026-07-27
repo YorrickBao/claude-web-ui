@@ -9,9 +9,9 @@ import { setInflight, clearInflight, getInflight, getInflightStatus, takePending
 import { replaySession } from "../lib/replay.js";
 import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, mintToken, } from "../channels/relay.js";
-import { getDevices } from "../lib/relayDevices.js";
+import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
-import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle } from "../lib/eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle, onDeviceChanged } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -61,9 +61,18 @@ export async function apiRoutes(app) {
     // 前端 eventsChannel.ts 把本端点收敛为模块级单例 EventSource，全应用共享一条连接。
     app.get("/api/events/stream", async (_req, reply) => {
         initSSE(reply);
+        // 远程设备上下线：把设备在线状态绑定到这条 SSE 长连接的生命周期。
+        // 仅经 relay 转发的请求（X-CWU-Via 头）才登记——本地连接不算"远程设备"。
+        const isRemote = _req.headers["x-cwu-via"] === "relay";
+        const ua = _req.headers["user-agent"] ?? "";
+        const ip = _req.headers["x-real-ip"] || _req.ip;
+        if (isRemote && (ua || ip)) {
+            recordDevice(ua, ip);
+        }
         // 订阅瞬间先各发一帧，覆盖订阅期间可能错过的变更
         sendSSE(reply, { type: "sessions_changed" });
         sendSSE(reply, { type: "relay_status", status: await getRelaySnapshot() });
+        sendSSE(reply, { type: "device_changed", devices: getDevices() });
         const unsubSessions = onSessionsChanged(() => {
             try {
                 sendSSE(reply, { type: "sessions_changed" });
@@ -90,6 +99,14 @@ export async function apiRoutes(app) {
                 console.warn("[events] session-lifecycle sendSSE error:", err instanceof Error ? err.message : err);
             }
         });
+        const unsubDevice = onDeviceChanged((d) => {
+            try {
+                sendSSE(reply, { type: "device_changed", devices: d });
+            }
+            catch (err) {
+                console.warn("[events] device_changed sendSSE error:", err instanceof Error ? err.message : err);
+            }
+        });
         // 心跳防中间代理 idle 关闭
         const heartbeat = setInterval(() => {
             try {
@@ -102,6 +119,10 @@ export async function apiRoutes(app) {
             unsubSessions();
             unsubRelay();
             unsubLifecycle();
+            unsubDevice();
+            if (isRemote && (ua || ip)) {
+                removeDevice(ua, ip);
+            }
         });
     });
     // ───────────────────────────────────────────────────────────
@@ -933,7 +954,7 @@ export async function apiRoutes(app) {
     app.get("/api/relay/status", async (_req, reply) => {
         return reply.send(await getRelaySnapshot());
     });
-    // GET /api/relay/devices —— 当前接入的远程设备列表（按设备去重，1 天无活动移除）
+    // GET /api/relay/devices —— 当前在线的远程设备列表（SSE 连接生命周期驱动）
     app.get("/api/relay/devices", async (_req, reply) => {
         return reply.send({ devices: getDevices() });
     });
