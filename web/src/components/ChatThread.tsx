@@ -8,7 +8,7 @@ import {
   useComposerRuntime,
   unstable_useComposerInputHistory,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useProfiles } from "@/lib/profilesStore";
 import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
 import { ContextUsageRing } from "@/components/ContextUsageRing";
 import {
-  GenericToolUI,
+  ToolRenderer,
   ReasoningBlock,
   MessageErrorBlock,
   type ToolUIProps,
@@ -431,130 +431,70 @@ function AssistantMessage() {
 }
 
 /**
- * assistant 消息正文：用 GroupedParts 把连续的 reasoning + tool-call
- * 包成"思维链"折叠块，运行中展开、结束后收起，最终只露文本回答。
+ * assistant 消息正文：按 part 原顺序（时序交错）渲染 text / reasoning / tool-call，
+ * 不再做"工作过程组 + 正文"两桶分离——这样中间叙述文本与它对应的工具调用
+ * 保持上下文相邻，避免悬空引用。工具卡 / 思考块各自可折叠，默认运行中展开、
+ * 结束后收起。
  */
 function AssistantContent() {
   const status = useMessage((s) => s.status);
   const content = useMessage((s) => s.content);
   const isRunning = status?.type === "running";
-
-  // 把 parts 分成"正文（text）"和"工作过程（reasoning + tool-call）"两类。
-  // 无论中间是否被 text 隔断，所有 reasoning/tool-call 都合并成
-  // 一个"工作过程"折叠块，正文文本单独渲染。
   const parts = (content as readonly AnyPart[] | undefined) ?? [];
-  const textParts = parts.filter((p) => p.type === "text");
-  const workParts = parts.filter(
-    (p) => p.type === "reasoning" || p.type === "tool-call",
-  );
-  const hasText = textParts.some(
-    (p) => typeof p.text === "string" && p.text.trim(),
-  );
-  const hasWork = workParts.length > 0;
+  const lastIdx = parts.length - 1;
 
-  return (
-    <>
-      {hasWork && (
-        <WorkProcessGroup parts={workParts} isRunning={isRunning} />
-      )}
-      {hasText ? (
-        <div className={hasWork ? "mt-2" : ""}>
-          <Markdown streaming={isRunning}>
-            {textParts.map((p) => (p.text ?? "")).join("")}
-          </Markdown>
-        </div>
-      ) : isRunning && !hasWork ? (
-        <RunningCursor />
-      ) : null}
-    </>
-  );
+  const rendered = parts.map((p, i) => {
+    const isLast = i === lastIdx;
+    if (p.type === "text") {
+      const text = typeof p.text === "string" ? p.text : "";
+      if (!text.trim()) {
+        // 末尾空 text 且运行中：流式刚开始，用光标占位
+        return isRunning && isLast ? <RunningCursor key={i} /> : null;
+      }
+      return (
+        <Markdown key={i} streaming={isRunning && isLast}>
+          {text}
+        </Markdown>
+      );
+    }
+    if (p.type === "reasoning") {
+      return (
+        <ReasoningBlock
+          key={i}
+          text={typeof p.text === "string" ? p.text : undefined}
+          // 仅"消息运行中且本 part 是最后一个"时视为正在流式：
+          // 模型继续往下走（新 part 追加）即自动收起上一段思考。
+          isStreaming={isRunning && isLast}
+        />
+      );
+    }
+    if (p.type === "tool-call") {
+      return <ToolRenderer key={i} {...mapToolPart(p, isRunning)} />;
+    }
+    return null;
+  });
+
+  if (rendered.every((n) => n == null)) {
+    return isRunning ? <RunningCursor /> : null;
+  }
+  return <div className="space-y-2">{rendered}</div>;
 }
 
 /**
- * 工作过程折叠块：把一轮里所有 reasoning + tool-call 合并为一个可折叠组。
- * - 运行中默认展开，对话结束（running→complete）自动收起
- * - 历史消息（初始非 running）默认折叠
- * - 用户手动展开/折叠后不再被自动行为覆盖
+ * 把 tool-call part 映射成 ToolUIProps。
+ * 状态由「result 是否已回填 + 消息是否运行中」推导：流式装配 / replay 都
+ * 不写 part.status，旧实现读不存在的 status 会误落到 requires-action。
  */
-function WorkProcessGroup({
-  parts,
-  isRunning,
-}: {
-  parts: readonly AnyPart[];
-  isRunning: boolean;
-}) {
-  const [open, setOpen] = useState(isRunning);
-  // 运行中→结束时自动折叠一次（用户手动展开过的不再覆盖）
-  const wasRunningRef = useRef(isRunning);
-  useEffect(() => {
-    if (wasRunningRef.current && !isRunning) {
-      setOpen(false);
-    }
-    wasRunningRef.current = isRunning;
-  }, [isRunning]);
-  const toolCount = parts.filter((p) => p.type === "tool-call").length;
-
-  return (
-    <div className="text-sm">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {open ? (
-          <ChevronDown className="size-3" />
-        ) : (
-          <ChevronRight className="size-3" />
-        )}
-        <span className="font-medium">工作过程</span>
-        {toolCount > 0 && (
-          <span className="text-muted-foreground/60">{toolCount} 个工具</span>
-        )}
-        {isRunning && (
-          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
-        )}
-      </button>
-      {open && (
-        <div className="mt-1 space-y-0.5 border-l border-border/40 pl-3">
-          {parts.map((p, i) => {
-            if (p.type === "reasoning") {
-              return (
-                <ReasoningBlock
-                  key={i}
-                  text={typeof p.text === "string" ? p.text : undefined}
-                  isStreaming={isRunning}
-                />
-              );
-            }
-            if (p.type === "tool-call") {
-              return <GenericToolUI key={i} {...mapToolPart(p)} />;
-            }
-            return null;
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 把 part 的 tool-call 映射成 ToolUIProps */
-function mapToolPart(part: AnyPart): ToolUIProps {
-  const st = (part as { status?: { type?: string } }).status;
+function mapToolPart(part: AnyPart, messageRunning: boolean): ToolUIProps {
+  const result = (part as { result?: unknown }).result;
+  const hasResult = result !== undefined;
   return {
     toolName: (part.toolName as string) ?? "",
     args: part.args,
     argsText: typeof part.argsText === "string" ? part.argsText : undefined,
-    result: part.result,
+    result,
     isError: typeof part.isError === "boolean" ? part.isError : undefined,
-    status: {
-      type:
-        st?.type === "running"
-          ? "running"
-          : st?.type === "complete"
-            ? "complete"
-            : st?.type === "incomplete"
-              ? "incomplete"
-              : "requires-action",
-    },
+    status: hasResult ? "complete" : messageRunning ? "running" : "incomplete",
   };
 }
 

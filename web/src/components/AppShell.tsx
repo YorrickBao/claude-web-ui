@@ -19,7 +19,7 @@ import type { ThreadMessageLike } from "@/hooks/useChatSSE";
 import { subscribeSessionsChanged } from "@/lib/eventsChannel";
 import type { SessionView } from "@/lib/types";
 
-// 路由级懒加载：把会话渲染栈（@assistant-ui / markdown / highlight.js）和设置页
+// 路由级懒加载：把会话渲染栈（@assistant-ui / streamdown）和设置页
 // 隔离到独立 async chunk，首屏 /new 不再加载这些重组件。
 const NewSessionView = lazy(() =>
   import("@/components/NewSessionView").then((m) => ({ default: m.NewSessionView })),

@@ -2,7 +2,15 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: "class",
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./index.html",
+    "./src/**/*.{ts,tsx}",
+    // Streamdown 的 JSX 输出里带大量 Tailwind 工具类（含动态的
+    // dark:bg-[var(--shiki-dark-bg,...)] 等），必须让 Tailwind 扫到它的 dist
+    // 才会生成对应类，否则代码高亮 / 暗色切换 / 排版会丢样式。
+    "./node_modules/streamdown/dist/*.js",
+    "./node_modules/@assistant-ui/react-streamdown/dist/*.js",
+  ],
   theme: {
     extend: {
       colors: {
