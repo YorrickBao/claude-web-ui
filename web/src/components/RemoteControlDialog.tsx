@@ -118,6 +118,7 @@ export function RemoteControlDialog() {
   const enabled = status?.enabled ?? false;
   const connected = status?.connected ?? false;
   const connecting = status?.connecting ?? false;
+  const hasDevices = devices.length > 0;
   const remoteUrl = status?.remoteUrl ?? "";
   const tokenExpiresAt = status?.tokenExpiresAt ?? null;
   // accessKey 指纹（首尾 4 位），仅用于与 relay 日志对照，不展示完整值
@@ -268,15 +269,21 @@ export function RemoteControlDialog() {
             variant="ghost"
             size="icon"
             title={
-              connected
-                ? "远程控制：已接入"
-                : enabled
-                  ? "远程控制：等待接入"
-                  : "远程控制"
+              !enabled
+                ? "远程控制"
+                : !connected
+                  ? connecting
+                    ? "远程控制：连接中…"
+                    : "远程控制：已断开"
+                  : hasDevices
+                    ? `远程控制：已接入（${devices.length} 台）`
+                    : "远程控制：等待接入"
             }
             className={cn(
-              enabled && connected && "text-emerald-500",
-              enabled && !connected && "text-amber-500",
+              // 灰=未启用 | 红=已启用·断开 | 琥珀=连接中/连通无设备 | 绿=连通且有设备
+              enabled && !connected && !connecting && "text-red-500",
+              enabled && (connecting || (connected && !hasDevices)) && "text-amber-500",
+              enabled && connected && hasDevices && "text-emerald-500",
             )}
           />
         }
