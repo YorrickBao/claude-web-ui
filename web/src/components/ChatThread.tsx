@@ -552,6 +552,7 @@ function WorkStepGroup({
     <div className="text-sm">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {open ? (
@@ -589,10 +590,12 @@ function WorkStepGroup({
 
 /**
  * 把 tool-call part 映射成 ToolUIProps。
- * 状态由「result 是否已回填 + 消息是否运行中」推导：流式装配 / replay 都
- * 不写 part.status，旧实现读不存在的 status 会误落到 requires-action。
+ * 状态由「result 是否已回填 + running」推导：流式装配 / replay 都不写
+ * part.status，旧实现读不存在的 status 会误落到 requires-action。
+ * running 由调用方（WorkStepGroup）传入其 isActive——缺 result 的工具只
+ * 会出现在活跃段，故 isActive 能正确判定 in-flight。
  */
-function mapToolPart(part: AnyPart, messageRunning: boolean): ToolUIProps {
+function mapToolPart(part: AnyPart, running: boolean): ToolUIProps {
   const result = (part as { result?: unknown }).result;
   const hasResult = result !== undefined;
   return {
@@ -601,7 +604,7 @@ function mapToolPart(part: AnyPart, messageRunning: boolean): ToolUIProps {
     argsText: typeof part.argsText === "string" ? part.argsText : undefined,
     result,
     isError: typeof part.isError === "boolean" ? part.isError : undefined,
-    status: hasResult ? "complete" : messageRunning ? "running" : "incomplete",
+    status: hasResult ? "complete" : running ? "running" : "incomplete",
   };
 }
 

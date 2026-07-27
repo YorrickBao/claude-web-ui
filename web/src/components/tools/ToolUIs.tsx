@@ -171,6 +171,7 @@ export function ReasoningBlock({
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {open ? (
@@ -244,6 +245,7 @@ export function ToolCardShell({
     <div className="rounded-md transition-colors hover:bg-muted/30">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm"
       >
         {open ? (
