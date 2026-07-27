@@ -68,6 +68,9 @@ export interface UseChatSSEOptions {
   }) => void;
   /** 权限模式变更回调 */
   onModeChanged?: (mode: string) => void;
+  /** 一轮流式结束（onNew/subscribe 的 finally）时触发。
+   *  用于 pending 态推迟 navigate 到流结束，避免路由切换中断正在进行的流。 */
+  onRoundEnd?: () => void;
 }
 
 export function useChatSSE({
@@ -81,6 +84,7 @@ export function useChatSSE({
   onPermissionResolved,
   onPlanProposed,
   onModeChanged,
+  onRoundEnd,
 }: UseChatSSEOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -125,6 +129,8 @@ export function useChatSSE({
   onPlanRef.current = onPlanProposed;
   const onModeRef = useRef(onModeChanged);
   onModeRef.current = onModeChanged;
+  const onRoundEndRef = useRef(onRoundEnd);
+  onRoundEndRef.current = onRoundEnd;
   const profileIdRef = useRef<string | null>(profileId ?? null);
   profileIdRef.current = profileId ?? null;
   const permissionModeRef = useRef<string>(permissionMode ?? "default");
@@ -311,6 +317,8 @@ export function useChatSSE({
       reconnectRequestedRef.current = false; // 防残留标记影响下次订阅
       abortRef.current = null;
       window.dispatchEvent(new CustomEvent("session-list-changed"));
+      // 通知外部（如 pending 态的 ChatView）本轮已结束，可安全切换路由
+      if (!disposedRef.current) onRoundEndRef.current?.();
     }
   }, []);
 
@@ -579,6 +587,8 @@ export function useChatSSE({
           abortRef.current = null;
           // 通知侧栏：会话已完成，退出 inflight
           window.dispatchEvent(new CustomEvent("session-list-changed"));
+          // pending 态创建会话时，推迟到流结束再 navigate（见 ChatView）
+          if (!disposedRef.current) onRoundEndRef.current?.();
         }
       }
     },

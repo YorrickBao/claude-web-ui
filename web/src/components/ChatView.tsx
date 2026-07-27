@@ -45,6 +45,9 @@ export function ChatView({
   initialOutputTokens,
 }: ChatViewProps) {
   const navigate = useNavigate();
+  // pending 态创建会话后，推迟到本轮流结束再 navigate 到 /c/:id。
+  // 避免路由切换导致 ChatView 卸载、createSession POST 流被中断、骨架屏闪动。
+  const pendingNavigateRef = useRef<string | null>(null);
   // 待处理的权限请求和计划审批
   // pendingPermissions 用数组：支持多个并发请求同时显示各自横幅
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
@@ -138,10 +141,19 @@ export function ChatView({
       permissionMode: initialPermissionMode,
       effortLevel: initialEffortLevel,
       onSessionCreated: (id) => {
-        // HashRouter 下路由信息在 hash 中：必须用 navigate 更新 hash，
-        // window.history.replaceState 会写到 pathname 上（丢 #），刷新后回落默认路由导致会话丢失
-        navigate(`/c/${id}`, { replace: true });
+        // 不立即 navigate：/pending → /c/:id 的路由切换会卸载当前 ChatView，
+        // 导致正在进行的 createSession POST 流被卸载 cleanup 中断（abort），
+        // 消息显示到一半闪骨架屏。先记下 id，等本轮流结束（onRoundEnd）再切换，
+        // 此时消息已完整显示，切换后由 ChatViewWithMeta 的 loadHistory 恢复。
+        pendingNavigateRef.current = id;
         window.dispatchEvent(new CustomEvent("session-list-changed"));
+      },
+      onRoundEnd: () => {
+        const id = pendingNavigateRef.current;
+        if (id) {
+          pendingNavigateRef.current = null;
+          navigate(`/c/${id}`, { replace: true });
+        }
       },
       onPermissionRequest: handlePermissionRequest,
       onPermissionResolved: handlePermissionResolved,
