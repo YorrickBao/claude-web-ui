@@ -44,6 +44,7 @@ export async function apiRoutes(app) {
                 effortLevel: r.effortLevel ?? "default",
                 inputTokens: r.inputTokens ?? 0,
                 outputTokens: r.outputTokens ?? 0,
+                lastDurationMs: r.lastDurationMs ?? 0,
             };
         });
         return reply.send({ sessions: views });
@@ -158,6 +159,7 @@ export async function apiRoutes(app) {
                     : "idle"),
             inputTokens: rec.inputTokens ?? 0,
             outputTokens: rec.outputTokens ?? 0,
+            lastDurationMs: rec.lastDurationMs ?? 0,
             messages: history,
         });
     });
@@ -420,6 +422,7 @@ export async function apiRoutes(app) {
                     effortLevel,
                     inputTokens: 0,
                     outputTokens: 0,
+                    lastDurationMs: 0,
                 });
                 // 会话已落盘，通知 Sidebar 新增
                 emitSessionsChanged();
@@ -603,6 +606,7 @@ export async function apiRoutes(app) {
                     lastModified: Date.now(),
                     inputTokens: 0,
                     outputTokens: 0,
+                    lastDurationMs: 0,
                 });
             }
             catch (err) {
