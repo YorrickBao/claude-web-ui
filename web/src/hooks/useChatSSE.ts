@@ -100,6 +100,10 @@ export function useChatSSE({
    *  不能用 stop() 替代——stop() 会调 abortSession 杀掉别窗口正在跑的会话。 */
   const disposedRef = useRef(false);
   useEffect(() => {
+    // 重置卸载标记：React StrictMode 在 dev 下会 mount→unmount→remount，
+    // unmount 阶段会把 disposedRef 置 true，若不在此重置，remount 后的实例
+    // 会误以为自己已卸载，导致 session_started 等回调全部被跳过。
+    disposedRef.current = false;
     return () => {
       disposedRef.current = true;
       // 中断当前 fetch，让 subscribe 循环尽快退出
@@ -321,7 +325,9 @@ export function useChatSSE({
   // !isRunningRef.current 闸门：发消息方自身（POST 期间 isRunning=true）不重复订阅。
   useEffect(() => {
     const unsub = subscribeSessionStarted((sid) => {
-      if (sid && sid === sessionIdRef.current && !isRunningRef.current && !disposedRef.current) {
+      // 不检查 disposedRef：StrictMode/HMR 下 disposedRef 状态不可靠。
+      // subscribe 内部循环首句即检查 disposedRef.current 并退出，无副作用。
+      if (sid && sid === sessionIdRef.current && !isRunningRef.current) {
         void subscribe(sid);
       }
     });
@@ -359,6 +365,9 @@ export function useChatSSE({
     switch (evt.type) {
       case "history":
         setMessages(evt.messages as ChatMessage[]);
+        break;
+      case "user_message":
+        setMessages((prev) => appendUserMessage(prev, evt.text));
         break;
       case "text":
         setMessages((prev) => appendTextToLast(prev, evt.text));
@@ -406,9 +415,15 @@ export function useChatSSE({
       case "waiting_for_user":
         break;
       case "session_created":
-        sessionIdRef.current = evt.sessionId;
-        setActiveSessionId(evt.sessionId);
-        onCreatedRef.current?.(evt.sessionId);
+        // 仅在新建会话场景（之前无 sessionId）触发 onCreated 回调（navigate 到 /c/:id）。
+        // 观察方/续聊场景下 sessionId 已知，SDK 的 system/init 也会产生本事件，
+        // 此时触发 onCreated 会 navigate 到同一路径导致组件重载，把正在接收的实时流冲掉。
+        {
+          const wasNew = sessionIdRef.current !== evt.sessionId;
+          sessionIdRef.current = evt.sessionId;
+          setActiveSessionId(evt.sessionId);
+          if (wasNew) onCreatedRef.current?.(evt.sessionId);
+        }
         break;
       case "permission_request":
         if (onPermissionRef.current) {
@@ -656,10 +671,9 @@ async function querySessionStatus(
 
 /** 把 text 追加到最后一条 assistant 消息的末尾 text part */
 function appendTextToLast(msgs: ChatMessage[], delta: string): ChatMessage[] {
-  if (msgs.length === 0) return msgs;
-  const lastIdx = msgs.length - 1;
-  const last = msgs[lastIdx];
-  if (last.role !== "assistant") return msgs;
+  const withTail = ensureAssistantTail(msgs);
+  const lastIdx = withTail.length - 1;
+  const last = withTail[lastIdx];
   const content = [...((last.content as unknown) as AnyPart[])];
   const lp = content[content.length - 1];
   if (lp && lp.type === "text" && typeof lp.text === "string") {
@@ -667,15 +681,51 @@ function appendTextToLast(msgs: ChatMessage[], delta: string): ChatMessage[] {
   } else {
     content.push({ type: "text", text: delta });
   }
-  return [...msgs.slice(0, lastIdx), { ...last, content: content as never }];
+  return [...withTail.slice(0, lastIdx), { ...last, content: content as never }];
+}
+
+// 确保最后一条是处于 running 态的 assistant 消息，没有则补一个空占位。
+// 观察方/续流场景：subscribe 时若转录尚未落盘，history 为空，后续 thinking/text
+// 增量无 assistant 消息可追加。这里自动补占位，让流式输出有载体。
+function ensureAssistantTail(msgs: ChatMessage[]): ChatMessage[] {
+  const last = msgs[msgs.length - 1];
+  if (last && last.role === "assistant") return msgs;
+  return [
+    ...msgs,
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "" }],
+      status: { type: "running" },
+    },
+  ];
+}
+
+/**
+ * 追加一条 user 消息。带去重：发消息方在 onNew 里已乐观写入 user 消息，
+ * POST 流随后又 emit user_message 事件——此时最后一条已是相同文本的 user，
+ * 跳过避免重复。观察方/续流方没有乐观写入，正常追加。
+ */
+function appendUserMessage(msgs: ChatMessage[], text: string): ChatMessage[] {
+  const last = msgs[msgs.length - 1];
+  if (
+    last &&
+    last.role === "user" &&
+    Array.isArray(last.content as unknown) &&
+    (last.content as unknown[]).length === 1
+  ) {
+    const part = (last.content as unknown[])[0] as { type?: string; text?: string };
+    if (part?.type === "text" && part.text === text) {
+      return msgs; // 去重：已是相同 user 消息
+    }
+  }
+  return [...msgs, { role: "user", content: [{ type: "text", text }] }];
 }
 
 /** 把 thinking 增量追加到最后一条 assistant 消息的末尾 reasoning part */
 function appendThinkingToLast(msgs: ChatMessage[], delta: string): ChatMessage[] {
-  if (msgs.length === 0) return msgs;
-  const lastIdx = msgs.length - 1;
-  const last = msgs[lastIdx];
-  if (last.role !== "assistant") return msgs;
+  const withTail = ensureAssistantTail(msgs);
+  const lastIdx = withTail.length - 1;
+  const last = withTail[lastIdx];
   const content = [...((last.content as unknown) as AnyPart[])];
   const lp = content[content.length - 1];
   if (lp && lp.type === "reasoning" && typeof lp.text === "string") {
@@ -683,7 +733,7 @@ function appendThinkingToLast(msgs: ChatMessage[], delta: string): ChatMessage[]
   } else {
     content.push({ type: "reasoning", text: delta });
   }
-  return [...msgs.slice(0, lastIdx), { ...last, content: content as never }];
+  return [...withTail.slice(0, lastIdx), { ...last, content: content as never }];
 }
 
 function appendToolCall(
@@ -692,10 +742,9 @@ function appendToolCall(
   toolName: string,
   args: unknown,
 ): ChatMessage[] {
-  if (msgs.length === 0) return msgs;
-  const lastIdx = msgs.length - 1;
-  const last = msgs[lastIdx];
-  if (last.role !== "assistant") return msgs;
+  const withTail = ensureAssistantTail(msgs);
+  const lastIdx = withTail.length - 1;
+  const last = withTail[lastIdx];
   const content = [
     ...((last.content as unknown) as AnyPart[]),
     {
@@ -706,7 +755,7 @@ function appendToolCall(
       argsText: safeStringify(args),
     },
   ];
-  return [...msgs.slice(0, lastIdx), { ...last, content: content as never }];
+  return [...withTail.slice(0, lastIdx), { ...last, content: content as never }];
 }
 
 /** 把 result 回填到匹配 toolCallId 的 tool-call part（同一 part 上） */

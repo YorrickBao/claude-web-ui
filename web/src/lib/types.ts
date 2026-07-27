@@ -2,6 +2,8 @@
 export type SSEEvent =
   | { type: "session_created"; sessionId: string }
   | { type: "text"; text: string }
+  /** 用户文本输入（观察方据此显示用户消息） */
+  | { type: "user_message"; text: string }
   /** 思考过程增量（扩展思考），前端追加到 reasoning part */
   | { type: "thinking"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }

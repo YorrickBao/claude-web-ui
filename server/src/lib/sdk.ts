@@ -452,6 +452,7 @@ export async function* runQuery(
         for (const block of content) {
           const b = block as {
             type: string;
+            text?: string;
             tool_use_id?: string;
             content?: unknown;
             is_error?: boolean;
@@ -467,6 +468,9 @@ export async function* runQuery(
               result: b.content,
               isError: b.is_error === true,
             };
+          } else if (b.type === "text" && typeof b.text === "string") {
+            // 用户文本输入：emit 给观察方/续流方，使其不依赖磁盘转录也能显示用户消息
+            yield { type: "user_message", text: b.text };
           }
         }
         break;

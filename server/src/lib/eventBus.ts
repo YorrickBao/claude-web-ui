@@ -25,9 +25,37 @@ import type { DeviceEntry } from "./relayDevices.js";
 const bus = new EventEmitter();
 bus.setMaxListeners(500);
 
-/** 向某个会话的所有订阅者广播一个 SSE 事件 */
+// ─────────────────────────────────────────────────────────────
+// 会话事件内存累积缓冲
+//
+// 背景：SDK 的磁盘转录（getSessionMessages）在 query running 期间写入是
+// 滞后且批量的，不能作为「打开正在执行的会话页面」时回放历史的可靠来源。
+// 这里维护一份与 bus 事件实时同步的内存缓冲，供 GET /:id/stream 在 inflight
+// 期间重放出完整、实时的历史事件，不依赖磁盘转录。
+//
+// 生命周期：随 inflight 累积，会话结束时清理（clearSessionBuffer）。
+// ─────────────────────────────────────────────────────────────
+const sessionBuffers = new Map<string, SSEEvent[]>();
+
+/** 向某个会话的所有订阅者广播一个 SSE 事件，同时累积到内存缓冲 */
 export function emitSessionEvent(sessionId: string, event: SSEEvent): void {
   bus.emit(`s:${sessionId}`, event);
+  let buf = sessionBuffers.get(sessionId);
+  if (!buf) {
+    buf = [];
+    sessionBuffers.set(sessionId, buf);
+  }
+  buf.push(event);
+}
+
+/** 取某会话的内存事件缓冲快照（inflight 期间的完整事件序列） */
+export function getSessionBuffer(sessionId: string): SSEEvent[] | undefined {
+  return sessionBuffers.get(sessionId);
+}
+
+/** 清理某会话的内存缓冲（会话结束时调用） */
+export function clearSessionBuffer(sessionId: string): void {
+  sessionBuffers.delete(sessionId);
 }
 
 /** 通知订阅者：该会话的 SSE 流已结束 */
