@@ -92,6 +92,8 @@ export interface SessionView {
   inputTokens: number;
   /** 累计 output tokens */
   outputTokens: number;
+  /** 最近一轮的耗时（ms） */
+  lastDurationMs: number;
 }
 
 /** 一套环境变量配置 */

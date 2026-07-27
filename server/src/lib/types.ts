@@ -45,6 +45,8 @@ export interface SessionRecord {
   inputTokens: number;
   /** 累计 output tokens（跨多轮持久化累加） */
   outputTokens: number;
+  /** 最近一轮的耗时（ms）。每轮 done 时覆盖，刷新/重开页面仍可显示 */
+  lastDurationMs: number;
 }
 
 /** 返回给前端的会话（合并 SDK 元信息后）。标题来自 SDK customTitle / summary。 */
@@ -66,6 +68,8 @@ export interface SessionView {
   inputTokens: number;
   /** 累计 output tokens */
   outputTokens: number;
+  /** 最近一轮的耗时（ms） */
+  lastDurationMs: number;
 }
 
 /** sessions.json 文件结构 */

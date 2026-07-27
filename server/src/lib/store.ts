@@ -241,13 +241,15 @@ export async function setSessionProfile(
 }
 
 /**
- * 累加 token 计数到会话记录中。
- * 每次 query 完成后调用，将本轮用量累加到持久化的累计值上。
+ * 累加 token 计数到会话记录中，并记录本轮耗时。
+ * 每次 query 完成后调用：token 累加到持久化的累计值上，
+ * durationMs 覆盖为「最近一轮」的值（不累加，仅作展示用）。
  */
 export async function accumulateTokens(
   sessionId: string,
   inputTokens: number,
   outputTokens: number,
+  durationMs: number,
 ): Promise<void> {
   const data = await readAllSessions();
   const idx = data.sessions.findIndex((s) => s.sessionId === sessionId);
@@ -256,6 +258,7 @@ export async function accumulateTokens(
     ...data.sessions[idx],
     inputTokens: (data.sessions[idx].inputTokens ?? 0) + inputTokens,
     outputTokens: (data.sessions[idx].outputTokens ?? 0) + outputTokens,
+    lastDurationMs: durationMs,
     lastModified: Date.now(),
   };
   await writeSessions(data);
@@ -302,6 +305,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
       effortLevel: localRec?.effortLevel ?? "default",
       inputTokens: localRec?.inputTokens ?? 0,
       outputTokens: localRec?.outputTokens ?? 0,
+      lastDurationMs: localRec?.lastDurationMs ?? 0,
     };
 
     if (!localRec) {

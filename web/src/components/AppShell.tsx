@@ -299,6 +299,7 @@ type Meta = {
   runningStatus: "idle" | "running" | "waiting" | "completed";
   inputTokens: number;
   outputTokens: number;
+  lastDurationMs: number;
 };
 
 /**
@@ -376,6 +377,7 @@ function ChatViewWithMeta({
           runningStatus: data.runningStatus ?? "idle",
           inputTokens: data.inputTokens ?? 0,
           outputTokens: data.outputTokens ?? 0,
+          lastDurationMs: data.lastDurationMs ?? 0,
         });
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
@@ -410,6 +412,7 @@ function ChatViewWithMeta({
                 runningStatus: data.runningStatus ?? prev.runningStatus,
                 inputTokens: data.inputTokens ?? prev.inputTokens,
                 outputTokens: data.outputTokens ?? prev.outputTokens,
+                lastDurationMs: data.lastDurationMs ?? prev.lastDurationMs,
               }
             : prev,
         );
@@ -488,6 +491,7 @@ function ChatViewWithMeta({
       initialRunningStatus={meta.runningStatus}
       initialInputTokens={meta.inputTokens}
       initialOutputTokens={meta.outputTokens}
+      initialDurationMs={meta.lastDurationMs}
     />
   );
 }

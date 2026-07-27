@@ -33,9 +33,9 @@ export async function emitEventToBus(
     if (setInflightRunning(sessionId)) emitSessionsChanged();
   }
 
-  // done 事件：先累加 token，再发送累加后的值
+  // done 事件：先累加 token + 记录本轮 duration，再发送累加后的值
   if (evt.type === "done") {
-    await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens).catch(
+    await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens, evt.durationMs).catch(
       (err: unknown) => {
         console.warn(`[queryRunner] accumulateTokens failed for ${sessionId}:`, err instanceof Error ? err.message : err);
       },

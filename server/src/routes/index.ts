@@ -88,6 +88,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         effortLevel: r.effortLevel ?? "default",
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,
+        lastDurationMs: r.lastDurationMs ?? 0,
       };
     });
     return reply.send({ sessions: views });
@@ -209,6 +210,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
             : "idle"),
         inputTokens: rec.inputTokens ?? 0,
         outputTokens: rec.outputTokens ?? 0,
+        lastDurationMs: rec.lastDurationMs ?? 0,
         messages: history,
       });
     },
@@ -476,6 +478,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           effortLevel,
           inputTokens: 0,
           outputTokens: 0,
+          lastDurationMs: 0,
         });
         // 会话已落盘，通知 Sidebar 新增
         emitSessionsChanged();
@@ -661,6 +664,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           lastModified: Date.now(),
           inputTokens: 0,
           outputTokens: 0,
+          lastDurationMs: 0,
         });
       } catch (err) {
         // 记录写入失败不应让整个 fork 失败（transcript 已生成），

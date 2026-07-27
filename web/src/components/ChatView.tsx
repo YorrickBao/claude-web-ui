@@ -29,6 +29,8 @@ export interface ChatViewProps {
   initialInputTokens?: number;
   /** 会话累计 output tokens */
   initialOutputTokens?: number;
+  /** 最近一轮耗时 ms（用于首次渲染；后续由 SSE done 事件更新） */
+  initialDurationMs?: number;
 }
 
 export function ChatView({
@@ -43,6 +45,7 @@ export function ChatView({
   initialRunningStatus,
   initialInputTokens,
   initialOutputTokens,
+  initialDurationMs,
 }: ChatViewProps) {
   const navigate = useNavigate();
   // 待处理的权限请求和计划审批
@@ -321,6 +324,7 @@ export function ChatView({
         stats={stats}
         initialInputTokens={initialInputTokens}
         initialOutputTokens={initialOutputTokens}
+        initialDurationMs={initialDurationMs}
         error={error}
         statusMessage={statusMessage}
         isRunning={isRunning}
@@ -369,6 +373,7 @@ function Header({
   stats,
   initialInputTokens,
   initialOutputTokens,
+  initialDurationMs,
   error,
   statusMessage,
   isRunning,
@@ -380,6 +385,7 @@ function Header({
   stats: { inputTokens: number; outputTokens: number; durationMs: number } | null;
   initialInputTokens?: number;
   initialOutputTokens?: number;
+  initialDurationMs?: number;
   error: string | null;
   statusMessage: string | null;
   isRunning: boolean;
@@ -524,13 +530,20 @@ function Header({
               <Badge variant="secondary" className="text-[10px] h-4">
                 入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
               </Badge>
-              <Badge variant="secondary" className="text-[10px] h-4">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="本轮总耗时">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
             </>
           )}
           {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
-            <Badge variant="secondary" className="text-[10px] h-4">
-              入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
-            </Badge>
+            <>
+              <Badge variant="secondary" className="text-[10px] h-4">
+                入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
+              </Badge>
+              {initialDurationMs !== undefined && initialDurationMs > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="上一轮总耗时">
+                  {(initialDurationMs / 1000).toFixed(1)}s
+                </Badge>
+              )}
+            </>
           )}
         </div>
       </div>
