@@ -211,6 +211,20 @@ export async function deleteProfile(profileId: string): Promise<void> {
   if (!res.ok) throw new Error(`deleteProfile: ${res.status}`);
 }
 
+/** 拖拽排序：传入按目标顺序排列的 profile id 列表，返回重排后的完整列表 */
+export async function reorderProfiles(
+  ids: string[],
+): Promise<EnvProfile[]> {
+  const res = await fetch("api/profiles/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error(`reorderProfiles: ${res.status}`);
+  const data = (await res.json()) as { profiles: EnvProfile[] };
+  return data.profiles;
+}
+
 /** 切换会话绑定的 profile（null = 解绑，纯 CLI 默认） */
 export async function setSessionProfile(
   sessionId: string,

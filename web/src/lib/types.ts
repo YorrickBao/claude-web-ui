@@ -99,6 +99,8 @@ export interface EnvProfile {
   id: string;
   name: string;
   env: Record<string, string>;
+  /** 手动排序位置（升序，越小越靠前） */
+  order: number;
   createdAt: number;
   updatedAt: number;
 }

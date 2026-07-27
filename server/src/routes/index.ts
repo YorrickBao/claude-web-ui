@@ -11,6 +11,7 @@ import {
   createProfile,
   updateProfile,
   deleteProfile,
+  reorderProfiles,
   resolveSessionEnv,
   resolveProfileEnv,
   setSessionProfile,
@@ -838,6 +839,21 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ ok: true });
     },
   );
+
+  // ───────────────────────────────────────────────────────────
+  // PUT /api/profiles/reorder —— 拖拽排序
+  // body: { ids: string[] } 按目标顺序排列的 profile id 列表
+  // ───────────────────────────────────────────────────────────
+  app.put<{
+    Body: { ids?: unknown };
+  }>("/api/profiles/reorder", async (req, reply) => {
+    const raw = req.body?.ids;
+    if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string")) {
+      return reply.code(400).send({ error: "ids must be a string array" });
+    }
+    const profiles = await reorderProfiles(raw as string[]);
+    return reply.send({ profiles });
+  });
 
   // ───────────────────────────────────────────────────────────
   // PUT /api/sessions/:id/profile —— 切换会话绑定的 profile

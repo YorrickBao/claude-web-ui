@@ -16,6 +16,8 @@ export interface EnvProfile {
   name: string;
   /** 9 个白名单环境变量的值（空串=不设置） */
   env: Record<string, string>;
+  /** 手动排序位置（升序，越小越靠前）。旧数据无此字段，读取时按 createdAt 迁移补齐 */
+  order: number;
   /** 创建时间（ms） */
   createdAt: number;
   /** 最后修改时间（ms） */

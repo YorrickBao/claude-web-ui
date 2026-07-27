@@ -15,14 +15,34 @@ import {
   Settings2,
   Bot,
   Info,
+  GripVertical,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import { ENV_FIELDS, pruneEnvValues, type EnvValues } from "@/lib/envFields";
 import {
   listProfiles,
   createProfile,
   updateProfile,
   deleteProfile,
+  reorderProfiles,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +58,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { cn } from "@/lib/utils";
 import type { EnvProfile } from "@/lib/types";
 
 interface FeishuStatus {
@@ -252,6 +273,22 @@ export function SettingsPage() {
     }
   }
 
+  // 拖拽排序：乐观更新本地顺序，失败回滚并提示
+  async function handleReorder(ids: string[]) {
+    const prev = profiles;
+    const next = ids
+      .map((id) => prev.find((p) => p.id === id))
+      .filter((p): p is EnvProfile => Boolean(p));
+    setProfiles(next);
+    try {
+      const reordered = await reorderProfiles(ids);
+      setProfiles(reordered);
+    } catch (e) {
+      setProfiles(prev);
+      setErr(`排序失败：${(e as Error).message}`);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* ── 页头 ── */}
@@ -297,6 +334,7 @@ export function SettingsPage() {
               onEdit={startEdit}
               onDuplicate={startDuplicate}
               onDelete={remove}
+              onReorder={handleReorder}
             />
           ) : (
             <EditView
@@ -517,6 +555,7 @@ function ListView({
   onEdit,
   onDuplicate,
   onDelete,
+  onReorder,
 }: {
   profiles: EnvProfile[];
   loading: boolean;
@@ -524,7 +563,13 @@ function ListView({
   onEdit: (p: EnvProfile) => void;
   onDuplicate: (p: EnvProfile) => void;
   onDelete: (p: EnvProfile) => void;
+  onReorder: (ids: string[]) => void;
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col items-center gap-4 py-20">
@@ -548,6 +593,16 @@ function ListView({
     );
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = profiles.map((p) => p.id);
+    const oldIndex = ids.indexOf(String(active.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    onReorder(arrayMove(ids, oldIndex, newIndex));
+  }
+
   return (
     <div className="space-y-2">
       {err && (
@@ -555,61 +610,125 @@ function ListView({
           {err}
         </div>
       )}
-      <ul className="space-y-2">
-        {profiles.map((p) => (
-          <li
-            key={p.id}
-            className="group relative flex flex-col gap-3 rounded-xl border border-border/50 bg-card/40 px-4 py-3.5 transition-all hover:border-border hover:bg-card/60 sm:flex-row sm:items-center"
-          >
-            {/* 左侧色条 */}
-            <div className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary/40" />
-
-            <div className="min-w-0 flex-1 pl-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium">{p.name}</span>
-                {summarizeFieldCount(p) > 0 && (
-                  <Badge variant="secondary" className="shrink-0 text-[10px]">
-                    {summarizeFieldCount(p)} 项
-                  </Badge>
-                )}
-              </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">
-                {summarizeProfile(p)}
-              </div>
-            </div>
-
-            {/* 操作按钮：移动端始终可见，桌面端 hover 显示 */}
-            <div className="flex shrink-0 items-center gap-0.5 self-end transition-opacity sm:self-center sm:opacity-0 sm:group-hover:opacity-100">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onEdit(p)}
-                title="编辑"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onDuplicate(p)}
-                title="复制"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onDelete(p)}
-                title="删除"
-                className="hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToVerticalAxis]}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={profiles.map((p) => p.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul className="space-y-2">
+            {profiles.map((p) => (
+              <SortableProfileItem
+                key={p.id}
+                profile={p}
+                onEdit={onEdit}
+                onDuplicate={onDuplicate}
+                onDelete={onDelete}
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
     </div>
+  );
+}
+
+function SortableProfileItem({
+  profile: p,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  profile: EnvProfile;
+  onEdit: (p: EnvProfile) => void;
+  onDuplicate: (p: EnvProfile) => void;
+  onDelete: (p: EnvProfile) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: p.id });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={cn(
+        "group relative flex flex-col gap-3 rounded-xl border border-border/50 bg-card/40 px-4 py-3.5 transition-all hover:border-border hover:bg-card/60 sm:flex-row sm:items-center",
+        isDragging && "z-10 cursor-grabbing border-primary/40 bg-card shadow-lg",
+      )}
+    >
+      {/* 左侧色条 */}
+      <div className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary/40" />
+
+      {/* 拖拽手柄 */}
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        aria-label="拖拽排序"
+        {...attributes}
+        {...listeners}
+        className="flex shrink-0 cursor-grab touch-none self-center pl-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground active:cursor-grabbing sm:-ml-1"
+        tabIndex={-1}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      <div className="min-w-0 flex-1 pl-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{p.name}</span>
+          {summarizeFieldCount(p) > 0 && (
+            <Badge variant="secondary" className="shrink-0 text-[10px]">
+              {summarizeFieldCount(p)} 项
+            </Badge>
+          )}
+        </div>
+        <div className="mt-1 truncate text-xs text-muted-foreground">
+          {summarizeProfile(p)}
+        </div>
+      </div>
+
+      {/* 操作按钮：移动端始终可见，桌面端 hover 显示 */}
+      <div className="flex shrink-0 items-center gap-0.5 self-end transition-opacity sm:self-center sm:opacity-0 sm:group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onEdit(p)}
+          title="编辑"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onDuplicate(p)}
+          title="复制"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onDelete(p)}
+          title="删除"
+          className="hover:text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </li>
   );
 }
 
