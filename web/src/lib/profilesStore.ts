@@ -12,6 +12,12 @@ import type { EnvProfile } from "@/lib/types";
  *
  * 数据源唯一：所有消费方共享同一份缓存；SettingsPage 增删改后调 refreshProfiles()
  * 即可让全局同步更新。
+ *
+ * 错误处理纪律：
+ * - 失败时保留旧数据，绝不把缓存毒化成空数组（否则一次瞬态失败会让全应用的
+ *   profile Select 一起退化为只剩"默认"）。
+ * - 失败时错误冒泡（re-throw），让 SettingsPage 等调用方能 catch 并展示错误 UI。
+ * - ensureProfilesLoaded 失败时保持 loaded=false，使后续挂载可重试，避免长期卡空。
  */
 
 type State = { profiles: EnvProfile[]; loaded: boolean };
@@ -25,12 +31,11 @@ function emit() {
 }
 
 function setState(next: State) {
-  // 仅在引用变化时通知，避免无意义渲染
   state = next;
   emit();
 }
 
-/** 幂等：首次调用发起 fetch，进行中复用同一 Promise，已加载则立即 resolve */
+/** 幂等：已加载则立即 resolve；进行中复用同一 Promise；否则发起新请求 */
 export function ensureProfilesLoaded(): Promise<void> {
   if (state.loaded) return Promise.resolve();
   if (inflight) return inflight;
@@ -40,7 +45,9 @@ export function ensureProfilesLoaded(): Promise<void> {
       setState({ profiles: ps, loaded: true });
     } catch (err) {
       console.warn("profilesStore: 加载 profile 列表失败", (err as Error).message);
-      setState({ profiles: [], loaded: true });
+      // 保留旧数据（首屏为空数组），不标记 loaded，使后续挂载可重试
+      setState({ profiles: state.profiles, loaded: false });
+      throw err;
     } finally {
       inflight = null;
     }
@@ -48,15 +55,19 @@ export function ensureProfilesLoaded(): Promise<void> {
   return inflight;
 }
 
-/** 强制重新拉取（SettingsPage 增删改后调用，同步全局缓存） */
+/** 强制重新拉取（SettingsPage 增删改后调用，同步全局缓存）。复用进行中的请求避免重叠 */
 export function refreshProfiles(): Promise<void> {
+  if (inflight) return inflight;
   inflight = (async () => {
     try {
       const ps = await listProfiles();
       setState({ profiles: ps, loaded: true });
     } catch (err) {
       console.warn("profilesStore: 刷新 profile 列表失败", (err as Error).message);
-      setState({ profiles: [], loaded: true });
+      // 保留旧数据，避免瞬态失败毒化全局缓存；标记 loaded=true（已尝试过，
+      // 不必让消费方反复重试，由调用方决定是否重试）
+      setState({ profiles: state.profiles, loaded: true });
+      throw err;
     } finally {
       inflight = null;
     }
