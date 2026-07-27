@@ -449,6 +449,23 @@ function Header({
   const canEdit = sessionId !== null;
   const canFork = sessionId !== null && !isRunning;
 
+  // 运行中走字计时器：isRunning 期间每 100ms 更新，填补 done 之前的空窗。
+  // 本地计时含网络开销，done 后切换到 stats.durationMs（SDK 纯模型时间），
+  // 两者会有 <1s 偏差——本地是"感知时间"，SDK 值是"测量时间"。
+  const [runningElapsed, setRunningElapsed] = useState(0);
+  useEffect(() => {
+    if (!isRunning) {
+      setRunningElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    setRunningElapsed(0);
+    const id = setInterval(() => {
+      setRunningElapsed(Date.now() - start);
+    }, 100);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
   return (
     <div className="sticky top-0 z-10 flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-3 py-2 pl-14 md:pl-4 md:py-2.5 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -523,6 +540,11 @@ function Header({
           {statusMessage && (
             <Badge variant="secondary" className="h-4 animate-pulse text-[10px]">
               {statusMessage}
+            </Badge>
+          )}
+          {isRunning && (
+            <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="运行中">
+              {(runningElapsed / 1000).toFixed(1)}s
             </Badge>
           )}
           {stats && (
