@@ -44,35 +44,8 @@ const SettingsPage = lazy(() =>
  */
 export function AppShell() {
   const location = useLocation();
-  const navigate = useNavigate();
 
   const path = location.pathname;
-
-  // ── /pending：新会话草稿态 ──
-  if (path === "/pending") {
-    const state = location.state as
-      | { cwd?: string; profileId?: string | null; permissionMode?: string; effortLevel?: string }
-      | null;
-    const cwd = state?.cwd ?? null;
-    if (!cwd) {
-      navigate("/new", { replace: true });
-      return null;
-    }
-    return (
-      <Shell>
-        <ChatView
-          key="pending"
-          sessionId={null}
-          cwd={cwd}
-          title="新会话"
-          subtitle={cwd}
-          initialProfileId={state?.profileId ?? null}
-          initialPermissionMode={state?.permissionMode}
-          initialEffortLevel={state?.effortLevel}
-        />
-      </Shell>
-    );
-  }
 
   // ── /settings：设置页 ──
   if (path === "/settings") {
@@ -83,13 +56,29 @@ export function AppShell() {
     );
   }
 
-  // ── /c/:sessionId：已有会话 ──
+  // ── /pending 与 /c/:sessionId 共用同一个固定 key 的 ChatViewWithMeta ──
+  // 这样 pending 态收到 session_created 后 navigate('/c/:id') 只是更新 URL，
+  // 组件不 remount：POST 流不中断、messages state 保留、无骨架屏闪动。
+  // 草稿态（sessionId=null）与已建会话态的差异由 ChatViewWithMeta 内部分发。
   const match = path.match(/^\/c\/(.+)$/);
-  if (match) {
-    const sessionId = decodeURIComponent(match[1]);
+  if (path === "/pending" || match) {
+    const sessionId = match ? decodeURIComponent(match[1]) : null;
+    const pendingState =
+      path === "/pending"
+        ? (location.state as {
+            cwd?: string;
+            profileId?: string | null;
+            permissionMode?: string;
+            effortLevel?: string;
+          } | null)
+        : null;
     return (
       <Shell>
-        <ChatViewWithMeta key={sessionId} sessionId={sessionId} />
+        <ChatViewWithMeta
+          key="chat-session"
+          sessionId={sessionId}
+          pendingState={pendingState}
+        />
       </Shell>
     );
   }
@@ -293,23 +282,69 @@ function renderShell(children: ReactNode) {
   );
 }
 
-/** 已有会话：先拉元信息 + 历史，再渲染 ChatView */
-function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
+type PendingState = {
+  cwd?: string;
+  profileId?: string | null;
+  permissionMode?: string;
+  effortLevel?: string;
+} | null;
+
+type Meta = {
+  title: string;
+  cwd: string;
+  messages: ThreadMessageLike[];
+  profileId: string | null;
+  permissionMode: string;
+  effortLevel: string;
+  runningStatus: "idle" | "running" | "waiting" | "completed";
+  inputTokens: number;
+  outputTokens: number;
+};
+
+/**
+ * 会话容器：处理三种态，关键是用固定 key（由父组件传 "chat-session"）避免
+ * /pending → /c/:id 切换时 remount，从而不中断 createSession POST 流、不丢
+ * messages state、不闪骨架屏。
+ *
+ *   pending        sessionId=null     草稿态，cwd 来自 pendingState
+ *   pendingToLive  null→realId       刚创建成功，沿用 pendingState 数据，不 fetch
+ *   fetch          其它               侧栏进入/切换/刷新，fetch meta+history
+ */
+function ChatViewWithMeta({
+  sessionId,
+  pendingState,
+}: {
+  sessionId: string | null;
+  pendingState: PendingState;
+}) {
   const navigate = useNavigate();
-  const [meta, setMeta] = useState<{
-    title: string;
-    cwd: string;
-    messages: ThreadMessageLike[];
-    profileId: string | null;
-    permissionMode: string;
-    effortLevel: string;
-    runningStatus: "idle" | "running" | "waiting" | "completed";
-    inputTokens: number;
-    outputTokens: number;
-  } | null>(null);
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // 渲染期间追踪上一次 sessionId，区分「pending 创建成功」与「侧栏切换」。
+  // 必须在渲染期间计算（非 effect），否则 Skeleton 会先闪一帧。
+  const prevSessionIdRef = useRef<string | null>(sessionId);
+  const isPendingToLive = prevSessionIdRef.current === null && sessionId !== null;
+  prevSessionIdRef.current = sessionId;
+
+  // pending 态守卫：无 cwd（直接访问 /pending 无 state）回 /new
   useEffect(() => {
+    if (sessionId === null && !pendingState?.cwd) {
+      navigate("/new", { replace: true });
+    }
+  }, [sessionId, pendingState, navigate]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      // 回到 pending：清掉上一会话的 meta，避免错配
+      setMeta(null);
+      return;
+    }
+    // pending 创建成功：组件未 remount，messages state 在 useChatSSE 里保留，
+    // 这里不 fetch（避免读到尚未 flush 完的磁盘转录导致空消息）。
+    if (isPendingToLive) return;
+
+    // 侧栏进入/切换/刷新：fetch meta + history
     let cancelled = false;
     setMeta(null);
     setErr(null);
@@ -317,12 +352,12 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     async function load() {
       try {
         const res = await fetch(
-          `api/sessions/${encodeURIComponent(sessionId)}`,
+          `api/sessions/${encodeURIComponent(sessionId!)}`,
         );
         // 会话不存在（已删除/从未创建）：提示后自动跳回首页
         if (res.status === 404) {
           if (cancelled) return;
-          toast.error("会话不存在", { description: sessionId });
+          toast.error("会话不存在", { description: sessionId! });
           navigate("/new", { replace: true });
           return;
         }
@@ -332,7 +367,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
         };
         if (cancelled) return;
         setMeta({
-          title: data.title ?? sessionId,
+          title: data.title ?? sessionId!,
           cwd: data.cwd ?? "",
           messages: data.messages ?? [],
           profileId: data.profileId ?? null,
@@ -351,7 +386,7 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, navigate]);
+  }, [sessionId, navigate, isPendingToLive]);
 
   // 跨窗口/标签页同步：监听 sessions_changed（全局单例 SSE 频道），刷新当前
   // 会话的 token 统计（inputTokens/outputTokens）与 runningStatus（供 ChatView
@@ -394,6 +429,42 @@ function ChatViewWithMeta({ sessionId }: { sessionId: string }) {
       </div>
     );
   }
+
+  // ── pending 态（sessionId=null）：cwd 来自 pendingState ──
+  if (sessionId === null) {
+    const cwd = pendingState?.cwd ?? null;
+    return (
+      <ChatView
+        sessionId={null}
+        cwd={cwd}
+        title="新会话"
+        subtitle={cwd ?? undefined}
+        initialProfileId={pendingState?.profileId ?? null}
+        initialPermissionMode={pendingState?.permissionMode}
+        initialEffortLevel={pendingState?.effortLevel}
+      />
+    );
+  }
+
+  // ── pendingToLive（null→realId 刚创建）：沿用 pendingState 数据，不 fetch ──
+  // 组件未 remount，useChatSSE 的 messages state 保留流式输出，
+  // 不传 initialMessages 以免触发 loadHistory 覆盖正在流式的内容。
+  if (isPendingToLive) {
+    const cwd = pendingState?.cwd ?? null;
+    return (
+      <ChatView
+        sessionId={sessionId}
+        cwd={cwd}
+        title="新会话"
+        subtitle={cwd ?? undefined}
+        initialProfileId={pendingState?.profileId ?? null}
+        initialPermissionMode={pendingState?.permissionMode}
+        initialEffortLevel={pendingState?.effortLevel}
+      />
+    );
+  }
+
+  // ── 侧栏进入/切换/刷新：等 meta ──
   if (!meta) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">

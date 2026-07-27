@@ -45,9 +45,6 @@ export function ChatView({
   initialOutputTokens,
 }: ChatViewProps) {
   const navigate = useNavigate();
-  // pending 态创建会话后，推迟到本轮流结束再 navigate 到 /c/:id。
-  // 避免路由切换导致 ChatView 卸载、createSession POST 流被中断、骨架屏闪动。
-  const pendingNavigateRef = useRef<string | null>(null);
   // 待处理的权限请求和计划审批
   // pendingPermissions 用数组：支持多个并发请求同时显示各自横幅
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
@@ -141,19 +138,11 @@ export function ChatView({
       permissionMode: initialPermissionMode,
       effortLevel: initialEffortLevel,
       onSessionCreated: (id) => {
-        // 不立即 navigate：/pending → /c/:id 的路由切换会卸载当前 ChatView，
-        // 导致正在进行的 createSession POST 流被卸载 cleanup 中断（abort），
-        // 消息显示到一半闪骨架屏。先记下 id，等本轮流结束（onRoundEnd）再切换，
-        // 此时消息已完整显示，切换后由 ChatViewWithMeta 的 loadHistory 恢复。
-        pendingNavigateRef.current = id;
+        // 立即 navigate 更新 URL 到 /c/:id。AppShell 用固定 key 的
+        // ChatViewWithMeta，路由切换不会 remount ChatView，因此 POST 流不中断、
+        // messages state 保留、无骨架屏闪动。
+        navigate(`/c/${id}`, { replace: true });
         window.dispatchEvent(new CustomEvent("session-list-changed"));
-      },
-      onRoundEnd: () => {
-        const id = pendingNavigateRef.current;
-        if (id) {
-          pendingNavigateRef.current = null;
-          navigate(`/c/${id}`, { replace: true });
-        }
       },
       onPermissionRequest: handlePermissionRequest,
       onPermissionResolved: handlePermissionResolved,
@@ -234,7 +223,11 @@ export function ChatView({
 
   // 已有会话：挂载时载入历史（静止会话）或续流（运行中会话）
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      // 回到 pending 态（从会话 A 点新建）：清掉 A 的历史，避免错配
+      loadHistory([]);
+      return;
+    }
     if (initialRunningStatus === "running") {
       // 会话正在运行 → 订阅实时流，续上输出
       void subscribe(sessionId);
