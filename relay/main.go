@@ -74,6 +74,10 @@ func main() {
 		Addr:              *listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		// IdleTimeout 回收空闲 keep-alive 连接，防止远程浏览器遗留的空闲连接堆积。
+		// 刻意不设 WriteTimeout：SSE 等长响应需要长时间持续写，WriteTimeout 会误杀它们；
+		// 单请求写超时改由 pendingHTTP.setWriteDeadline 在应用层精确控制。
+		IdleTimeout: 120 * time.Second,
 	}
 
 	log.Printf("[relay] listening on %s (behind Nginx for TLS)", *listen)

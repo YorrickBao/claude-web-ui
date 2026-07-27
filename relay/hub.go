@@ -188,7 +188,22 @@ func NewTunnel(accessKey string, conn *websocket.Conn) *Tunnel {
 	}
 }
 
+// writeTimeout 是向本地隧道 WS 写帧、以及向远程浏览器写 HTTP 响应的统一写截止时间。
+//
+// 必要性：coder/websocket 的写超时完全由 ctx.Done() 驱动（经 timeoutLoop →
+// c.close()），本身不设 SetWriteDeadline。若调用方传 context.Background()
+// 等无 deadline 的 ctx，TCP 写缓冲满时 c.bw.Flush() 会永久阻塞 → writeMu 被
+// 永久持有 → 后续所有 req/ping/end 帧全部阻塞在 writeMu.Lock() → 所有请求
+// pending。读路径用独立 readMu，localReadLoop 不会因此 idle 超时，无法自我修复。
+//
+// 给每次 writeLocal 包 15s 超时：超时后 ctx.Done() 触发 → timeoutLoop 调
+// c.close() → rwc.Close() → 阻塞的 Flush 返回错误 → writeMu 释放。代价是整条
+// WS 连接关闭、触发本地重连（relay.ts 已有 scheduleReconnect）。能写阻塞 15s
+// 说明隧道已不健康，断开重连比僵死好。
+const writeTimeout = 15 * time.Second
+
 // writeLocal 向本地 WebUI 写一帧（线程安全）。
+// 无论调用方传什么 ctx，都强制叠加 15s 写超时，防止 writeMu 被永久持有。
 func (t *Tunnel) writeLocal(ctx context.Context, f Frame) error {
 	data, err := encodeFrame(f)
 	if err != nil {
@@ -196,7 +211,9 @@ func (t *Tunnel) writeLocal(ctx context.Context, f Frame) error {
 	}
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	return t.conn.Write(ctx, websocket.MessageText, data)
+	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return t.conn.Write(wctx, websocket.MessageText, data)
 }
 
 // addRoute / takeRoute / peekRoute 维护 connId → pendingHTTP 路由。
@@ -261,11 +278,16 @@ func (t *Tunnel) shutdown(reason string) {
 // 并发：writeHeader/writeBody 只在 localReadLoop（单 goroutine）调用；
 // wait/fail 在 HTTP handler goroutine 调用；done channel 协调两者。
 type pendingHTTP struct {
-	w          httpResponseWriter
-	flusher    http.Flusher
+	w httpResponseWriter
+	// rc 包裹 w，提供 SetWriteDeadline/Flush 等扩展写能力（Header/Write/WriteHeader
+	// 仍直接走 w，ResponseController 不暴露这些基础方法）。
+	// 远程浏览器读取缓慢时，写操作 15s 内无法完成即 fail 该请求，释放
+	// localReadLoop——否则单慢客户端会卡住整个读循环，拖垮所有响应回传。
+	rc         *http.ResponseController
 	done       chan struct{}
 	err        error
 	headerSent bool
+	failed     bool // 写失败后置位，使后续 writeHeader/writeBody 变 no-op
 }
 
 type httpResponseWriter = interface {
@@ -275,16 +297,18 @@ type httpResponseWriter = interface {
 }
 
 func newPendingHTTP(w httpResponseWriter) *pendingHTTP {
-	p := &pendingHTTP{w: w, done: make(chan struct{})}
-	if fl, ok := w.(http.Flusher); ok {
-		p.flusher = fl
+	return &pendingHTTP{
+		w:    w,
+		rc:   http.NewResponseController(w),
+		done: make(chan struct{}),
 	}
-	return p
 }
 
 // writeHeader 写响应头（仅一次）。跳过 hop-by-hop 头。
+// 写回远程浏览器设 writeTimeout 截止时间：慢客户端 15s 内写不出即 fail，
+// 释放 localReadLoop，避免单慢连接拖垮所有响应回传。
 func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
-	if p.headerSent {
+	if p.headerSent || p.failed {
 		return
 	}
 	h := p.w.Header()
@@ -294,20 +318,37 @@ func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
 		}
 		h.Set(k, v)
 	}
+	p.setWriteDeadline()
 	p.w.WriteHeader(status)
-	if p.flusher != nil {
-		p.flusher.Flush()
+	if err := p.rc.Flush(); err != nil {
+		p.fail("writeHeader flush: " + err.Error())
+		return
 	}
 	p.headerSent = true
 }
 
 func (p *pendingHTTP) writeBody(body string) {
+	if p.failed {
+		return
+	}
+	p.setWriteDeadline()
 	if body != "" {
-		_, _ = p.w.Write([]byte(body))
+		if _, err := p.w.Write([]byte(body)); err != nil {
+			p.fail("writeBody write: " + err.Error())
+			return
+		}
 	}
-	if p.flusher != nil {
-		p.flusher.Flush()
+	if err := p.rc.Flush(); err != nil {
+		p.fail("writeBody flush: " + err.Error())
+		return
 	}
+}
+
+// setWriteDeadline 给写回浏览器的操作设 writeTimeout 截止时间。
+// 每次写前重置，SSE 持续有数据时不会误超时；两次写之间静默超过 15s 才判失败。
+// 不支持 SetWriteDeadline 的非标准 server 返回 errNotSupported，忽略即可。
+func (p *pendingHTTP) setWriteDeadline() {
+	_ = p.rc.SetWriteDeadline(time.Now().Add(writeTimeout))
 }
 
 // finish 标记响应流正常结束。
@@ -320,10 +361,12 @@ func (p *pendingHTTP) finish() {
 }
 
 // fail 标记失败（若尚未发头则可由 handler 写错误页）。
+// 置 failed=true 使后续 writeHeader/writeBody 变 no-op，避免向已坏连接继续写。
 func (p *pendingHTTP) fail(reason string) {
 	if p.err == nil {
 		p.err = errors.New(reason)
 	}
+	p.failed = true
 	p.finish()
 }
 
