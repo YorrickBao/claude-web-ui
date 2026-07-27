@@ -8,7 +8,7 @@ import {
   useComposerRuntime,
   unstable_useComposerInputHistory,
 } from "@assistant-ui/react";
-import { ArrowUp, Brain, ChevronDown, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useProfiles } from "@/lib/profilesStore";
 import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
@@ -431,53 +431,160 @@ function AssistantMessage() {
 }
 
 /**
- * assistant 消息正文：按 part 原顺序（时序交错）渲染 text / reasoning / tool-call，
- * 不再做"工作过程组 + 正文"两桶分离——这样中间叙述文本与它对应的工具调用
- * 保持上下文相邻，避免悬空引用。工具卡 / 思考块各自可折叠，默认运行中展开、
- * 结束后收起。
+ * assistant 消息正文：按时序切成段后渲染。
+ * - text 段：常显的叙述/回答正文（Markdown）
+ * - 工作段：连续的 reasoning + tool-call。若含工具调用，包成一个可折叠
+ *   「工作段」（折叠态头部显示工具名），既让叙述文本与对应工具调用保持
+ *   上下文相邻，又能在回合结束后把工作整体收起、自然凸显答案。
+ *   纯思考段（无工具）不额外包层，直接渲染思考块。
  */
 function AssistantContent() {
   const status = useMessage((s) => s.status);
   const content = useMessage((s) => s.content);
   const isRunning = status?.type === "running";
   const parts = (content as readonly AnyPart[] | undefined) ?? [];
-  const lastIdx = parts.length - 1;
 
-  const rendered = parts.map((p, i) => {
-    const isLast = i === lastIdx;
-    if (p.type === "text") {
-      const text = typeof p.text === "string" ? p.text : "";
-      if (!text.trim()) {
+  const segs = segmentParts(parts);
+  const lastSegIdx = segs.length - 1;
+
+  const rendered = segs.map((seg, si) => {
+    const isLast = si === lastSegIdx;
+    if (seg.kind === "text") {
+      if (!seg.text.trim()) {
         // 末尾空 text 且运行中：流式刚开始，用光标占位
-        return isRunning && isLast ? <RunningCursor key={i} /> : null;
+        return isRunning && isLast ? <RunningCursor key={si} /> : null;
       }
       return (
-        <Markdown key={i} streaming={isRunning && isLast}>
-          {text}
+        <Markdown key={si} streaming={isRunning && isLast}>
+          {seg.text}
         </Markdown>
       );
     }
-    if (p.type === "reasoning") {
-      return (
-        <ReasoningBlock
-          key={i}
-          text={typeof p.text === "string" ? p.text : undefined}
-          // 仅"消息运行中且本 part 是最后一个"时视为正在流式：
-          // 模型继续往下走（新 part 追加）即自动收起上一段思考。
-          isStreaming={isRunning && isLast}
-        />
-      );
+    // 工作段
+    const active = isRunning && isLast;
+    if (seg.parts.some((p) => p.type === "tool-call")) {
+      return <WorkStepGroup key={si} parts={seg.parts} isActive={active} />;
     }
-    if (p.type === "tool-call") {
-      return <ToolRenderer key={i} {...mapToolPart(p, isRunning)} />;
-    }
-    return null;
+    // 纯思考段：不包工作段，直接渲染思考块（避免与思考块自身折叠重复嵌套）
+    return (
+      <div key={si} className="space-y-0.5">
+        {seg.parts.map((p, i) => {
+          if (p.type !== "reasoning") return null;
+          return (
+            <ReasoningBlock
+              key={i}
+              text={typeof p.text === "string" ? p.text : undefined}
+              // 仅"本段是最后一段且运行中"时，末尾思考块视为正在流式
+              isStreaming={active && i === seg.parts.length - 1}
+            />
+          );
+        })}
+      </div>
+    );
   });
 
   if (rendered.every((n) => n == null)) {
     return isRunning ? <RunningCursor /> : null;
   }
   return <div className="space-y-2">{rendered}</div>;
+}
+
+type MessageSegment =
+  | { kind: "text"; text: string }
+  | { kind: "work"; parts: AnyPart[] };
+
+/** 把 parts 按时序切段：text 单独成段，连续的 reasoning/tool-call 合并成工作段 */
+function segmentParts(parts: readonly AnyPart[]): MessageSegment[] {
+  const segs: MessageSegment[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    if (parts[i].type === "text") {
+      segs.push({
+        kind: "text",
+        text: typeof parts[i].text === "string" ? (parts[i].text as string) : "",
+      });
+      i++;
+    } else {
+      const run: AnyPart[] = [];
+      while (i < parts.length && parts[i].type !== "text") {
+        run.push(parts[i]);
+        i++;
+      }
+      segs.push({ kind: "work", parts: run });
+    }
+  }
+  return segs;
+}
+
+/**
+ * 工作段：把一段连续的 reasoning + tool-call 包成可折叠组。
+ * - 折叠态头部显示其中的工具名（无工具则「思考过程」），给上下文
+ * - 运行中且为本回合最后一段时默认展开、结束后自动收起一次（尊重手动操作）
+ * - 展开后内部仍是各自可折叠的思考块 / 工具卡
+ */
+function WorkStepGroup({
+  parts,
+  isActive,
+}: {
+  parts: readonly AnyPart[];
+  isActive: boolean;
+}) {
+  const [open, setOpen] = useState(isActive);
+  const wasActiveRef = useRef(isActive);
+  useEffect(() => {
+    // 从「活跃」变为「不活跃」（回合结束 / 后面追加了新段）自动收起一次
+    if (wasActiveRef.current && !isActive) setOpen(false);
+    wasActiveRef.current = isActive;
+  }, [isActive]);
+
+  const toolNames = Array.from(
+    new Set(
+      parts
+        .filter((p) => p.type === "tool-call")
+        .map((p) => (p.toolName as string) ?? "")
+        .filter(Boolean),
+    ),
+  );
+  const label = toolNames.length > 0 ? toolNames.join(" · ") : "思考过程";
+  const lastIdx = parts.length - 1;
+
+  return (
+    <div className="text-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        <span className="font-mono">{label}</span>
+        {isActive && (
+          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+        )}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5 border-l border-border/40 pl-3">
+          {parts.map((p, i) => {
+            if (p.type === "reasoning") {
+              return (
+                <ReasoningBlock
+                  key={i}
+                  text={typeof p.text === "string" ? p.text : undefined}
+                  isStreaming={isActive && i === lastIdx}
+                />
+              );
+            }
+            if (p.type === "tool-call") {
+              return <ToolRenderer key={i} {...mapToolPart(p, isActive)} />;
+            }
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
