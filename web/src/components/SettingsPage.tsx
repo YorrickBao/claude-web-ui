@@ -579,7 +579,7 @@ function ListView({
             </div>
 
             {/* 操作按钮：移动端始终可见，桌面端 hover 显示 */}
-            <div className="flex shrink-0 items-center gap-0.5 self-end transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+            <div className="flex shrink-0 items-center gap-0.5 self-end transition-opacity sm:self-center sm:opacity-0 sm:group-hover:opacity-100">
               <Button
                 variant="ghost"
                 size="icon-sm"
