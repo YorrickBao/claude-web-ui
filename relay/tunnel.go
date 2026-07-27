@@ -110,7 +110,7 @@ func (t *Tunnel) localReadLoop(parent context.Context, h *Hub) {
 			if !ok {
 				continue
 			}
-			if !p.headerSent {
+			if !p.headerSent.Load() {
 				// 本地没发 res 头就先发 body（异常），补一个 200
 				p.writeHeader(http.StatusOK, nil)
 			}

@@ -68,20 +68,22 @@ func (h *Hub) Find(accessKey string) (*Tunnel, bool) {
 
 // register 注册或顶替一个隧道。若同 accessKey 已存在，旧隧道被关闭（视为僵尸重连）。
 // 返回是否发生顶替，便于日志记录。
+//
+// 并发安全：在锁内原子交换（旧值取出、新值写入同一次持锁），锁外再关闭旧隧道
+// （关连接不应持锁）。此前的"释放锁→shutdown→重新加锁写入"存在 TOCTOU 窗口：
+// 两个并发 register 会各自拿到同一个 old、各自 shutdown，但重新加锁后后写入者
+// 覆盖先写入者，先写入者的 t 既不在 map 也未被 shutdown，成为僵尸隧道（本地侧
+// WS/心跳/localReadLoop 永久驻留）。原子交换保证：并发时后到者拿到先到者的 t
+// 作为 old 并 shutdown 它，无孤儿。unregister 的实例身份校验（cur == t）与新逻辑兼容。
 func (h *Hub) register(accessKey string, t *Tunnel) (replaced bool) {
 	h.mu.Lock()
-	old, ok := h.tunnels[accessKey]
-	if ok {
-		h.mu.Unlock()
-		// 在锁外关闭旧连接，避免持锁阻塞
+	old := h.tunnels[accessKey]
+	h.tunnels[accessKey] = t // 原子交换：新隧道一定在 map 里
+	h.mu.Unlock()
+	if old != nil {
 		old.shutdown("replaced by new tunnel")
-		h.mu.Lock()
-		h.tunnels[accessKey] = t
-		h.mu.Unlock()
 		return true
 	}
-	h.tunnels[accessKey] = t
-	h.mu.Unlock()
 	return false
 }
 
@@ -276,7 +278,10 @@ func (t *Tunnel) shutdown(reason string) {
 // goroutine 阻塞在 wait() 等流结束（或客户端断开）。
 //
 // 并发模型（重要）：
-//   - writeHeader/writeBody/headerSent 仅在 localReadLoop（单 goroutine）访问；
+//   - writeHeader/writeBody 仅在 localReadLoop（单 goroutine）调用；
+//   - headerSent 跨 goroutine：localReadLoop 写（writeHeader 成功后）、handleProxy
+//     读（wait 返回后判断能否写错误页）。wait 走 <-ctx.Done 分支（客户端断开）时
+//     不经 done channel，无 happens-before，故用 atomic.Bool 保证可见性；
 //   - fail/finish 可由多 goroutine 并发调用——localReadLoop（写失败/TypeEnd/TypeError）、
 //     客户端断开 goroutine（proxy.go）、shutdown 收集路径都可能触发；
 //   - err/failed 由 mu 保护；done 由 doneOnce 幂等关闭，杜绝双重 close 崩溃。
@@ -291,8 +296,8 @@ type pendingHTTP struct {
 	doneOnce   sync.Once  // 幂等关闭 done，防多 goroutine 并发 fail 双重 close 崩溃
 	mu         sync.Mutex // 保护 err/failed（跨 goroutine 读写）
 	err        error
-	headerSent bool // 仅 localReadLoop 读写，无需锁
-	failed     bool // 写失败后置位，使后续 writeHeader/writeBody 变 no-op
+	headerSent atomic.Bool // 跨 goroutine：localReadLoop 写、handleProxy 读
+	failed     bool        // 写失败后置位，使后续 writeHeader/writeBody 变 no-op
 }
 
 type httpResponseWriter = interface {
@@ -313,7 +318,7 @@ func newPendingHTTP(w httpResponseWriter) *pendingHTTP {
 // 写回远程浏览器设 writeTimeout 截止时间：慢客户端 15s 内写不出即 fail，
 // 释放 localReadLoop，避免单慢连接拖垮所有响应回传。
 func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
-	if p.headerSent { // 仅 localReadLoop 访问，无需锁
+	if p.headerSent.Load() {
 		return
 	}
 	p.mu.Lock()
@@ -335,7 +340,7 @@ func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
 		p.fail("writeHeader flush: " + err.Error())
 		return
 	}
-	p.headerSent = true
+	p.headerSent.Store(true)
 }
 
 func (p *pendingHTTP) writeBody(body string) {

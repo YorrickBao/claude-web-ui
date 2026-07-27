@@ -65,6 +65,14 @@ func main() {
 	}
 	mux.HandleFunc("/stats", statsHandler)
 
+	// 健康探活：无需鉴权，供负载均衡 / 监控 / systemd 探活用。
+	// 之前文档（flag 帮助、hub.go/proxy.go 注释）提到 /healthz 但未注册，
+	// 访问会落到 handleProxy 返回 401，被监控误判为不健康并摘除节点。
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok")
+	})
+
 	// 远程浏览器入口：所有其它请求（含根路径）走 HTTP 透明代理，
 	// 经隧道转发到本地 WebUI。?t= 一次性令牌换 cookie；cookie 携带 accessKey。
 	// 根路径无 key 时返回 200 空（既可当探活，又不泄露信息）。

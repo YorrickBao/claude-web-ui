@@ -121,8 +121,11 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 		<-ctx.Done()
 		tunnel.deleteRoute(connId)
 		p.fail("client disconnected")
-		// 通知本地取消该请求
-		_ = tunnel.writeLocal(context.Background(), Frame{Type: TypeEnd, ConnId: connId})
+		// 通知本地取消该请求。失败通常意味着隧道已断（本地侧 onclose 会
+		// 兜底 abortAllInflight 中止 fetch），但按 AGENTS.md 纪律不静默吞错误。
+		if err := tunnel.writeLocal(context.Background(), Frame{Type: TypeEnd, ConnId: connId}); err != nil {
+			log.Printf("[proxy] %s %s send end on disconnect failed: %v", shortKey(accessKey), connId, err)
+		}
 	}()
 
 	// 发 req 帧
@@ -134,7 +137,7 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 		Headers: headers,
 	}); err != nil {
 		log.Printf("[proxy] %s write req %s failed: %v", shortKey(accessKey), connId, err)
-		if !p.headerSent {
+		if !p.headerSent.Load() {
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = io.WriteString(w, "tunnel write failed")
 		}
@@ -156,7 +159,7 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 	if err := p.wait(ctx); err != nil {
 		log.Printf("[proxy] %s %s wait ended: %v", shortKey(accessKey), connId, err)
 		// 若头尚未发送，可返回错误页；否则连接已部分写出，无法改写状态
-		if !p.headerSent {
+		if !p.headerSent.Load() {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = io.WriteString(w, "upstream error: "+err.Error())
