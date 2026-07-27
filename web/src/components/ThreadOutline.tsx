@@ -73,13 +73,13 @@ export function ThreadOutline() {
       />
 
       {/* 面板：hover 显隐，无动效 */}
-      <div className="pointer-events-none absolute left-full top-1/2 ml-1 max-h-[60vh] w-64 -translate-y-1/2 rounded-lg border border-border bg-popover/95 p-1.5 opacity-0 shadow-lg backdrop-blur group-hover:pointer-events-auto group-hover:opacity-100">
+      <div className="pointer-events-none absolute left-full top-1/2 ml-1 flex max-h-[60vh] w-64 -translate-y-1/2 flex-col rounded-lg border border-border bg-popover/95 p-1.5 opacity-0 shadow-lg backdrop-blur group-hover:pointer-events-auto group-hover:opacity-100">
         {items.length === 0 ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
             暂无提问
           </div>
         ) : (
-          <div className="flex max-h-[60vh] flex-col gap-0.5 overflow-y-auto">
+          <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
             {items.map((it, idx) => (
               <button
                 key={it.id}
