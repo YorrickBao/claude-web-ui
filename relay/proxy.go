@@ -16,7 +16,7 @@ const (
 	cookieMaxAge = 86400 * 30 // 30 天
 )
 
-// handleProxy 是远程浏览器的主入口：所有非 /tunnel、非 /healthz 的 HTTP 请求都走这里。
+// handleProxy 是远程浏览器的主入口：所有非 /tunnel、非 /stats 的 HTTP 请求都走这里。
 //
 // 工作流：
 //  1. 若带 ?t=TOKEN：一次性消费换取 accessKey cookie，302 回根路径（剥掉 token）。

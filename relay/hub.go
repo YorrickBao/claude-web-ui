@@ -23,7 +23,7 @@ type Hub struct {
 
 	// prefix 是外部 URL 前缀（子路径部署用），如 "/relay"；根路径部署为 ""。
 	// 仅用于拼接对外输出的 Location 头和 cookie Path——
-	// nginx 会把前缀剥掉再转发，relay 内部路由（/healthz、/tunnel、/）始终在根路径。
+	// nginx 会把前缀剥掉再转发，relay 内部路由（/tunnel、/stats、/）始终在根路径。
 	prefix string
 }
 
