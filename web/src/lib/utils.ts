@@ -27,6 +27,26 @@ export function uuid(): string {
 }
 
 /**
+ * 耗时格式化：ms → 紧凑的分段表达，用于会话耗时徽章。
+ * - < 1 分：保留 1 位小数秒（"12.3 秒"），实时计时下能看到在走
+ * - < 1 时："2 分 5 秒"
+ * - ≥ 1 时："1 时 23 分"
+ * 进位一致用 round(totalSec) 推导，避免 min/sec 分别取整错位。
+ */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const totalSec = ms / 1000;
+  if (totalSec < 60) return `${totalSec.toFixed(1)} 秒`;
+  const r = Math.round(totalSec);
+  const min = Math.floor(r / 60);
+  const sec = r % 60;
+  if (min < 60) return `${min} 分 ${sec} 秒`;
+  const hr = Math.floor(min / 60);
+  const m = min % 60;
+  return `${hr} 时 ${m} 分`;
+}
+
+/**
  * 相对时间格式化：ts（ms 时间戳）→ "刚刚 / N 秒前 / N 分钟前 / N 小时前 / N 天前"。
  * 用于设备列表等「最后活跃」展示。
  */

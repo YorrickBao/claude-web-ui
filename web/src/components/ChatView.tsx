@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { GitFork, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 
 export interface ChatViewProps {
   sessionId: string | null;
@@ -558,7 +558,7 @@ function Header({
           )}
           {isRunning && (
             <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="运行中">
-              {(runningElapsed / 1000).toFixed(1)}s
+              {formatDuration(runningElapsed)}
             </Badge>
           )}
           {stats && (
@@ -566,7 +566,7 @@ function Header({
               <Badge variant="secondary" className="text-[10px] h-4">
                 入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
               </Badge>
-              <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="本轮总耗时">{(stats.durationMs / 1000).toFixed(1)}s</Badge>
+              <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="本轮总耗时">{formatDuration(stats.durationMs)}</Badge>
             </>
           )}
           {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
@@ -576,7 +576,7 @@ function Header({
               </Badge>
               {initialDurationMs !== undefined && initialDurationMs > 0 && (
                 <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="上一轮总耗时">
-                  {(initialDurationMs / 1000).toFixed(1)}s
+                  {formatDuration(initialDurationMs)}
                 </Badge>
               )}
             </>
