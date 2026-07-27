@@ -13,9 +13,12 @@ export default defineConfig([
     "web/postcss.config.js",
   ]),
   eslint.configs.recommended,
-  tseslint.configs.recommendedTypeChecked,
   {
+    // typed linting 只作用于有 projectService 的 TS 文件。
+    // .mjs / .js（如 cli.mjs）只走上面的 eslint.configs.recommended，
+    // 不命中 typed 规则，避免 "rule requires type information" 直接崩溃中止。
     files: ["server/**/*.ts", "web/**/*.ts", "web/**/*.tsx"],
+    extends: tseslint.configs.recommendedTypeChecked,
     languageOptions: {
       parserOptions: {
         projectService: true,

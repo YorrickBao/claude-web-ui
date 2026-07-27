@@ -857,7 +857,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string")) {
       return reply.code(400).send({ error: "ids must be a string array" });
     }
-    const profiles = await reorderProfiles(raw as string[]);
+    const profiles = await reorderProfiles(raw);
     return reply.send({ profiles });
   });
 

@@ -286,7 +286,7 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
   // SDK 扫描所有项目的会话转录（内部已用 isSidechain 排除子代理会话）
   const sdkSessions = await sdkListSessions();
 
-  // eslint-disable-next-line no-console
+   
   console.log(`[store] syncAndListSessions: ${sdkSessions.length} SDK sessions`);
 
   let changed = false;

@@ -467,7 +467,7 @@ export function useChatSSE({
                 const res2 = await approvePlan(sid, "approve", opts, ctrl2.signal);
                 if (!res2.ok || !res2.body) throw new Error(`approvePlan: ${res2.status}`);
                 for await (const evt2 of parseSSE(res2.body, ctrl2.signal)) {
-                  handleSSEEvent(evt2 as SSEEvent, sid);
+                  handleSSEEvent(evt2, sid);
                 }
               } catch (err2) {
                 const e2 = err2 as Error;
@@ -723,7 +723,7 @@ function appendUserMessage(msgs: ChatMessage[], text: string): ChatMessage[] {
   const isSameUserText = (m: ChatMessage | undefined): boolean =>
     !!m &&
     m.role === "user" &&
-    Array.isArray(m.content as unknown) &&
+    Array.isArray(m.content) &&
     (m.content as unknown[]).length === 1 &&
     ((m.content as unknown[])[0] as { type?: string; text?: string })?.type === "text" &&
     ((m.content as unknown[])[0] as { type?: string; text?: string })?.text === text;
@@ -832,7 +832,7 @@ function stampAssistantUuid(
       {
         ...last,
         metadata: { ...meta, custom: { ...custom, assistantUuid } },
-      } as ChatMessage,
+      },
       ...msgs.slice(i + 1),
     ];
   }

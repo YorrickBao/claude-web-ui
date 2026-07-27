@@ -177,7 +177,7 @@ export async function* runQuery(
         ? { thinking: { type: "disabled" as const } }
         : (params.effortLevel === "default" || !params.effortLevel)
           ? {}
-          : { effort: params.effortLevel as Exclude<EffortLevel, "disabled" | "default"> }),
+          : { effort: params.effortLevel }),
       abortController: params.abortController,
       // 开启逐 token 流式：SDK 会发出 stream_event（SDKPartialAssistantMessage），
       // 后端累积后以 assistant_delta 快照转发，实现真·流式输出体验
@@ -478,7 +478,7 @@ export async function* runQuery(
 
       case "result": {
         if (msg.subtype === "success") {
-          const s = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultSuccess;
+          const s = msg;
           yield {
             type: "done",
             inputTokens: s.usage?.input_tokens ?? 0,
@@ -487,7 +487,7 @@ export async function* runQuery(
             ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
           };
         } else {
-          const e = msg as import("@anthropic-ai/claude-agent-sdk").SDKResultError;
+          const e = msg;
           yield {
             type: "done",
             inputTokens: e.usage?.input_tokens ?? 0,

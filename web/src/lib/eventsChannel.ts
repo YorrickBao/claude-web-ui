@@ -110,7 +110,7 @@ function ensureChannel(): void {
   es.addEventListener("relay_status", (ev) => {
     let status: RelayStatusSnapshot | null = null;
     try {
-      status = (JSON.parse((ev as MessageEvent).data) as { status: RelayStatusSnapshot }).status;
+      status = (JSON.parse((ev).data) as { status: RelayStatusSnapshot }).status;
       lastRelayStatus = status;
     } catch {
       return; // 忽略格式异常
@@ -128,7 +128,7 @@ function ensureChannel(): void {
   es.addEventListener("session_started", (ev) => {
     let sid: string | null = null;
     try {
-      sid = (JSON.parse((ev as MessageEvent).data) as { sessionId: string }).sessionId;
+      sid = (JSON.parse((ev).data) as { sessionId: string }).sessionId;
     } catch {
       return;
     }
@@ -145,7 +145,7 @@ function ensureChannel(): void {
   es.addEventListener("session_ended", (ev) => {
     let sid: string | null = null;
     try {
-      sid = (JSON.parse((ev as MessageEvent).data) as { sessionId: string }).sessionId;
+      sid = (JSON.parse((ev).data) as { sessionId: string }).sessionId;
     } catch {
       return;
     }
@@ -162,7 +162,7 @@ function ensureChannel(): void {
   es.addEventListener("device_changed", (ev) => {
     let devices: DeviceEntry[] | null = null;
     try {
-      devices = (JSON.parse((ev as MessageEvent).data) as { devices: DeviceEntry[] }).devices;
+      devices = (JSON.parse((ev).data) as { devices: DeviceEntry[] }).devices;
       lastDevices = devices;
     } catch {
       return;

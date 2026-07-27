@@ -87,7 +87,7 @@ function scheduleSave(): void {
       const data: PersistedRegistry = { agents: Object.fromEntries(registry) };
       await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[agentRegistry] failed to persist:", err instanceof Error ? err.message : err);
     }
   }, 500); // 500ms 防抖：短时间内多次变更只写一次盘
@@ -128,7 +128,7 @@ async function loadRegistry(): Promise<void> {
         indexBySession(record);
       }
     }
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[agentRegistry] loaded ${registry.size} agents from disk` +
         (cleaned > 0 ? ` (self-healed: removed ${cleaned} misclassified records)` : ""),
@@ -139,7 +139,7 @@ async function loadRegistry(): Promise<void> {
         const fresh: PersistedRegistry = { agents: Object.fromEntries(registry) };
         await fsp.writeFile(SUBAGENTS_FILE, JSON.stringify(fresh, null, 2), "utf-8");
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.warn("[agentRegistry] self-heal save failed:", err instanceof Error ? err.message : err);
       }
     }
@@ -263,7 +263,7 @@ export function startZombieScanner(): void {
   if (scannerInterval) return;
   // 异步加载历史数据（不阻塞启动）
   loadRegistry().catch((err) => {
-    // eslint-disable-next-line no-console
+     
     console.warn("[agentRegistry] load failed:", err instanceof Error ? err.message : err);
   });
   scannerInterval = setInterval(scanZombies, SCAN_INTERVAL_MS);
