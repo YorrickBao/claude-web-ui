@@ -8,15 +8,6 @@ export async function listSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
-/** 单个会话详情（含元信息） */
-export async function getSession(
-  id: string,
-): Promise<SessionView & { messages: unknown[] }> {
-  const res = await fetch(`api/sessions/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`getSession: ${res.status}`);
-  return res.json() as Promise<SessionView & { messages: unknown[] }>;
-}
-
 /** 中止进行中的会话 */
 export async function abortSession(id: string): Promise<void> {
   await fetch(`api/sessions/${encodeURIComponent(id)}/abort`, {
