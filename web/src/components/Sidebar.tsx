@@ -545,20 +545,24 @@ export function Sidebar({
           >
             <Settings className="h-3.5 w-3.5" />
           </Button>
-          {/* 远程控制：组件自带 Smartphone 图标触发器，折叠态也只显示图标 */}
-          <RemoteControlDialog />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title={theme === "dark" ? "切换亮色模式" : "切换暗色模式"}
-          >
-            {theme === "dark" ? (
-              <Sun className="h-3.5 w-3.5" />
-            ) : (
-              <Moon className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          {/* 收起态只保留 settings，远程控制和主题切换隐藏 */}
+          {!(!isMobile && isCollapsed) && (
+            <>
+              <RemoteControlDialog />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                title={theme === "dark" ? "切换亮色模式" : "切换暗色模式"}
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-3.5 w-3.5" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </aside>
