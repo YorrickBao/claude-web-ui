@@ -22,7 +22,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { useSessions } from "@/hooks/useSessions";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { listProfiles } from "@/lib/api";
+import { useProfiles } from "@/lib/profilesStore";
 import { deleteSessionApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -160,12 +160,11 @@ export function Sidebar({
     }
   }, [isMobile, controlledCollapsed]);
 
-  // 加载第一个 profile 作为分组新建会话的默认选择
+  // 第一个 profile 作为分组新建会话的默认选择（来自全局 store）
+  const { profiles: sidebarProfiles } = useProfiles();
   useEffect(() => {
-    listProfiles()
-      .then((p) => setFirstProfileId(p[0]?.id ?? null))
-      .catch(() => setFirstProfileId(null));
-  }, []);
+    setFirstProfileId(sidebarProfiles[0]?.id ?? null);
+  }, [sidebarProfiles]);
 
   // 同步 currentPath：所有路由变化（含 onSessionCreated 里的 navigate(replace)）都由 React Router 驱动，
   // 不再需要监听 session-list-changed + 读 window.location 的旁路（那是 BrowserRouter + replaceState 时代的遗留）

@@ -4,6 +4,9 @@ import { HashRouter } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import App from "@/App";
 import "@/index.css";
+// side-effect import：模块加载即触发 profile 列表预取，与会话 meta fetch 并行，
+// 消除对话输入框 profile Select 在刷新时闪现 UUID 的串行竞态。
+import "@/lib/profilesStore";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

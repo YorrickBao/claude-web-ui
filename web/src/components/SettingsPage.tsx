@@ -33,12 +33,12 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import { ENV_FIELDS, pruneEnvValues, type EnvValues } from "@/lib/envFields";
 import {
-  listProfiles,
   createProfile,
   updateProfile,
   deleteProfile,
   reorderProfiles,
 } from "@/lib/api";
+import { useProfiles, refreshProfiles, setProfiles as setProfilesGlobal } from "@/lib/profilesStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,7 +58,8 @@ import type { EnvProfile } from "@/lib/types";
 
 export function SettingsPage() {
   const confirm = useConfirm();
-  const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  // profiles 来自全局 store（与 ChatThread 等共享），增删改后用 refreshProfiles 同步全局
+  const { profiles } = useProfiles();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
@@ -72,7 +73,7 @@ export function SettingsPage() {
     setLoading(true);
     setErr(null);
     try {
-      setProfiles(await listProfiles());
+      await refreshProfiles();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -81,6 +82,7 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    // store 已在应用启动时预取，这里仅确保进入设置页时数据是最新的
     void refresh();
   }, [refresh]);
 
@@ -142,18 +144,18 @@ export function SettingsPage() {
     }
   }
 
-  // 拖拽排序：乐观更新本地顺序，失败回滚并提示
+  // 拖拽排序：乐观更新全局 store 顺序，失败回滚并提示
   async function handleReorder(ids: string[]) {
     const prev = profiles;
     const next = ids
       .map((id) => prev.find((p) => p.id === id))
       .filter((p): p is EnvProfile => Boolean(p));
-    setProfiles(next);
+    setProfilesGlobal(next);
     try {
       const reordered = await reorderProfiles(ids);
-      setProfiles(reordered);
+      setProfilesGlobal(reordered);
     } catch (e) {
-      setProfiles(prev);
+      setProfilesGlobal(prev);
       setErr(`排序失败：${(e as Error).message}`);
     }
   }

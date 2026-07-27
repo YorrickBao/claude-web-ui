@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listProfiles } from "@/lib/api";
+import { useProfiles } from "@/lib/profilesStore";
 import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
 import { ContextUsageRing } from "@/components/ContextUsageRing";
@@ -79,7 +79,9 @@ export function ChatThread({
   onEffortLevelChange,
   onForkFromMessage,
 }: ChatThreadProps) {
-  const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  // profile 列表来自全局 store：应用启动即预取，与会话 meta fetch 并行，
+  // 避免刷新时 Select 因映射表缺键而闪现原始 UUID。
+  const { profiles, loaded: profilesLoaded } = useProfiles();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 终端式输入历史：空输入框按 ↑ 回填上一条 user 消息，↓ 反向。
@@ -94,12 +96,6 @@ export function ChatThread({
       forkFromMessageRef.current = null;
     };
   }, [onForkFromMessage]);
-
-  useEffect(() => {
-    listProfiles()
-      .then(setProfiles)
-      .catch(() => setProfiles([]));
-  }, []);
 
   /** 从当前 profile 的 AUTO_COMPACT_WINDOW 推导上下文上限，否则默认 200k */
   const contextMax = useMemo(() => {
@@ -241,7 +237,13 @@ export function ChatThread({
             )}
             <Select
               items={profileItems}
-              value={profileId ?? ""}
+              // profiles 未加载完、或当前 profileId 不在列表中时，传 ""（命中"默认"占位），
+              // 避免 SelectValue 因 items 表缺键而 fallback 渲染原始 UUID。
+              value={
+                profileId && profilesLoaded && profileItems[profileId]
+                  ? profileId
+                  : ""
+              }
               onValueChange={(v) => onProfileChange(v || null)}
             >
               <SelectTrigger variant="ghost" className="h-7 w-auto min-w-0 justify-center gap-1 px-1.5 text-[11px] text-muted-foreground md:min-w-[52px] md:justify-between md:gap-1.5 md:pl-2.5 md:pr-2">

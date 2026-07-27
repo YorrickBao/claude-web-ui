@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Folder, ArrowRight } from "lucide-react";
-import { browse, listProfiles } from "@/lib/api";
+import { browse } from "@/lib/api";
+import { useProfiles } from "@/lib/profilesStore";
 import type { DirEntry, EnvProfile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ export function NewSessionView() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<string>("default");
   const [effortLevel, setEffortLevel] = useState<string>("default");
-  const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  const { profiles } = useProfiles();
 
   // Base UI Select 需要 items prop 才能让 SelectValue 显示 label 而非原始值
   const profileItems: Record<string, string> = {
@@ -65,9 +66,6 @@ export function NewSessionView() {
   useEffect(() => {
     const initialCwd = searchParams.get("cwd");
     void doBrowse(initialCwd ?? "");
-    listProfiles()
-      .then(setProfiles)
-      .catch(() => setProfiles([]));
   }, []);
 
   async function doBrowse(path: string) {
