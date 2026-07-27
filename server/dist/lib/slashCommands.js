@@ -129,16 +129,97 @@ async function readPluginSkills() {
 const cache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_SIZE = 50;
+/** LRU 式淘汰：缓存满时删掉最旧条目 */
+function evictIfNeeded() {
+    if (cache.size <= MAX_CACHE_SIZE)
+        return;
+    let oldestKey = "";
+    let oldestTs = Infinity;
+    for (const [k, v] of cache) {
+        if (v.ts < oldestTs) {
+            oldestTs = v.ts;
+            oldestKey = k;
+        }
+    }
+    cache.delete(oldestKey);
+}
 /**
- * 合并内置命令 + 项目级 + 用户级的自定义命令和 skills，返回完整命令列表。
+ * 用 BUILTIN 表给 SDK 返回的英文命令补中文描述。
+ * 返回的对象 name 带 `/`，description 优先用 BUILTIN（中文），argumentHint 同理。
+ */
+function localizeSdkCommand(nameWithSlash, sdkCmd) {
+    const builtin = BUILTIN[nameWithSlash];
+    return {
+        name: nameWithSlash,
+        description: builtin?.description ?? sdkCmd.description,
+        ...(builtin?.argumentHint
+            ? { argumentHint: builtin.argumentHint }
+            : sdkCmd.argumentHint
+                ? { argumentHint: sdkCmd.argumentHint }
+                : {}),
+    };
+}
+/**
+ * 把 SDK 的 supportedCommands() 结果写入缓存。
+ *
+ * SDK 返回的列表是"当前环境真正可用的命令"（含交互式面板命令在 headless 下被剔除），
+ * 以它为权威；BUILTIN 表仅用于补中文描述。aliases 展开为独立条目以便补全匹配。
+ *
+ * 注意：SDK 的 commands 只含 CLI 内置命令 + skills，不含用户 .claude/commands/*.md
+ * 自定义命令文件。后者由 resolveSlashCommands 在读取时动态追加（见下方）。
+ */
+export function cacheSlashCommands(cwd, sdkCommands) {
+    const commands = [];
+    const seen = new Set();
+    const push = (cmd) => {
+        if (!seen.has(cmd.name)) {
+            seen.add(cmd.name);
+            commands.push(cmd);
+        }
+    };
+    for (const cmd of sdkCommands) {
+        const nameWithSlash = "/" + cmd.name.replace(/^\/+/, "");
+        push(localizeSdkCommand(nameWithSlash, cmd));
+        // alias 展开为独立条目，方便补全按别名匹配
+        if (cmd.aliases) {
+            for (const alias of cmd.aliases) {
+                push(localizeSdkCommand("/" + alias.replace(/^\/+/, ""), { ...cmd, name: alias }));
+            }
+        }
+    }
+    cache.set(cwd, { commands, ts: Date.now() });
+    evictIfNeeded();
+}
+/**
+ * 返回完整命令列表。优先读缓存（由 runQuery 的 supportedCommands 填充，
+ * 反映当前环境真实可用命令）；缓存未命中时回退到 BUILTIN + 磁盘扫描。
  * 按 cwd 缓存 5 分钟。
  */
 export async function resolveSlashCommands(cwd) {
     const cached = cache.get(cwd);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-        return cached.commands;
+        // 缓存命中：以 SDK 列表为准，追加磁盘扫描的自定义命令/skills（SDK 不含这些）。
+        // 避免每次都扫磁盘——自定义命令/skills 同样缓存进 cached.commands，
+        // 但为简单起见这里仍扫一次（磁盘扫描很快，且能感知用户运行中新增的命令文件）。
+        const customCommands = await readCustomCommands(cwd);
+        const seen = new Set(cached.commands.map((c) => c.name));
+        const result = [...cached.commands];
+        for (const cmd of customCommands) {
+            if (!seen.has(cmd.name)) {
+                seen.add(cmd.name);
+                result.push(cmd);
+            }
+        }
+        return result;
     }
-    // 并行扫描五个来源
+    // 缓存未命中：回退到 BUILTIN + 磁盘扫描（首次冷启动 / SDK 探测失败时）
+    const result = await resolveFromDisk(cwd);
+    cache.set(cwd, { commands: result, ts: Date.now() });
+    evictIfNeeded();
+    return result;
+}
+/** 扫描项目级 + 用户级的自定义命令和 skills（不含内置命令） */
+async function readCustomCommands(cwd) {
     const [projectCommands, projectSkills, userCommands, userSkills, pluginSkills] = await Promise.all([
         readCommandsDir(path.join(cwd, ".claude", "commands")),
         readSkillsDir(path.join(cwd, ".claude", "skills")),
@@ -154,11 +235,7 @@ export async function resolveSlashCommands(cwd) {
             result.push(cmd);
         }
     };
-    // 优先级：内置 > 项目命令 > 项目 skill > 用户命令 > 用户 skill > 插件 skill
-    for (const [name, info] of Object.entries(BUILTIN)) {
-        result.push({ name, ...info });
-        customNames.add(name);
-    }
+    // 优先级：项目命令 > 项目 skill > 用户命令 > 用户 skill > 插件 skill
     for (const cmd of projectCommands)
         addIfNew(cmd);
     for (const cmd of projectSkills)
@@ -169,17 +246,24 @@ export async function resolveSlashCommands(cwd) {
         addIfNew(cmd);
     for (const cmd of pluginSkills)
         addIfNew(cmd);
-    cache.set(cwd, { commands: result, ts: Date.now() });
-    if (cache.size > MAX_CACHE_SIZE) {
-        let oldestKey = "";
-        let oldestTs = Infinity;
-        for (const [k, v] of cache) {
-            if (v.ts < oldestTs) {
-                oldestTs = v.ts;
-                oldestKey = k;
-            }
+    return result;
+}
+/** 缓存未命中时的兜底：BUILTIN 写死表 + 磁盘扫描自定义命令 */
+async function resolveFromDisk(cwd) {
+    const customNames = new Set();
+    const result = [];
+    const addIfNew = (cmd) => {
+        if (!customNames.has(cmd.name)) {
+            customNames.add(cmd.name);
+            result.push(cmd);
         }
-        cache.delete(oldestKey);
+    };
+    // 内置命令无条件加入（兜底，可能含当前环境不支持的交互式命令）
+    for (const [name, info] of Object.entries(BUILTIN)) {
+        result.push({ name, ...info });
+        customNames.add(name);
     }
+    for (const cmd of await readCustomCommands(cwd))
+        addIfNew(cmd);
     return result;
 }

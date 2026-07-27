@@ -2,6 +2,7 @@ import { query, listSessions, listSubagents, getSessionInfo, renameSession, fork
 import { registerStart, registerStop } from "./agentRegistry.js";
 import { createPendingPermission } from "./inflight.js";
 import { emitSessionEvent } from "./eventBus.js";
+import { cacheSlashCommands } from "./slashCommands.js";
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
 export { listSessions, listSubagents, getSessionInfo, renameSession, forkSession };
 /**
@@ -166,6 +167,18 @@ export async function* runQuery(params) {
             },
         },
     });
+    // 并发拉取当前环境真实支持的斜杠命令列表，写进 slashCommands 缓存。
+    // supportedCommands() 只 await 初始化握手 promise，不触发 LLM、不阻塞主循环。
+    // 失败静默（老版 SDK 无此方法 / CLI 启动异常），保留现有 BUILTIN 兜底。
+    // 注意：必须在 for await 之前调用，因为下面会把 stream 强转为 AsyncIterable。
+    stream.supportedCommands?.()
+        .then((cmds) => {
+        if (cmds && cmds.length > 0)
+            cacheSlashCommands(params.cwd, cmds);
+    })
+        .catch((err) => {
+        console.warn("[sdk] supportedCommands failed:", err instanceof Error ? err.message : err);
+    });
     // 本回合最后一条主线程 assistant 消息的 transcript uuid（含文本答案的那条）。
     // done 时带给前端，前端盖到最后一条 assistant 消息上作为 forkSession 的 upToMessageId。
     let lastAssistantUuid;
@@ -212,6 +225,28 @@ export async function* runQuery(params) {
                         message: `请求失败（HTTP ${r.error_status ?? "?"}），重试中…`,
                         detail: { attempt: r.attempt, maxRetries: r.max_retries },
                     };
+                }
+                else if (msg.subtype === "local_command_output") {
+                    // 斜杠命令的输出（如 /usage 的统计）。
+                    // SDK 注释：Displayed as assistant-style text in the transcript。
+                    // 转成 text 事件，复用前端 assistant 文本渲染链路。
+                    const m = msg;
+                    if (m.content)
+                        yield { type: "text", text: m.content };
+                }
+                else if (msg.subtype === "informational") {
+                    // 命令不可用等横幅提示（如 "/status isn't available in this environment."）。
+                    // 按 SDK 注释 host 应渲染 content 为纯文本，这里同样转成 text，
+                    // 让用户能看到提示而不是空回答。不用 error：命令本身没出错，
+                    // errorLast 会把消息标 incomplete，语义不符。
+                    const m = msg;
+                    if (m.content)
+                        yield { type: "text", text: m.content };
+                }
+                else {
+                    // 兜底：未识别的 system subtype 不再静默丢弃，打印日志便于发现。
+                    // （AGENTS.md 纪律：后端严禁静默吞错误）
+                    console.warn("[sdk] unhandled system subtype:", msg.subtype);
                 }
                 break;
             }
