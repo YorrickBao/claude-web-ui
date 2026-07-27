@@ -558,16 +558,18 @@ function AssistantErrorIfAny() {
 }
 
 /**
- * assistant 消息操作：错误块 + 复制按钮。
- * 复制按钮绝对定位浮在气泡外，hover 消息时淡入，不占文档流（避免布局抖动）。
+ * assistant 消息操作：错误块 + 操作按钮组（复制 / 分叉）。
+ * 操作按钮绝对定位浮在气泡外，hover 消息时整组淡入，不占文档流（避免布局抖动）。
  * 仅当消息有文本内容时才渲染（工作过程组无文本回答时不显示）。
  */
 function AssistantActionBar() {
   return (
     <>
       <AssistantErrorIfAny />
-      <CopyButton />
-      <ForkFromHereButton />
+      <div className="absolute -bottom-2.5 left-2 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 md:left-3">
+        <CopyButton />
+        <ForkFromHereButton />
+      </div>
     </>
   );
 }
@@ -592,7 +594,7 @@ function ForkFromHereButton() {
       type="button"
       title="分叉：复制到该回答为止的历史，原会话不变"
       onClick={() => handle(assistantUuid)}
-      className="absolute -bottom-2.5 left-24 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100"
+      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
       <GitFork className="size-3" /> 分叉
     </button>
@@ -629,7 +631,7 @@ function CopyButton() {
     <button
       type="button"
       onClick={handleCopy}
-      className="absolute -bottom-2.5 left-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100 md:left-3"
+      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
       {copied ? (
         <>
