@@ -590,11 +590,11 @@ function ForkFromHereButton() {
   return (
     <button
       type="button"
-      title="从此处分叉：复制到该回答为止的历史，原会话不变"
+      title="分叉：复制到该回答为止的历史，原会话不变"
       onClick={() => handle(assistantUuid)}
-      className="absolute -bottom-2.5 left-12 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100"
+      className="absolute -bottom-2.5 left-24 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-muted/60 hover:text-foreground group-hover/msg:opacity-100"
     >
-      <GitFork className="size-3" /> 从此处分叉
+      <GitFork className="size-3" /> 分叉
     </button>
   );
 }
