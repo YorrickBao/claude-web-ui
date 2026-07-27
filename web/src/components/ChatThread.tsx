@@ -6,6 +6,7 @@ import {
   useThreadViewportStore,
   useMessage,
   useComposerRuntime,
+  unstable_useComposerInputHistory,
 } from "@assistant-ui/react";
 import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
@@ -79,6 +80,10 @@ export function ChatThread({
 }: ChatThreadProps) {
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 终端式输入历史：空输入框按 ↑ 回填上一条 user 消息，↓ 反向。
+  // 仅在输入框为空时触发，与斜杠命令弹窗（需以 / 开头才打开）条件互斥，不冲突。
+  const inputHistory = unstable_useComposerInputHistory();
 
   // 把"从此处分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
   // 用 effect 而非 render 期赋值，避免在渲染中途改动可变 ref。
@@ -166,6 +171,7 @@ export function ChatThread({
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
               <ComposerPrimitive.Input
                 ref={textareaRef}
+                {...inputHistory}
                 placeholder="输入消息… (Enter 发送 · Shift+Enter 换行 · / 命令)"
                 submitMode="enter"
                 className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none md:max-h-60 md:py-1.5"
