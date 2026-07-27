@@ -241,11 +241,16 @@ export function Sidebar({
   }
 
   // ── 移动端悬浮抽屉的样式 ──
+  // 仅在抽屉打开时施加阴影：关闭态用 -translate-x-full 把 sidebar 移出视口，
+  // 但 shadow-2xl 的 blur(50px) 会被 transform 一并带走、停在视口左边缘，
+  // 仍向右渗透约 13px（blur/2 − spread），形成一条左侧暗边。故关闭时 shadow-none。
   const mobileOverlayClasses = isMobile
     ? cn(
-        "fixed left-0 top-0 z-40 h-full shadow-2xl shadow-black/30",
+        "fixed left-0 top-0 z-40 h-full",
         "transition-transform duration-300 ease-in-out",
-        isOverlayOpen ? "translate-x-0" : "-translate-x-full"
+        isOverlayOpen
+          ? "translate-x-0 shadow-2xl shadow-black/30"
+          : "-translate-x-full shadow-none"
       )
     : "";
 
