@@ -3,7 +3,6 @@ import {
   MessagePrimitive,
   ComposerPrimitive,
   ActionBarPrimitive,
-  useThreadViewportAutoScroll,
   useMessage,
   useComposerRuntime,
   unstable_useComposerInputHistory,
@@ -86,9 +85,6 @@ export function ChatThread({
   // 仅在输入框为空时触发，与斜杠命令弹窗（需以 / 开头才打开）条件互斥，不冲突。
   const inputHistory = unstable_useComposerInputHistory();
 
-  // 显式自动滚屏：新内容追加时跟随到底；用户主动上滚看历史时不打断。
-  useThreadViewportAutoScroll({ autoScroll: true, scrollToBottomOnRunStart: true });
-
   // 把"分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
   // 用 effect 而非 render 期赋值，避免在渲染中途改动可变 ref。
   // 运行中消息的按钮隐藏交给 ActionBarPrimitive 的 hideWhenRunning（per-message）。
@@ -167,7 +163,7 @@ export function ChatThread({
         <div className="pointer-events-none sticky bottom-0 flex justify-center pb-2">
           <ThreadPrimitive.ScrollToBottom
             aria-label="滚动到底部"
-            className="pointer-events-auto h-8 w-8 rounded-full border border-border/60 bg-card/95 shadow-md shadow-black/10 backdrop-blur transition-opacity duration-150 hover:bg-card disabled:pointer-events-none disabled:opacity-0"
+            className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-card/95 shadow-md shadow-black/10 backdrop-blur transition-opacity duration-150 hover:bg-card disabled:pointer-events-none disabled:opacity-0"
           >
             <ChevronDown className="size-4" />
           </ThreadPrimitive.ScrollToBottom>
@@ -578,6 +574,13 @@ function AssistantErrorIfAny() {
  *  - hideWhenRunning：per-message，正在生成的消息整组隐藏
  *  - autohide="always"：默认隐藏，hover 消息时显示（替代原 group-hover 手写）
  */
+/**
+ * assistant 消息操作：错误块 + 操作按钮组（复制 / 分叉）。
+ * 用 ActionBarPrimitive.Root 承担定位 + 显隐：
+ *  - hideWhenRunning：per-message，正在生成的消息整组隐藏
+ *  - autohide="always"：默认隐藏，hover 消息时挂载显示（由 isHovering 驱动 mount/unmount，
+ *    非常驻 opacity 切换，故无过渡动画）
+ */
 function AssistantActionBar() {
   return (
     <>
@@ -585,7 +588,7 @@ function AssistantActionBar() {
       <ActionBarPrimitive.Root
         hideWhenRunning
         autohide="always"
-        className="absolute -bottom-2.5 left-2 flex items-center gap-1 transition-opacity duration-150 data-[floating]:opacity-0 data-[floating]:group-hover/msg:opacity-100 md:left-3"
+        className="absolute -bottom-2.5 left-2 flex items-center gap-1 md:left-3"
       >
         <CopyAction />
         <ForkFromHereButton />
