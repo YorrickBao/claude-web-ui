@@ -459,7 +459,7 @@ function AssistantContent() {
       )}
       {hasText ? (
         <div className={hasWork ? "mt-2" : ""}>
-          <Markdown>
+          <Markdown streaming={isRunning}>
             {textParts.map((p) => (p.text ?? "")).join("")}
           </Markdown>
         </div>

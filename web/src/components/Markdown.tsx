@@ -9,11 +9,14 @@ import { memo } from "react";
  */
 export const Markdown = memo(function Markdown({
   children,
+  streaming = false,
 }: {
   children: string;
+  /** 流式中：在最后一个块级元素末尾挂终端式块光标（见 index.css .md-streaming） */
+  streaming?: boolean;
 }) {
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none break-words prose-pre:rounded-xl prose-pre:border prose-pre:border-border/30 prose-pre:bg-black/40 prose-pre:p-3 prose-code:before:hidden prose-code:after:hidden">
+    <div className={`prose prose-sm dark:prose-invert max-w-none break-words prose-pre:rounded-xl prose-pre:border prose-pre:border-border/30 prose-pre:bg-black/40 prose-pre:p-3 prose-code:before:hidden prose-code:after:hidden${streaming ? " md-streaming" : ""}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
