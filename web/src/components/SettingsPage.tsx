@@ -8,16 +8,11 @@ import {
   EyeOff,
   Loader2,
   Copy,
-  QrCode,
-  X,
-  Check,
   Shield,
   Settings2,
-  Bot,
   Info,
   GripVertical,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import {
   DndContext,
   PointerSensor,
@@ -61,12 +56,6 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import type { EnvProfile } from "@/lib/types";
 
-interface FeishuStatus {
-  connected: boolean;
-  appId?: string;
-  domain?: string;
-}
-
 export function SettingsPage() {
   const confirm = useConfirm();
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
@@ -78,126 +67,6 @@ export function SettingsPage() {
   }>({ name: "", env: {} });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const [feishuStatus, setFeishuStatus] = useState<FeishuStatus>({
-    connected: false,
-  });
-  const [feishuBinding, setFeishuBinding] = useState(false);
-  const [feishuQRCode, setFeishuQRCode] = useState<string | null>(null);
-  const [feishuBindingStatus, setFeishuBindingStatus] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    fetch("api/feishu/status")
-      .then((res) => res.json())
-      .then(setFeishuStatus)
-      .catch(() => setFeishuStatus({ connected: false }));
-  }, []);
-
-  async function handleFeishuBind() {
-    setFeishuBinding(true);
-    setFeishuQRCode(null);
-    setFeishuBindingStatus(null);
-
-    try {
-      const res = await fetch("api/feishu/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value);
-
-        while (buffer.includes("\n\n")) {
-          const boundaryIndex = buffer.indexOf("\n\n");
-          const eventBlock = buffer.substring(0, boundaryIndex);
-          buffer = buffer.substring(boundaryIndex + 2);
-
-          const lines = eventBlock.split("\n");
-          let eventType = "";
-          let eventData: Record<string, unknown> = {};
-
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventType = line.replace("event: ", "").trim();
-            } else if (line.startsWith("data: ")) {
-              try {
-                eventData = JSON.parse(line.replace("data: ", "").trim());
-              } catch {
-                // ignore parse errors
-              }
-            }
-          }
-
-          if (eventType === "qr_code" && eventData.url) {
-            setFeishuQRCode(String(eventData.url));
-          } else if (eventType === "waiting_for_scan") {
-            setFeishuBindingStatus("waiting");
-          } else if (eventType === "connected") {
-            setFeishuBindingStatus("connected");
-            setFeishuStatus({
-              connected: true,
-              appId: String(eventData.appId || ""),
-              domain: String(eventData.domain || "feishu"),
-            });
-            setTimeout(() => {
-              setFeishuBinding(false);
-              setFeishuQRCode(null);
-              setFeishuBindingStatus(null);
-            }, 2000);
-          } else if (eventType === "error") {
-            setFeishuBindingStatus("error");
-            setFeishuBinding(false);
-          } else if (eventType === "success") {
-            setFeishuBindingStatus("success");
-            setFeishuStatus({
-              connected: true,
-              appId: String(eventData.appId || ""),
-              domain: String(eventData.domain || "feishu"),
-            });
-            setTimeout(() => {
-              setFeishuBinding(false);
-              setFeishuQRCode(null);
-              setFeishuBindingStatus(null);
-            }, 2000);
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Feishu bind error:", e);
-      setFeishuBindingStatus("error");
-      setFeishuBinding(false);
-    }
-  }
-
-  async function handleFeishuDisconnect() {
-    if (
-      !(await confirm({
-        title: "断开飞书绑定",
-        description: "确定断开飞书绑定？",
-        confirmLabel: "断开",
-      }))
-    )
-      return;
-    try {
-      await fetch("api/feishu/disconnect", { method: "POST" });
-      setFeishuStatus({ connected: false });
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -350,134 +219,6 @@ export function SettingsPage() {
               isNew={editingId === "new"}
             />
           )}
-        </section>
-
-        <Separator className="opacity-30" />
-
-        {/* ── 飞书绑定 ── */}
-        <section>
-          <div className="mb-4 flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-              <Bot className="h-3.5 w-3.5 text-primary" />
-            </div>
-            <h2 className="text-sm font-semibold tracking-tight">
-              飞书机器人绑定
-            </h2>
-          </div>
-
-          <div className="overflow-hidden rounded-xl border border-border/50 bg-card/40 shadow-sm">
-            {feishuBinding ? (
-              <div className="flex flex-col items-center gap-5 px-4 py-10 sm:px-6">
-                {feishuQRCode ? (
-                  <>
-                    <p className="text-sm font-medium">
-                      使用飞书扫码完成绑定
-                    </p>
-                    <div className="rounded-xl border border-border/30 bg-white p-3 shadow-sm">
-                      <QRCodeSVG value={feishuQRCode} size={160} level="H" />
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {feishuBindingStatus === "waiting" && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-                          等待扫码…
-                        </span>
-                      )}
-                      {feishuBindingStatus === "connected" && (
-                        <span className="inline-flex items-center gap-1.5 font-medium text-emerald-500">
-                          <Check className="h-3.5 w-3.5" />
-                          绑定成功
-                        </span>
-                      )}
-                      {feishuBindingStatus === "error" && (
-                        <span className="text-destructive">
-                          绑定失败，请重试
-                        </span>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    正在生成二维码…
-                  </div>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFeishuBinding(false)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                  取消绑定
-                </Button>
-              </div>
-            ) : feishuStatus.connected ? (
-              <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                <div className="flex items-start gap-3.5 sm:gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 sm:h-10 sm:w-10">
-                    <Check className="h-4 w-4 text-emerald-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">已连接</span>
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-500/30 bg-emerald-500/5 text-[10px] text-emerald-400"
-                      >
-                        运行中
-                      </Badge>
-                    </div>
-                    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                      <div className="truncate">
-                        App ID:{" "}
-                        <code className="rounded bg-muted/60 px-1 py-0.5 text-[11px]">
-                          {feishuStatus.appId}
-                        </code>
-                      </div>
-                      {feishuStatus.domain && (
-                        <div className="truncate">
-                          Domain:{" "}
-                          <code className="rounded bg-muted/60 px-1 py-0.5 text-[11px]">
-                            {feishuStatus.domain}
-                          </code>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleFeishuDisconnect}
-                  className="shrink-0 self-end text-xs text-muted-foreground hover:text-destructive sm:self-center"
-                >
-                  断开
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                <div className="flex items-start gap-3.5 sm:gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/80 sm:h-10 sm:w-10">
-                    <QrCode className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">尚未绑定</p>
-                    <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                      绑定后可在飞书中直接与 Claude 对话，接收会话状态通知
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  onClick={handleFeishuBind}
-                  size="sm"
-                  className="shrink-0 self-end sm:self-center"
-                >
-                  <QrCode className="h-3.5 w-3.5" />
-                  扫码绑定
-                </Button>
-              </div>
-            )}
-          </div>
         </section>
 
         <Separator className="opacity-30" />

@@ -1,27 +1,12 @@
 #!/usr/bin/env node
 // Parse CLI args before modules read process.env
 const args = process.argv.slice(2);
-let feishuBind = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--host" || args[i] === "-h") {
     process.env.HOST = args[++i];
   } else if (args[i] === "--port" || args[i] === "-p") {
     process.env.PORT = args[++i];
-  } else if (args[i] === "--feishu-enabled") {
-    process.env.FEISHU_ENABLED = "true";
-  } else if (args[i] === "--feishu-app-id") {
-    process.env.FEISHU_APP_ID = args[++i];
-  } else if (args[i] === "--feishu-app-secret") {
-    process.env.FEISHU_APP_SECRET = args[++i];
-  } else if (args[i] === "--feishu-domain") {
-    process.env.FEISHU_DOMAIN = args[++i];
-  } else if (args[i] === "--feishu-cwd") {
-    process.env.FEISHU_DEFAULT_CWD = args[++i];
-  } else if (args[i] === "--feishu-profile-id") {
-    process.env.FEISHU_DEFAULT_PROFILE_ID = args[++i];
-  } else if (args[i] === "--feishu-bind") {
-    feishuBind = true;
   } else if (args[i] === "--log") {
     process.env.CLAUDE_WEB_UI_LOG = "true";
   } else if (args[i] === "--help") {
@@ -37,64 +22,8 @@ for (let i = 0; i < args.length; i++) {
     --port, -p              Start port, +1 if occupied (default: 23456)
     --log                   Enable log output (default: disabled)
     --help                  Show this help
-
-  Feishu Options:
-    --feishu-enabled        Enable Feishu channel (default: disabled)
-    --feishu-app-id         Feishu App ID
-    --feishu-app-secret     Feishu App Secret
-    --feishu-domain         Feishu domain: "feishu" or "lark" (default: feishu)
-    --feishu-cwd            Default working directory for Feishu sessions
-    --feishu-profile-id     Default profile ID for Feishu sessions
-    --feishu-bind           Bind Feishu bot via QR code (interactive)
 `);
     process.exit(0);
-  }
-}
-
-if (feishuBind) {
-  const { connectFeishuBot } = await import("connect-feishu-bot");
-  const { DATA_DIR } = await import("./server/dist/env.js");
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-
-  console.log("\n  Feishu Bot Binding");
-  console.log("  ─────────────────────────────────");
-  console.log("\n  Scan with Feishu to create your bot:\n");
-
-  try {
-    const result = await connectFeishuBot({
-      onQRCode: (url) => {
-        console.log(`  QR URL: ${url}`);
-        console.log();
-      },
-      onStatus: (status) => {
-        if (status.phase === "waiting_for_scan") {
-          console.log("  Waiting for scan...");
-        } else if (status.phase === "success") {
-          console.log("  ✓ Bot created!");
-        } else if (status.phase === "expired") {
-          console.log("  ✗ QR code expired");
-        } else if (status.phase === "denied") {
-          console.log("  ✗ User denied");
-        }
-      },
-    });
-
-    const configPath = path.join(DATA_DIR, "feishu-config.json");
-    await fs.writeFile(configPath, JSON.stringify({
-      appId: result.appId,
-      appSecret: result.appSecret,
-      domain: result.domain,
-    }, null, 2), "utf-8");
-
-    console.log(`\n  App ID: ${result.appId}`);
-    console.log(`  Domain: ${result.domain}`);
-    console.log(`  Config saved to: ${configPath}`);
-    console.log(`\n  You can now start the server and Feishu channel will be enabled.`);
-    process.exit(0);
-  } catch (err) {
-    console.error("\n  Error:", err.message);
-    process.exit(1);
   }
 }
 

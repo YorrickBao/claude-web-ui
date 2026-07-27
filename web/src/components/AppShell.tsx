@@ -36,7 +36,7 @@ const SettingsPage = lazy(() =>
  * 主内容区根据 URL 决定渲染什么：
  *   /new          → 新建会话（选 cwd）
  *   /pending      → 新会话待创建（cwd 来自 location.state，首条消息触发后端创建）
- *   /settings     → 设置页（飞书绑定 + 环境变量配置）
+ *   /settings     → 设置页（环境变量配置）
  *   /c/:sessionId → 已有会话
  *
  * 移动端（<768px）：侧栏变成叠加抽屉，通过汉堡菜单按钮打开，带背景遮罩。

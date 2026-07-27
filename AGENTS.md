@@ -76,7 +76,7 @@ git push origin relay-v0.x.0
 | `GET /api/events/stream` | **全局消息总线**，收敛所有全局低频控制面信号（`sessions_changed`、`relay_status` 等） | 低频 |
 | `GET /api/sessions/:id/stream` | 单会话实时数据流（文本/工具/思考/权限/计划等），含三阶段续流去重 | 高频 |
 
-另有 `POST` 类 SSE（`/api/sessions`、`/api/sessions/:id/messages`、`/approve-plan`、`/feishu/connect`）是**一次性执行型流**：POST 触发一次 SDK 查询、流式返回结果、查完即关，不计入长连接，这是合理模式。
+另有 `POST` 类 SSE（`/api/sessions`、`/api/sessions/:id/messages`、`/approve-plan`）是**一次性执行型流**：POST 触发一次 SDK 查询、流式返回结果、查完即关，不计入长连接，这是合理模式。
 
 ### 新增 SSE 信号的决策树
 
