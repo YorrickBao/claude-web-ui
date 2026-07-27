@@ -8,7 +8,7 @@ import "@/index.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <HashRouter>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
         <App />
       </ThemeProvider>
     </HashRouter>

@@ -5,6 +5,9 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
+}
+.dark {
   color-scheme: dark;
 }
 
