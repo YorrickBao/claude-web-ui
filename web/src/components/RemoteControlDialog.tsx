@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { copyText } from "@/lib/clipboard";
 import { toast } from "sonner";
 import { cn, timeAgo } from "@/lib/utils";
 import { subscribeRelayStatus } from "@/lib/eventsChannel";
@@ -252,12 +253,17 @@ export function RemoteControlDialog() {
 
   async function handleCopy(text: string, label: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
       toast.success(`已复制${label}`);
-    } catch {
-      toast.error("复制失败");
+    } catch (err) {
+      // AGENTS.md：禁止静默 catch，必须打印可读错误信息
+      console.warn(
+        `[RemoteControlDialog] 复制${label}失败：`,
+        err instanceof Error ? err.message : err,
+      );
+      toast.error(`复制失败：${err instanceof Error ? err.message : err}`);
     }
   }
 

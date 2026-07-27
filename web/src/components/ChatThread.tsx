@@ -12,6 +12,7 @@ import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
 import {
   Select,
   SelectContent,
@@ -598,7 +599,7 @@ function ForkFromHereButton() {
   );
 }
 
-/** 复制按钮：提取消息文本，用 navigator.clipboard 复制，2s 内显示对勾 */
+/** 复制按钮：提取消息文本，复制到剪贴板，2s 内显示对勾 */
 function CopyButton() {
   const [copied, setCopied] = useState(false);
   const text = useMessage((s) =>
@@ -611,7 +612,7 @@ function CopyButton() {
   if (!text.trim()) return null;
 
   const handleCopy = () => {
-    void navigator.clipboard.writeText(text).then(
+    void copyText(text).then(
       () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
