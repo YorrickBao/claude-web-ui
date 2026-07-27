@@ -410,6 +410,11 @@ export function useChatSSE({
           setMessages((prev) => stampAssistantUuid(prev, uuid));
         }
         setMessages((prev) => completeLast(prev));
+        // done 表示本回合消息已完整：pending 态此时可安全 navigate 到 /c/:id。
+        // 不等 finally，因为后端 finally 里 endSSE 前有 touchSession 等步骤，
+        // 流关闭可能延迟，导致页面长时间停在 /pending。
+        // 非.pending 态 onRoundEnd 是 no-op（pendingNavigateRef 为空）。
+        onRoundEndRef.current?.();
         break;
       case "waiting_for_user":
         break;
