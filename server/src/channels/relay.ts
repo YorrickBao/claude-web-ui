@@ -89,6 +89,11 @@ let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 // req_body:last 时 resolve 触发 fetch。避免轮询延迟。
 const reqBodyBuffers = new Map<string, string[]>();
 const reqBodyResolvers = new Map<string, (body: string | undefined) => void>();
+// 在途请求的响应流控制器：connId → controller。
+// 当远程客户端断开（收到 end 帧）或隧道掉线时，中止对应的本地 fetch，
+// 释放本地 SSE 等长连接——否则 Fastify 的 request.raw.on('close') 永不触发，
+// 造成 reader 循环 + 事件订阅 + 心跳定时器永久泄漏。
+const inflight = new Map<string, AbortController>();
 
 /** 由 index.ts 在 server 监听成功后注入本地 base URL，如 http://127.0.0.1:23456 */
 let localBase: string | null = null;
@@ -203,6 +208,7 @@ function stopInternal(clearEnabled: boolean): void {
   }
   connected = false;
   connecting = false;
+  abortAllInflight(); // 中止所有在途响应流，避免本地长连接泄漏
   reqBodyBuffers.clear();
   reqBodyResolvers.clear();
   clearToken();
@@ -268,6 +274,7 @@ function connect(): void {
       clearInterval(pingTimer);
       pingTimer = null;
     }
+    abortAllInflight(); // 隧道断开：中止所有在途响应流，远程已无法接收
     // token 与隧道会话绑定：断开后 relay 侧映射可能已丢（如 relay 重启），
     // 清空本地 token，避免前端展示「有效却打不开」的链接。重连后需重新生成。
     clearToken();
@@ -302,6 +309,19 @@ function send(f: Frame): void {
   } catch (err) {
     console.warn("[relay] send error:", err instanceof Error ? err.message : err);
   }
+}
+
+/** 中止所有在途请求的响应流（隧道断开/停止时调用，避免本地长连接泄漏） */
+function abortAllInflight(): void {
+  if (inflight.size === 0) return;
+  for (const controller of inflight.values()) {
+    try {
+      controller.abort();
+    } catch (err) {
+      console.warn("[relay] abort inflight error:", err instanceof Error ? err.message : err);
+    }
+  }
+  inflight.clear();
 }
 
 /** 处理从中转收到的帧 */
@@ -360,13 +380,16 @@ async function handleFrame(data: unknown): Promise<void> {
     }
 
     case "end": {
-      // 远程客户端取消请求（如浏览器关闭 SSE 连接）
+      // 远程客户端取消请求（如浏览器关闭 SSE 连接）。
+      // 若请求已进入流式响应阶段（SSE 等长连接），需中止本地 fetch，
+      // 否则 Fastify 的 request.raw.on('close') 永不触发，造成资源泄漏。
       reqBodyBuffers.delete(f.connId);
       const resolver = reqBodyResolvers.get(f.connId);
       if (resolver) {
         reqBodyResolvers.delete(f.connId);
         resolver(undefined);
       }
+      inflight.get(f.connId)?.abort();
       break;
     }
 
@@ -410,6 +433,11 @@ async function handleReq(
   // 据此解析 UA/IP 记录远程设备信息（功能：设备列表）。
   headers.set("X-CWU-Via", "relay");
 
+  // 绑定 AbortController：远程客户端断开（end 帧）或隧道掉线时中止本地 fetch，
+  // 释放本地 SSE 等长连接（见 case "end" / abortAllInflight）。
+  const controller = new AbortController();
+  inflight.set(connId, controller);
+
   const url = `${localBase}${path}`;
   let resp: Response;
   try {
@@ -418,8 +446,11 @@ async function handleReq(
       headers,
       // GET/HEAD 不能带 body；空 body 也必须为 undefined，否则 Node fetch 报错
       body: body ? body : undefined,
+      signal: controller.signal,
     });
   } catch (err) {
+    inflight.delete(connId);
+    if (controller.signal.aborted) return; // 远程已断开，静默退出
     const msg = `local fetch failed: ${err instanceof Error ? err.message : err}`;
     console.warn(`[relay] ${msg} (${connId} ${method} ${path})`);
     sendError(connId, msg);
@@ -458,10 +489,17 @@ async function handleReq(
       }
     }
   } catch (err) {
-    const msg = `stream read failed: ${err instanceof Error ? err.message : err}`;
-    console.warn(`[relay] ${msg} (${connId})`);
-    // 通知对端流异常终止
-    send({ type: "error", connId, message: msg });
+    if (controller.signal.aborted) {
+      // 远程客户端断开导致的中止：正常退出，不报错、不通知对端
+      // （对端要么已经主动断开，要么隧道已掉线）
+    } else {
+      const msg = `stream read failed: ${err instanceof Error ? err.message : err}`;
+      console.warn(`[relay] ${msg} (${connId})`);
+      // 通知对端流异常终止
+      send({ type: "error", connId, message: msg });
+    }
+  } finally {
+    inflight.delete(connId);
   }
   // SSE 标记仅用于日志
   void isSse;
