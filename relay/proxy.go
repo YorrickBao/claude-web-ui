@@ -110,6 +110,14 @@ func (h *Hub) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// 客户端断开（浏览器关连接）时通知本地终止，并唤醒阻塞的 wait
 	ctx := r.Context()
 	go func() {
+		// 兜底 panic：该 goroutine 不在任何 recover 范围内（net/http 的 recover
+		// 只覆盖 handler 主 goroutine），若 fail/writeLocal 因异常 panic 会直接
+		// 崩溃整个 relay 进程、拖垮所有隧道。recover 后仅记日志，不影响其它请求。
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[proxy] %s %s client-disconnect goroutine panic: %v", shortKey(accessKey), connId, r)
+			}
+		}()
 		<-ctx.Done()
 		tunnel.deleteRoute(connId)
 		p.fail("client disconnected")

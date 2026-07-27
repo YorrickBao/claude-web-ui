@@ -275,8 +275,11 @@ func (t *Tunnel) shutdown(reason string) {
 // localReadLoop 收到 res/res_body 帧后写 ResponseWriter；HTTP handler
 // goroutine 阻塞在 wait() 等流结束（或客户端断开）。
 //
-// 并发：writeHeader/writeBody 只在 localReadLoop（单 goroutine）调用；
-// wait/fail 在 HTTP handler goroutine 调用；done channel 协调两者。
+// 并发模型（重要）：
+//   - writeHeader/writeBody/headerSent 仅在 localReadLoop（单 goroutine）访问；
+//   - fail/finish 可由多 goroutine 并发调用——localReadLoop（写失败/TypeEnd/TypeError）、
+//     客户端断开 goroutine（proxy.go）、shutdown 收集路径都可能触发；
+//   - err/failed 由 mu 保护；done 由 doneOnce 幂等关闭，杜绝双重 close 崩溃。
 type pendingHTTP struct {
 	w httpResponseWriter
 	// rc 包裹 w，提供 SetWriteDeadline/Flush 等扩展写能力（Header/Write/WriteHeader
@@ -285,8 +288,10 @@ type pendingHTTP struct {
 	// localReadLoop——否则单慢客户端会卡住整个读循环，拖垮所有响应回传。
 	rc         *http.ResponseController
 	done       chan struct{}
+	doneOnce   sync.Once  // 幂等关闭 done，防多 goroutine 并发 fail 双重 close 崩溃
+	mu         sync.Mutex // 保护 err/failed（跨 goroutine 读写）
 	err        error
-	headerSent bool
+	headerSent bool // 仅 localReadLoop 读写，无需锁
 	failed     bool // 写失败后置位，使后续 writeHeader/writeBody 变 no-op
 }
 
@@ -308,9 +313,15 @@ func newPendingHTTP(w httpResponseWriter) *pendingHTTP {
 // 写回远程浏览器设 writeTimeout 截止时间：慢客户端 15s 内写不出即 fail，
 // 释放 localReadLoop，避免单慢连接拖垮所有响应回传。
 func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
-	if p.headerSent || p.failed {
+	if p.headerSent { // 仅 localReadLoop 访问，无需锁
 		return
 	}
+	p.mu.Lock()
+	if p.failed {
+		p.mu.Unlock()
+		return
+	}
+	p.mu.Unlock()
 	h := p.w.Header()
 	for k, v := range headers {
 		if isHopByHop(k) {
@@ -328,9 +339,12 @@ func (p *pendingHTTP) writeHeader(status int, headers map[string]string) {
 }
 
 func (p *pendingHTTP) writeBody(body string) {
+	p.mu.Lock()
 	if p.failed {
+		p.mu.Unlock()
 		return
 	}
+	p.mu.Unlock()
 	p.setWriteDeadline()
 	if body != "" {
 		if _, err := p.w.Write([]byte(body)); err != nil {
@@ -351,22 +365,29 @@ func (p *pendingHTTP) setWriteDeadline() {
 	_ = p.rc.SetWriteDeadline(time.Now().Add(writeTimeout))
 }
 
-// finish 标记响应流正常结束。
+// finish 标记响应流结束（正常或失败均走这里）。
+// 用 doneOnce 保证 close(done) 只执行一次——fail 可由多个 goroutine 并发调用
+// （localReadLoop 写失败、客户端断开 goroutine、shutdown 收集），裸 select+close
+// 会因非原子的 check-then-close 导致双重 close panic。
+// 同时清除本次请求设在底层 conn 上的写截止时间：net/http 不配 WriteTimeout 时
+// 不会在请求间自动重置 writeDeadline，残留 deadline 会误杀复用连接上的后续
+// 非代理响应（401/502/stats 等不走 pendingHTTP 的路径）。
 func (p *pendingHTTP) finish() {
-	select {
-	case <-p.done:
-	default:
+	p.doneOnce.Do(func() {
 		close(p.done)
-	}
+		_ = p.rc.SetWriteDeadline(time.Time{})
+	})
 }
 
 // fail 标记失败（若尚未发头则可由 handler 写错误页）。
 // 置 failed=true 使后续 writeHeader/writeBody 变 no-op，避免向已坏连接继续写。
 func (p *pendingHTTP) fail(reason string) {
+	p.mu.Lock()
 	if p.err == nil {
 		p.err = errors.New(reason)
 	}
 	p.failed = true
+	p.mu.Unlock()
 	p.finish()
 }
 
@@ -374,7 +395,10 @@ func (p *pendingHTTP) fail(reason string) {
 func (p *pendingHTTP) wait(ctx context.Context) error {
 	select {
 	case <-p.done:
-		return p.err
+		p.mu.Lock()
+		err := p.err
+		p.mu.Unlock()
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
