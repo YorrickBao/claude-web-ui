@@ -12,9 +12,8 @@
  * 转成 res/res_body 帧回传。SSE（text/event-stream）会被逐 chunk 持续转发，
  * 远程浏览器获得与本地完全一致的流式体验。
  *
- * 与 channels/feishu.ts 同属"外部接入通道"，但方向不同：飞书是消息进来，
- * relay 是把本地服务暴露出去。二者都复用 runQuery 等核心能力（relay 经由
- * 本地 HTTP API 间接复用，无需直接调 SDK）。
+ * 本通道把本地服务暴露出去，复用 runQuery 等核心能力（relay 经由本地
+ * HTTP API 间接复用，无需直接调 SDK）。
  */
 import { LOG_ENABLED } from "../env.js";
 import { emitRelayStatus } from "../lib/eventBus.js";
