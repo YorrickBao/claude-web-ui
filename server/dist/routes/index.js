@@ -11,7 +11,7 @@ import { connectViaQRCode, validateFeishuCredentials } from "../channels/feishu.
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, mintToken, } from "../channels/relay.js";
 import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
-import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle, onDeviceChanged } from "../lib/eventBus.js";
+import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle, onDeviceChanged, getSessionBuffer, clearSessionBuffer } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -238,53 +238,72 @@ export async function apiRoutes(app) {
         });
         // 客户端正常断开时清理（仅注册一次）
         req.raw.on("close", cleanup);
-        // 阶段2：回放历史，收集去重依据
+        // 阶段2+3：回放历史 + 切实时模式
+        //
+        // 两条路径：
+        // - inflight（会话正在跑）：用内存事件缓冲（getSessionBuffer）重放。
+        //   SDK 磁盘转录在 running 期间写入滞后/批量，不可靠；内存缓冲与 bus 事件
+        //   实时同步，是完整、准确的事件序列。直接逐个发给前端，前端从空状态
+        //   用 handleSSEEvent 累积出完整对话（含 user_message）。无需去重——
+        //   内存缓冲就是事件源头，buffer（订阅期间暂存）是它的子集后续会覆盖。
+        // - 非 inflight（历史会话）：用磁盘 replay 重建完整 ChatMessage[]，
+        //   发 history 事件整体替换前端 messages。
         try {
-            const history = await replaySession(sessionId, rec.cwd);
-            if (timedOut)
-                return;
-            // 从 history 提取：工具 ID 集合 + 最后一条 assistant 消息文本长度
-            const historyToolIds = new Set();
-            let lastTextLen = 0;
-            for (let i = history.length - 1; i >= 0; i--) {
-                if (history[i].role === "assistant") {
-                    for (const part of history[i].content) {
-                        if (part.type === "tool-call") {
-                            historyToolIds.add(part.toolCallId);
-                        }
-                        else if (part.type === "text") {
-                            lastTextLen += part.text.length;
-                        }
-                    }
-                    break;
+            const memBuf = getSessionBuffer(sessionId);
+            if (memBuf && memBuf.length > 0) {
+                // inflight 路径：先发空 history 初始化前端为空，再逐个重放内存事件
+                sendSSE(reply, { type: "history", messages: [] });
+                for (const evt of memBuf) {
+                    sendSSE(reply, evt);
                 }
             }
-            sendSSE(reply, { type: "history", messages: history });
-            // 阶段3：去重转发缓冲区事件，然后切到实时模式
+            else {
+                // 非 inflight 或内存缓冲为空：走磁盘 replay
+                const history = await replaySession(sessionId, rec.cwd);
+                if (timedOut)
+                    return;
+                // 从 history 提取：工具 ID 集合 + 最后一条 assistant 消息文本长度
+                const historyToolIds = new Set();
+                let lastTextLen = 0;
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].role === "assistant") {
+                        for (const part of history[i].content) {
+                            if (part.type === "tool-call") {
+                                historyToolIds.add(part.toolCallId);
+                            }
+                            else if (part.type === "text") {
+                                lastTextLen += part.text.length;
+                            }
+                        }
+                        break;
+                    }
+                }
+                sendSSE(reply, { type: "history", messages: history });
+                // 去重转发缓冲区事件（仅磁盘路径需要——history 来自滞后转录，
+                // buffer 里可能有与之重叠的事件）
+                let textAccum = 0;
+                for (const evt of buffer) {
+                    if ((evt.type === "tool_use" || evt.type === "tool_result") &&
+                        historyToolIds.has(evt.id)) {
+                        continue;
+                    }
+                    if (evt.type === "text") {
+                        textAccum += evt.text.length;
+                        if (textAccum <= lastTextLen)
+                            continue;
+                        if (textAccum - evt.text.length < lastTextLen) {
+                            const overlap = lastTextLen - (textAccum - evt.text.length);
+                            const newPart = evt.text.slice(overlap);
+                            if (newPart)
+                                sendSSE(reply, { type: "text", text: newPart });
+                            continue;
+                        }
+                    }
+                    sendSSE(reply, evt);
+                }
+            }
+            // 切到实时模式
             buffering = false;
-            let textAccum = 0;
-            for (const evt of buffer) {
-                // 工具事件：按 ID 去重
-                if ((evt.type === "tool_use" || evt.type === "tool_result") &&
-                    historyToolIds.has(evt.id)) {
-                    continue;
-                }
-                // 文本增量：累计长度 ≤ lastTextLen 说明已包含在 history 中
-                if (evt.type === "text") {
-                    textAccum += evt.text.length;
-                    if (textAccum <= lastTextLen)
-                        continue;
-                    // 跨边界 delta：截掉已在 history 中的前缀部分
-                    if (textAccum - evt.text.length < lastTextLen) {
-                        const overlap = lastTextLen - (textAccum - evt.text.length);
-                        const newPart = evt.text.slice(overlap);
-                        if (newPart)
-                            sendSSE(reply, { type: "text", text: newPart });
-                        continue;
-                    }
-                }
-                sendSSE(reply, evt);
-            }
             // 重连补播：如果会话有待审批的权限请求（用户刷新/切回），
             // 重新推送给当前重连客户端。这些 permission_request 事件之前
             // 已经 emit 到 bus（首次请求时），重连客户端没收到，这里直接补发。
@@ -299,9 +318,6 @@ export async function apiRoutes(app) {
                 });
             }
             // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭。
-            // endedDuringReplay 表示 onSessionEnd 在 buffering 阶段触发过，
-            // 此时 inflight 必已清除（emitSessionEnd 在 clearInflight 之后调用），
-            // 两个条件等价，合并表达更清晰。
             if (endedDuringReplay || !getInflight(sessionId)) {
                 cleanup();
                 try {
@@ -469,6 +485,7 @@ export async function apiRoutes(app) {
                 emitSessionEnd(sessionId);
                 if (clearInflight(sessionId, ctrl))
                     emitSessionEnded(sessionId);
+                clearSessionBuffer(sessionId);
                 await touchSession(sessionId);
                 // 会话结束（running→completed），通知 Sidebar 刷新。
                 // 本路由不走 runQueryToBus（首条消息用独立 for-await），需手动补发。
@@ -509,6 +526,11 @@ export async function apiRoutes(app) {
             if (!closed)
                 sendSSE(reply, evt);
         });
+        // 主动 emit user_message：SDK 消息流不包含用户文本输入（只含 tool_result），
+        // 观察方/续流方无法从流里得知用户说了什么。这里在查询启动前显式广播，
+        // 让它进入总线 + 内存缓冲，观察方订阅 GET stream 时能完整看到对话。
+        // 发消息方前端在 onNew 里已乐观写入 user 消息，appendUserMessage 会按文本去重。
+        emitSessionEvent(sessionId, { type: "user_message", text: body.message });
         // 查询生命周期独立于连接：只有 POST /abort / DELETE 才取消。
         // 断开仅停止向死连接转发，runQueryToBus 继续把事件写到总线 + transcript。
         req.raw.on("close", () => {
@@ -629,6 +651,7 @@ export async function apiRoutes(app) {
         // 强制清除 inflight；若有变化，通知观察方该会话流已结束
         if (clearInflight(sessionId))
             emitSessionEnded(sessionId);
+        clearSessionBuffer(sessionId);
         // 真删 CLI 转录文件（含子代理）。
         // 有 cwd 时传 dir 精确删除；无 cwd 时不传 dir，让 SDK 全局搜索。
         const dirOpt = rec?.cwd ? { dir: rec.cwd } : {};

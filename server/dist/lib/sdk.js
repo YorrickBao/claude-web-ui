@@ -373,6 +373,10 @@ export async function* runQuery(params) {
                             isError: b.is_error === true,
                         };
                     }
+                    else if (b.type === "text" && typeof b.text === "string") {
+                        // 用户文本输入：emit 给观察方/续流方，使其不依赖磁盘转录也能显示用户消息
+                        yield { type: "user_message", text: b.text };
+                    }
                 }
                 break;
             }
