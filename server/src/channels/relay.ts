@@ -470,7 +470,10 @@ async function handleReq(
   // 流式回传响应体
   const isSse = (resp.headers.get("content-type") ?? "").includes("text/event-stream");
   if (!resp.body) {
+    // 无 body 响应（HEAD / 204 / 304）：直接终结，并清理 inflight 条目。
+    // 不能只 return——否则 reader 的 finally 走不到，AbortController 残留泄漏。
     send({ type: "res_body", connId, body: "", last: true });
+    inflight.delete(connId);
     return;
   }
 
