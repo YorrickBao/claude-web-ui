@@ -2,8 +2,8 @@ import {
   ThreadPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
-  useThreadViewport,
-  useThreadViewportStore,
+  ActionBarPrimitive,
+  useThreadViewportAutoScroll,
   useMessage,
   useComposerRuntime,
   unstable_useComposerInputHistory,
@@ -12,8 +12,9 @@ import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldC
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { copyText } from "@/lib/clipboard";
+
+
+
 import {
   Select,
   SelectContent,
@@ -85,15 +86,18 @@ export function ChatThread({
   // 仅在输入框为空时触发，与斜杠命令弹窗（需以 / 开头才打开）条件互斥，不冲突。
   const inputHistory = unstable_useComposerInputHistory();
 
-  // 把"从此处分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
+  // 显式自动滚屏：新内容追加时跟随到底；用户主动上滚看历史时不打断。
+  useThreadViewportAutoScroll({ autoScroll: true, scrollToBottomOnRunStart: true });
+
+  // 把"分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
   // 用 effect 而非 render 期赋值，避免在渲染中途改动可变 ref。
-  // 会话运行中（isRunning）时清空槽，让按钮隐藏——避免拷到正在写的半截状态。
+  // 运行中消息的按钮隐藏交给 ActionBarPrimitive 的 hideWhenRunning（per-message）。
   useEffect(() => {
-    forkFromMessageRef.current = onForkFromMessage && !isRunning ? onForkFromMessage : null;
+    forkFromMessageRef.current = onForkFromMessage ?? null;
     return () => {
       forkFromMessageRef.current = null;
     };
-  }, [onForkFromMessage, isRunning]);
+  }, [onForkFromMessage]);
 
   useEffect(() => {
     listProfiles()
@@ -159,9 +163,14 @@ export function ChatThread({
           />
         </div>
 
-        {/* 滚动到底部按钮：sticky 在视口底部居中，仅在不在底部时渲染 */}
+        {/* 滚动到底部按钮：sticky 在视口底部居中，到底部时 primitive 自动 disabled */}
         <div className="pointer-events-none sticky bottom-0 flex justify-center pb-2">
-          <ScrollToBottomButton />
+          <ThreadPrimitive.ScrollToBottom
+            aria-label="滚动到底部"
+            className="pointer-events-auto h-8 w-8 rounded-full border border-border/60 bg-card/95 shadow-md shadow-black/10 backdrop-blur transition-opacity duration-150 hover:bg-card disabled:pointer-events-none disabled:opacity-0"
+          >
+            <ChevronDown className="size-4" />
+          </ThreadPrimitive.ScrollToBottom>
         </div>
       </ThreadPrimitive.Viewport>
 
@@ -565,18 +574,48 @@ function AssistantErrorIfAny() {
 
 /**
  * assistant 消息操作：错误块 + 操作按钮组（复制 / 分叉）。
- * 操作按钮绝对定位浮在气泡外，hover 消息时整组淡入，不占文档流（避免布局抖动）。
- * 仅当消息有文本内容时才渲染（工作过程组无文本回答时不显示）。
+ * 用 ActionBarPrimitive.Root 承担定位 + 显隐：
+ *  - hideWhenRunning：per-message，正在生成的消息整组隐藏
+ *  - autohide="always"：默认隐藏，hover 消息时显示（替代原 group-hover 手写）
  */
 function AssistantActionBar() {
   return (
     <>
       <AssistantErrorIfAny />
-      <div className="absolute -bottom-2.5 left-2 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 md:left-3">
-        <CopyButton />
+      <ActionBarPrimitive.Root
+        hideWhenRunning
+        autohide="always"
+        className="absolute -bottom-2.5 left-2 flex items-center gap-1 transition-opacity duration-150 data-[floating]:opacity-0 data-[floating]:group-hover/msg:opacity-100 md:left-3"
+      >
+        <CopyAction />
         <ForkFromHereButton />
-      </div>
+      </ActionBarPrimitive.Root>
     </>
+  );
+}
+
+/**
+ * 复制按钮：用 ActionBarPrimitive.Copy（自带 copied 状态，通过 data-copied 暴露）。
+ * 仅当消息有文本内容时渲染（纯工作过程组不显示）。
+ * 按钮自身声明为 group/copy，children 用 group-data-[copied=true]/copy: 切换图标。
+ */
+function CopyAction() {
+  const hasText = useMessage((s) => {
+    const content = s.content as readonly { type: string; text?: string }[] | undefined;
+    return content?.some((p) => p.type === "text" && (p.text ?? "").trim()) ?? false;
+  });
+  if (!hasText) return null;
+  return (
+    <ActionBarPrimitive.Copy
+      copiedDuration={2000}
+      title="复制回答"
+      className="group/copy flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[copied=true]:text-emerald-400"
+    >
+      <Copy className="size-3 group-data-[copied=true]/copy:hidden" />
+      <Check className="hidden size-3 text-emerald-400 group-data-[copied=true]/copy:block" />
+      <span className="group-data-[copied=true]/copy:hidden">复制</span>
+      <span className="hidden text-emerald-400 group-data-[copied=true]/copy:inline">已复制</span>
+    </ActionBarPrimitive.Copy>
   );
 }
 
@@ -603,51 +642,6 @@ function ForkFromHereButton() {
       className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
       <GitFork className="size-3" /> 分叉
-    </button>
-  );
-}
-
-/** 复制按钮：提取消息文本，复制到剪贴板，2s 内显示对勾 */
-function CopyButton() {
-  const [copied, setCopied] = useState(false);
-  const text = useMessage((s) =>
-    (s.content as readonly { type: string; text?: string }[] | undefined)
-      ?.filter((p) => p.type === "text")
-      .map((p) => p.text ?? "")
-      .join("") ?? "",
-  );
-  // 没有文本内容（纯工作过程组）时不渲染复制按钮
-  if (!text.trim()) return null;
-
-  const handleCopy = () => {
-    void copyText(text).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      },
-      (err) =>
-        console.warn(
-          "[copy] clipboard write failed:",
-          err instanceof Error ? err.message : err,
-        ),
-    );
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-    >
-      {copied ? (
-        <>
-          <Check className="size-3 text-emerald-400" /> 已复制
-        </>
-      ) : (
-        <>
-          <Copy className="size-3" /> 复制
-        </>
-      )}
     </button>
   );
 }
@@ -691,28 +685,3 @@ function EmptyState() {
   );
 }
 
-/**
- * 滚动到底部按钮。
- * 始终挂载，仅切换可见性（opacity + pointer-events），避免卸载/挂载
- * 改变滚动区域高度导致的内容跳动。底部时通过 opacity-0 完全透明且不可点击。
- */
-function ScrollToBottomButton() {
-  const isAtBottom = useThreadViewport((s) => s.isAtBottom);
-  const viewportStore = useThreadViewportStore();
-  return (
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => viewportStore.getState().scrollToBottom({ behavior: "instant" })}
-      aria-hidden={isAtBottom}
-      tabIndex={isAtBottom ? -1 : 0}
-      className={cn(
-        "pointer-events-auto h-8 w-8 rounded-full border-border/60 bg-card/95 shadow-md shadow-black/10 backdrop-blur transition-opacity duration-150 hover:bg-card",
-        isAtBottom ? "pointer-events-none opacity-0" : "opacity-100",
-      )}
-      aria-label="滚动到底部"
-    >
-      <ChevronDown className="size-4" />
-    </Button>
-  );
-}
