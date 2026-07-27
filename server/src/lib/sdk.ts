@@ -468,10 +468,10 @@ export async function* runQuery(
               result: b.content,
               isError: b.is_error === true,
             };
-          } else if (b.type === "text" && typeof b.text === "string") {
-            // 用户文本输入：emit 给观察方/续流方，使其不依赖磁盘转录也能显示用户消息
-            yield { type: "user_message", text: b.text };
           }
+          // 注：SDK 消息流的 user 消息只含 tool_result，不含用户文本输入
+          // （实测确认 resume 与新建模式均无 type=user 的 text block）。
+          // 用户文本由 POST 端点主动 emit user_message 事件。
         }
         break;
       }

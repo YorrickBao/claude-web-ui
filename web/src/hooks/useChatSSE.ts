@@ -208,6 +208,10 @@ export function useChatSSE({
   const subscribe = useCallback(async (targetSessionId: string) => {
     setError(null);
     setIsRunning(true);
+    // 同步更新 ref：setIsRunning 是异步的（下次 render 才生效），但挂载 effect 的
+    // session_started 监听与 querySessionStatus 兜底可能在此期间到达，若 ref 未同步
+    // 会双双通过 !isRunningRef.current 闸门，触发两次 subscribe（双重消费）。
+    isRunningRef.current = true;
     sessionIdRef.current = targetSessionId;
     setActiveSessionId(targetSessionId);
     lastEventAtRef.current = Date.now(); // 重置，防陈旧值触发误冻结重连
@@ -594,6 +598,10 @@ export function useChatSSE({
         }
       } finally {
         if (!handedOff) {
+          // 兜底收尾：若 POST 流异常结束（未收到 done 也没抛错，如后端提前 endSSE、
+          // 中间代理截断），占位 assistant 会卡在 status:running。completeLast 把它
+          // 标记为完成，避免 UI 上 isRunning=false 但气泡仍转圈的状态不一致。
+          setMessages((prev) => completeLast(prev));
           setIsRunning(false);
           abortRef.current = null;
           // 通知侧栏：会话已完成，退出 inflight
@@ -707,20 +715,22 @@ function ensureAssistantTail(msgs: ChatMessage[]): ChatMessage[] {
 /**
  * 追加一条 user 消息。带去重：发消息方在 onNew 里已乐观写入 user 消息
  * （后跟 assistant placeholder），POST 流随后又 emit user_message 事件。
- * 此时该 user 消息不在末尾（被 placeholder 挤到前面），所以按"末尾匹配"
- * 去重会失效。这里改为扫描整条对话：已存在相同文本的 user 消息则跳过。
- * 正常对话不会连续两条一模一样的用户输入，去重安全。
+ * 此时该 user 消息不在末尾（被 placeholder 挤到前面），所以只查"末尾"会漏。
+ * 这里检查最后两条：若已有相同文本的 user 消息（乐观写入紧贴当前轮）则跳过。
+ * 只查最后两条而非全表——避免误删用户合法的重复输入（如连发两次"继续"）。
  */
 function appendUserMessage(msgs: ChatMessage[], text: string): ChatMessage[] {
-  const exists = msgs.some(
-    (m) =>
-      m.role === "user" &&
-      Array.isArray(m.content as unknown) &&
-      (m.content as unknown[]).length === 1 &&
-      ((m.content as unknown[])[0] as { type?: string; text?: string })?.type === "text" &&
-      ((m.content as unknown[])[0] as { type?: string; text?: string })?.text === text,
-  );
-  if (exists) return msgs;
+  const isSameUserText = (m: ChatMessage | undefined): boolean =>
+    !!m &&
+    m.role === "user" &&
+    Array.isArray(m.content as unknown) &&
+    (m.content as unknown[]).length === 1 &&
+    ((m.content as unknown[])[0] as { type?: string; text?: string })?.type === "text" &&
+    ((m.content as unknown[])[0] as { type?: string; text?: string })?.text === text;
+  // 乐观写入的 user 消息可能在末尾，也可能被 placeholder 挤到倒数第二
+  if (isSameUserText(msgs[msgs.length - 1]) || isSameUserText(msgs[msgs.length - 2])) {
+    return msgs;
+  }
   return [...msgs, { role: "user", content: [{ type: "text", text }] }];
 }
 

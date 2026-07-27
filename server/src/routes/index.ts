@@ -292,26 +292,26 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
       // 阶段2+3：回放历史 + 切实时模式
       //
-      // 两条路径：
+      // 两条路径（按 inflight 状态判定，不按缓冲是否存在——避免 setInflight 后、
+      // 首个事件 emit 前的窗口里观察方走错到滞后的磁盘 replay 路径）：
       // - inflight（会话正在跑）：用内存事件缓冲（getSessionBuffer）重放。
       //   SDK 磁盘转录在 running 期间写入滞后/批量，不可靠；内存缓冲与 bus 事件
-      //   实时同步，是完整、准确的事件序列。直接逐个发给前端，前端从空状态
-      //   用 handleSSEEvent 累积出完整对话（含 user_message）。无需去重——
-      //   内存缓冲就是事件源头，buffer（订阅期间暂存）是它的子集后续会覆盖。
-      // - 非 inflight（历史会话）：用磁盘 replay 重建完整 ChatMessage[]，
-      //   发 history 事件整体替换前端 messages。
+      //   实时同步。直接逐个发给前端，前端增量追加。不发 history——观察端可能已
+      //   通过 GET :id 持有前几轮历史，发 history 会清空它们。
+      // - 非 inflight（历史会话）：磁盘 replay 重建 ChatMessage[]，发 history 整体替换。
       try {
-        const memBuf = getSessionBuffer(sessionId);
-        if (memBuf && memBuf.length > 0) {
+        const isInflight = !!getInflight(sessionId);
+        if (isInflight) {
           // inflight 路径：直接逐个重放内存缓冲事件，前端增量追加。
-          // 不发 history 事件——观察端可能已通过 GET :id 的 loadHistory 持有
-          // 前几轮历史，发空 history 会清空它们。内存缓冲只含当前 inflight 轮次
-          // 的事件（上一轮结束时已 clearSessionBuffer），追加不重复。
-          for (const evt of memBuf) {
-            sendSSE(reply, evt);
+          // 内存缓冲只含当前 inflight 轮次（上一轮结束时已 clearSessionBuffer），追加不重复。
+          const memBuf = getSessionBuffer(sessionId);
+          if (memBuf) {
+            for (const evt of memBuf) {
+              sendSSE(reply, evt);
+            }
           }
         } else {
-          // 非 inflight 或内存缓冲为空：走磁盘 replay
+          // 非 inflight：走磁盘 replay
           const history = await replaySession(sessionId, rec.cwd);
           if (timedOut) return;
 
@@ -360,18 +360,19 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         // 切到实时模式
         buffering = false;
 
-        // 重连补播：如果会话有待审批的权限请求（用户刷新/切回），
-        // 重新推送给当前重连客户端。这些 permission_request 事件之前
-        // 已经 emit 到 bus（首次请求时），重连客户端没收到，这里直接补发。
-        // 不走 bus —— 避免其他订阅者重复收到。
-        for (const pending of getPendingPermissions(sessionId)) {
-          sendSSE(reply, {
-            type: "permission_request",
-            requestId: pending.requestId,
-            toolName: pending.toolName,
-            toolInput: pending.toolInput,
-            decisionReason: pending.decisionReason,
-          });
+        // 重连补播待审批权限请求（用户刷新/切回）。
+        // 仅非 inflight 路径需要——inflight 路径的内存缓冲已包含 permission_request
+        // 事件，再补播会重复，导致前端出现两个相同 requestId 的审批横幅。
+        if (!isInflight) {
+          for (const pending of getPendingPermissions(sessionId)) {
+            sendSSE(reply, {
+              type: "permission_request",
+              requestId: pending.requestId,
+              toolName: pending.toolName,
+              toolInput: pending.toolInput,
+              decisionReason: pending.decisionReason,
+            });
+          }
         }
 
         // 如果会话没在运行（竞态：刚好在 replay 期间结束），关闭。
@@ -500,6 +501,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
             unsubBusEvents = onSessionEvent(sessionId, (e) => {
               sendSSE(reply, e);
             });
+            // 主动 emit user_message：SDK 消息流不含用户文本输入（实测确认 resume
+            // 与新建模式均无 type=user 的 text block），观察方/续流方只能靠此事件
+            // 看到首条用户消息。订阅建立后再 emit，确保它进入内存缓冲供后续观察方重放。
+            emitSessionEvent(sessionId, { type: "user_message", text: body.message });
           }
         }
 
@@ -1305,6 +1310,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         sendSSE(reply, evt);
       }
     });
+
+    // 主动 emit user_message：approve-plan 的 execPrompt 是合成的执行指令，
+    // SDK 流不会回显它。emit 让观察方知道用户批准了什么计划。
+    emitSessionEvent(sessionId, { type: "user_message", text: execPrompt });
 
     // 查询生命周期独立于连接：只有 POST /abort / DELETE 才取消。
     // 断开仅停止向死连接转发，runQueryToBus 继续把事件写到总线 + transcript。

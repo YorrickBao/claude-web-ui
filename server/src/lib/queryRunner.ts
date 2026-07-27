@@ -46,6 +46,9 @@ export async function emitEventToBus(
       inputTokens: updated?.inputTokens ?? evt.inputTokens,
       outputTokens: updated?.outputTokens ?? evt.outputTokens,
       durationMs: evt.durationMs,
+      // 透传 lastAssistantUuid：供前端"从此处分叉"盖戳当前轮次的 assistant 消息。
+      // 之前重建 doneEvt 时遗漏了这个字段，导致分叉按钮在当前轮次不显示（刷新后才出现）。
+      ...(evt.lastAssistantUuid ? { lastAssistantUuid: evt.lastAssistantUuid } : {}),
     };
     emitSessionEvent(sessionId, doneEvt);
     return doneEvt;

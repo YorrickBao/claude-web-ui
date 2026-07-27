@@ -228,8 +228,9 @@ export function ChatView({
       loadHistory([]);
       return;
     }
-    if (initialRunningStatus === "running") {
-      // 会话正在运行 → 订阅实时流，续上输出
+    if (initialRunningStatus === "running" || initialRunningStatus === "waiting") {
+      // 会话正在运行 / 等待权限审批 → 都是 inflight，订阅实时流续上输出
+      // （waiting 也是 inflight，权限批准后会话恢复，需订阅才能收到后续事件）
       void subscribe(sessionId);
     } else if (initialMessages) {
       // 静止会话 → 直接加载静态历史
