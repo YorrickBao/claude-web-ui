@@ -4,6 +4,7 @@ import {
   ComposerPrimitive,
   ActionBarPrimitive,
   useMessage,
+  useThread,
   useComposerRuntime,
   unstable_useComposerInputHistory,
 } from "@assistant-ui/react";
@@ -615,9 +616,11 @@ function CopyAction() {
 }
 
 /**
- * "从此处分叉"按钮：仅当本条 assistant 消息带 metadata.custom.assistantUuid
+ * "分叉"按钮：仅当本条 assistant 消息带 metadata.custom.assistantUuid
  * （即本回合已结束、有最终答案）且外部注入了 forkFromMessageRef 回调时渲染。
- * 与复制按钮共享同一组 hover/absolute 定位样式，靠右排布。
+ *
+ * 运行中（thread 级 isRunning）时显示为 disabled 态：后端 forkSession 在会话
+ * 运行中返回 409（SDK 转录层约束），UI 提前禁用避免点击无反应的困惑。
  */
 function ForkFromHereButton() {
   const assistantUuid = useMessage(
@@ -625,6 +628,7 @@ function ForkFromHereButton() {
       (s as { metadata?: { custom?: { assistantUuid?: string } } })
         .metadata?.custom?.assistantUuid,
   );
+  const isThreadRunning = useThread((s) => s.isRunning);
   const handle = forkFromMessageRef.current;
   // 无 uuid 或未注入回调时不渲染
   if (!assistantUuid || !handle) return null;
@@ -632,9 +636,10 @@ function ForkFromHereButton() {
   return (
     <button
       type="button"
-      title="分叉：复制到该回答为止的历史，原会话不变"
+      title={isThreadRunning ? "会话运行中，结束后再分叉" : "分叉：复制到该回答为止的历史，原会话不变"}
+      disabled={isThreadRunning}
       onClick={() => handle(assistantUuid)}
-      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
       <GitFork className="size-3" /> 分叉
     </button>
