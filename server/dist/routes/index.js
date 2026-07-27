@@ -1,6 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, resolveSessionEnv, resolveProfileEnv, setSessionProfile, } from "../lib/store.js";
+import { getSession, syncAndListSessions, upsertSession, touchSession, deleteSessionRecord, listProfiles, createProfile, updateProfile, deleteProfile, reorderProfiles, resolveSessionEnv, resolveProfileEnv, setSessionProfile, } from "../lib/store.js";
 import { runQuery, renameSession, forkSession, getSessionInfo, listSessions as sdkListSessions, listSubagents } from "../lib/sdk.js";
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
@@ -738,6 +738,18 @@ export async function apiRoutes(app) {
         if (!ok)
             return reply.code(404).send({ error: "profile not found" });
         return reply.send({ ok: true });
+    });
+    // ───────────────────────────────────────────────────────────
+    // PUT /api/profiles/reorder —— 拖拽排序
+    // body: { ids: string[] } 按目标顺序排列的 profile id 列表
+    // ───────────────────────────────────────────────────────────
+    app.put("/api/profiles/reorder", async (req, reply) => {
+        const raw = req.body?.ids;
+        if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string")) {
+            return reply.code(400).send({ error: "ids must be a string array" });
+        }
+        const profiles = await reorderProfiles(raw);
+        return reply.send({ profiles });
     });
     // ───────────────────────────────────────────────────────────
     // PUT /api/sessions/:id/profile —— 切换会话绑定的 profile

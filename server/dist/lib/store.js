@@ -100,9 +100,26 @@ async function readAllProfiles() {
 async function writeProfiles(data) {
     await writeFile_atomic(PROFILES_FILE, JSON.stringify(data, null, 2));
 }
+/** 给缺失 order 的旧数据补齐排序位置（按 createdAt 升序）。返回是否发生了变更 */
+function ensureProfileOrders(data) {
+    const missing = data.profiles.some((p) => typeof p.order !== "number");
+    if (!missing)
+        return false;
+    const sorted = [...data.profiles].sort((a, b) => {
+        const ao = typeof a.order === "number" ? a.order : Number.MAX_SAFE_INTEGER;
+        const bo = typeof b.order === "number" ? b.order : Number.MAX_SAFE_INTEGER;
+        return ao - bo || a.createdAt - b.createdAt;
+    });
+    sorted.forEach((p, i) => {
+        p.order = i;
+    });
+    return true;
+}
 export async function listProfiles() {
     const data = await readAllProfiles();
-    return [...data.profiles].sort((a, b) => a.createdAt - b.createdAt);
+    if (ensureProfileOrders(data))
+        await writeProfiles(data);
+    return [...data.profiles].sort((a, b) => a.order - b.order);
 }
 export async function getProfile(id) {
     const data = await readAllProfiles();
@@ -110,10 +127,15 @@ export async function getProfile(id) {
 }
 export async function createProfile(name, envInput) {
     const data = await readAllProfiles();
+    if (ensureProfileOrders(data))
+        await writeProfiles(data);
+    // 新配置追加到末尾（order = 当前最大 + 1）
+    const maxOrder = data.profiles.reduce((mx, p) => (typeof p.order === "number" && p.order > mx ? p.order : mx), -1);
     const profile = {
         id: crypto.randomUUID(),
         name: name.trim() || "未命名",
         env: normalizeEnvValues(envInput),
+        order: maxOrder + 1,
         createdAt: Date.now(),
         updatedAt: Date.now(),
     };
@@ -156,6 +178,26 @@ export async function deleteProfile(id) {
     if (changed)
         await writeSessions(sessions);
     return true;
+}
+/**
+ * 按给定 id 顺序重排 profiles。
+ * 传入的 ids 按数组顺序赋予 0,1,2,...；未在列表中的保留相对顺序并整体靠后。
+ * 返回重排后的完整列表（按 order 升序）。
+ */
+export async function reorderProfiles(orderedIds) {
+    const data = await readAllProfiles();
+    const idSet = new Set(orderedIds);
+    const included = orderedIds
+        .map((id) => data.profiles.find((p) => p.id === id))
+        .filter((p) => Boolean(p));
+    const excluded = data.profiles.filter((p) => !idSet.has(p.id));
+    let idx = 0;
+    for (const p of included)
+        p.order = idx++;
+    for (const p of excluded)
+        p.order = idx++;
+    await writeProfiles(data);
+    return [...data.profiles].sort((a, b) => a.order - b.order);
 }
 // ─────────────────────────────────────────────────────────────
 // 会话 ↔ profile 绑定
