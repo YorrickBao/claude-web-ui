@@ -507,11 +507,15 @@ export function useChatSSE({
       const text = extractText(message);
       if (!text.trim()) return;
 
-      setError(null);
-      stoppedByUserRef.current = false;
-      setStats(null);
-      setStatusMessage(null);
-      setIsRunning(true);
+    setError(null);
+    stoppedByUserRef.current = false;
+    setStats(null);
+    setStatusMessage(null);
+    setIsRunning(true);
+    // 同步更新 ref：setIsRunning 是异步的（下次 render 才生效），但 session_started
+    // 信号经 EventSource 宏任务到达时可能早于 re-render，导致 isRunningRef 仍为 false，
+    // 误触发 subscribe 与 POST 流双重消费。这里手动同步 ref 堵住窗口。
+    isRunningRef.current = true;
       // 通知侧栏：当前会话进入 inflight 状态
       window.dispatchEvent(new CustomEvent("session-list-changed"));
 
@@ -701,23 +705,22 @@ function ensureAssistantTail(msgs: ChatMessage[]): ChatMessage[] {
 }
 
 /**
- * 追加一条 user 消息。带去重：发消息方在 onNew 里已乐观写入 user 消息，
- * POST 流随后又 emit user_message 事件——此时最后一条已是相同文本的 user，
- * 跳过避免重复。观察方/续流方没有乐观写入，正常追加。
+ * 追加一条 user 消息。带去重：发消息方在 onNew 里已乐观写入 user 消息
+ * （后跟 assistant placeholder），POST 流随后又 emit user_message 事件。
+ * 此时该 user 消息不在末尾（被 placeholder 挤到前面），所以按"末尾匹配"
+ * 去重会失效。这里改为扫描整条对话：已存在相同文本的 user 消息则跳过。
+ * 正常对话不会连续两条一模一样的用户输入，去重安全。
  */
 function appendUserMessage(msgs: ChatMessage[], text: string): ChatMessage[] {
-  const last = msgs[msgs.length - 1];
-  if (
-    last &&
-    last.role === "user" &&
-    Array.isArray(last.content as unknown) &&
-    (last.content as unknown[]).length === 1
-  ) {
-    const part = (last.content as unknown[])[0] as { type?: string; text?: string };
-    if (part?.type === "text" && part.text === text) {
-      return msgs; // 去重：已是相同 user 消息
-    }
-  }
+  const exists = msgs.some(
+    (m) =>
+      m.role === "user" &&
+      Array.isArray(m.content as unknown) &&
+      (m.content as unknown[]).length === 1 &&
+      ((m.content as unknown[])[0] as { type?: string; text?: string })?.type === "text" &&
+      ((m.content as unknown[])[0] as { type?: string; text?: string })?.text === text,
+  );
+  if (exists) return msgs;
   return [...msgs, { role: "user", content: [{ type: "text", text }] }];
 }
 

@@ -303,8 +303,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       try {
         const memBuf = getSessionBuffer(sessionId);
         if (memBuf && memBuf.length > 0) {
-          // inflight 路径：先发空 history 初始化前端为空，再逐个重放内存事件
-          sendSSE(reply, { type: "history", messages: [] });
+          // inflight 路径：直接逐个重放内存缓冲事件，前端增量追加。
+          // 不发 history 事件——观察端可能已通过 GET :id 的 loadHistory 持有
+          // 前几轮历史，发空 history 会清空它们。内存缓冲只含当前 inflight 轮次
+          // 的事件（上一轮结束时已 clearSessionBuffer），追加不重复。
           for (const evt of memBuf) {
             sendSSE(reply, evt);
           }
