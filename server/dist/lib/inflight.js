@@ -17,7 +17,7 @@ export function setInflight(sessionId, ctrl) {
     const old = inflight.get(sessionId);
     if (old && !old.ctrl.signal.aborted)
         old.ctrl.abort();
-    inflight.set(sessionId, { ctrl, status: "running" });
+    inflight.set(sessionId, { ctrl, status: "running", startedAt: Date.now() });
     return !old;
 }
 /** 标记会话为 waiting。@returns 状态是否实际发生了变化 */
@@ -62,6 +62,10 @@ export function getInflight(sessionId) {
 }
 export function getInflightStatus(sessionId) {
     return inflight.get(sessionId)?.status;
+}
+/** 取本轮 query 的开始时刻；非 inflight 返回 undefined。供 meta 端点回传。 */
+export function getInflightStartedAt(sessionId) {
+    return inflight.get(sessionId)?.startedAt;
 }
 const pendingPermissions = new Map();
 /**

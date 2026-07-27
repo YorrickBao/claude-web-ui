@@ -5,7 +5,7 @@ import { runQuery, renameSession, forkSession, getSessionInfo, listSessions as s
 import { runQueryToBus, emitEventToBus } from "../lib/queryRunner.js";
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
-import { setInflight, clearInflight, getInflight, getInflightStatus, takePendingPermission, getPendingPermissions, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
+import { setInflight, clearInflight, getInflight, getInflightStatus, getInflightStartedAt, takePendingPermission, getPendingPermissions, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, mintToken, } from "../channels/relay.js";
 import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
@@ -45,6 +45,7 @@ export async function apiRoutes(app) {
                 inputTokens: r.inputTokens ?? 0,
                 outputTokens: r.outputTokens ?? 0,
                 lastDurationMs: r.lastDurationMs ?? 0,
+                currentTurnStartedAt: getInflightStartedAt(r.sessionId) ?? 0,
             };
         });
         return reply.send({ sessions: views });
@@ -160,6 +161,7 @@ export async function apiRoutes(app) {
             inputTokens: rec.inputTokens ?? 0,
             outputTokens: rec.outputTokens ?? 0,
             lastDurationMs: rec.lastDurationMs ?? 0,
+            currentTurnStartedAt: getInflightStartedAt(rec.sessionId) ?? 0,
             messages: history,
         });
     });
