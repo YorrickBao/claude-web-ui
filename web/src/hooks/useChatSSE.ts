@@ -758,16 +758,23 @@ function appendToolCall(
   const withTail = ensureAssistantTail(msgs);
   const lastIdx = withTail.length - 1;
   const last = withTail[lastIdx];
-  const content = [
-    ...((last.content as unknown) as AnyPart[]),
-    {
-      type: "tool-call",
-      toolCallId,
-      toolName,
-      args: (args ?? {}) as Record<string, unknown>,
-      argsText: safeStringify(args),
-    },
-  ];
+  const existing = (last.content as unknown) as AnyPart[];
+  // 幂等：内存缓冲重放或重连可能再次发来同一 tool_use。若该 toolCallId 已存在，
+  // 替换（更新参数）而非追加，避免 assistant-ui 的 Duplicate key 报错白屏。
+  const dupIdx = existing.findIndex(
+    (p) => p.type === "tool-call" && (p as { toolCallId?: string }).toolCallId === toolCallId,
+  );
+  const newPart = {
+    type: "tool-call",
+    toolCallId,
+    toolName,
+    args: (args ?? {}) as Record<string, unknown>,
+    argsText: safeStringify(args),
+  };
+  const content =
+    dupIdx >= 0
+      ? existing.map((p, i) => (i === dupIdx ? newPart : p))
+      : [...existing, newPart];
   return [...withTail.slice(0, lastIdx), { ...last, content: content as never }];
 }
 
