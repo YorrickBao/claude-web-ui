@@ -87,7 +87,6 @@ export function ChatThread({
 
   // 把"分叉"回调同步到模块级槽，供 AssistantActionBar（顶层函数）读取。
   // 用 effect 而非 render 期赋值，避免在渲染中途改动可变 ref。
-  // 运行中消息的按钮隐藏交给 ActionBarPrimitive 的 hideWhenRunning（per-message）。
   useEffect(() => {
     forkFromMessageRef.current = onForkFromMessage ?? null;
     return () => {
@@ -571,22 +570,15 @@ function AssistantErrorIfAny() {
 /**
  * assistant 消息操作：错误块 + 操作按钮组（复制 / 分叉）。
  * 用 ActionBarPrimitive.Root 承担定位 + 显隐：
- *  - hideWhenRunning：per-message，正在生成的消息整组隐藏
- *  - autohide="always"：默认隐藏，hover 消息时显示（替代原 group-hover 手写）
- */
-/**
- * assistant 消息操作：错误块 + 操作按钮组（复制 / 分叉）。
- * 用 ActionBarPrimitive.Root 承担定位 + 显隐：
- *  - hideWhenRunning：per-message，正在生成的消息整组隐藏
- *  - autohide="always"：默认隐藏，hover 消息时挂载显示（由 isHovering 驱动 mount/unmount，
- *    非常驻 opacity 切换，故无过渡动画）
+ *  - autohide="always"：默认隐藏，hover 消息时挂载显示（由 isHovering 驱动 mount/unmount）
+ * 不加 hideWhenRunning：复制/分叉在生成过程中也应可用（SDK 无此限制）。
+ * 正在生成的那条消息自然不显示按钮——无文本则复制守卫挡住，无 assistantUuid 则分叉守卫挡住。
  */
 function AssistantActionBar() {
   return (
     <>
       <AssistantErrorIfAny />
       <ActionBarPrimitive.Root
-        hideWhenRunning
         autohide="always"
         className="absolute -bottom-2.5 left-2 flex items-center gap-1 md:left-3"
       >
