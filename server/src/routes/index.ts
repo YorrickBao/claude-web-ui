@@ -52,6 +52,7 @@ import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle, onDeviceChanged, getSessionBuffer, clearSessionBuffer } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
+import { getClaudeVersion } from "../lib/version.js";
 
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
@@ -1022,6 +1023,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/relay/devices —— 当前在线的远程设备列表（SSE 连接生命周期驱动）
   app.get("/api/relay/devices", async (_req, reply) => {
     return reply.send({ devices: getDevices() });
+  });
+
+  // GET /api/version —— Claude Code CLI 版本号（设置页"关于"展示）
+  app.get("/api/version", async (_req, reply) => {
+    return reply.send({ claudeCode: await getClaudeVersion() });
   });
 
   // relay 隧道状态的实时推送已并入全局总线 GET /api/events/stream（relay_status 事件），

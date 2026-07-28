@@ -8,6 +8,13 @@ export async function listSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
+/** Claude Code 版本信息（设置页"关于"展示） */
+export async function getVersion(): Promise<{ claudeCode: string | null }> {
+  const res = await fetch("api/version");
+  if (!res.ok) throw new Error(`getVersion: ${res.status}`);
+  return res.json() as Promise<{ claudeCode: string | null }>;
+}
+
 /** 中止进行中的会话 */
 export async function abortSession(id: string): Promise<void> {
   await fetch(`api/sessions/${encodeURIComponent(id)}/abort`, {

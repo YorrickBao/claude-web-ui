@@ -37,6 +37,7 @@ import {
   updateProfile,
   deleteProfile,
   reorderProfiles,
+  getVersion,
 } from "@/lib/api";
 import { useProfiles, refreshProfiles, setProfiles as setProfilesGlobal } from "@/lib/profilesStore";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,8 @@ export function SettingsPage() {
   }>({ name: "", env: {} });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** Claude Code 版本：undefined=未取到，string=版本号，null=取失败 */
+  const [claudeVersion, setClaudeVersion] = useState<string | null | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -85,6 +88,12 @@ export function SettingsPage() {
     // store 已在应用启动时预取，这里仅确保进入设置页时数据是最新的
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    getVersion()
+      .then((r) => setClaudeVersion(r.claudeCode))
+      .catch(() => setClaudeVersion(null));
+  }, []);
 
   function startNew() {
     const empty: EnvValues = {};
@@ -281,7 +290,9 @@ export function SettingsPage() {
           </div>
         </section>
 
-        <div className="pb-8" />
+        <footer className="pb-8 pt-2 text-center text-xs text-muted-foreground/50">
+          Claude Code{claudeVersion ? ` v${claudeVersion}` : ""}
+        </footer>
       </div>
     </div>
   );
