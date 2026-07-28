@@ -786,7 +786,7 @@ function ForkFromHereButton() {
 
 function RunningCursor() {
   return (
-    <span className="ml-0.5 inline-block h-4 w-2.5 animate-pulse rounded-sm bg-accent align-middle" />
+    <span className="ml-0.5 inline-block h-4 w-2.5 animate-cursor-blink rounded-sm bg-accent align-middle" />
   );
 }
 
