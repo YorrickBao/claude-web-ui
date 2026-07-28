@@ -244,31 +244,53 @@ export async function apiRoutes(app) {
         req.raw.on("close", cleanup);
         // 阶段2+3：回放历史 + 切实时模式
         //
-        // 两条路径（按 inflight 状态判定，不按缓冲是否存在——避免 setInflight 后、
-        // 首个事件 emit 前的窗口里观察方走错到滞后的磁盘 replay 路径）：
-        // - inflight（会话正在跑）：用内存事件缓冲（getSessionBuffer）重放。
-        //   SDK 磁盘转录在 running 期间写入滞后/批量，不可靠；内存缓冲与 bus 事件
-        //   实时同步。直接逐个发给前端，前端增量追加。不发 history——观察端可能已
-        //   通过 GET :id 持有前几轮历史，发 history 会清空它们。
-        // - 非 inflight（历史会话）：磁盘 replay 重建 ChatMessage[]，发 history 整体替换。
+        // 两条路径都走 replaySession 拿到完整磁盘历史，但 inflight 要剔除"当前轮"：
+        //
+        // - inflight（会话正在跑）：SDK 磁盘转录在 running 期间写入滞后/批量，可能已
+        //   flush 了当前轮的 user 甚至部分 assistant（不可预测）。同时内存缓冲完整持有
+        //   当前轮事件。若把"含当前轮片段的 history"整体下发、再用 buffer 追加当前轮
+        //   全量，append 函数无去重（appendTextToLast/appendThinkingToLast 纯追加），
+        //   当前轮 text/thinking 会重复。因此必须从 history 末尾剔除"当前轮"——以内存
+        //   缓冲里的 user_message 文本定位边界，剔除它及其后的所有消息。这样 history
+        //   只含已结束轮次，buffer 只含当前轮，两者天然不重叠，前端 append 安全。
+        //   已结束轮次用 replay 的稳定磁盘快照（而非依赖前端 GET :id 自行加载），
+        //   契约自洽，刷新运行中会话不再丢历史。
+        // - 非 inflight（历史会话）：磁盘 replay 重建 ChatMessage[]，发 history 整体替换，
+        //   再去重转发缓冲区（此时缓冲通常为空，但保留兼容——会话可能刚结束、缓冲未清）。
         try {
             const isInflight = !!getInflight(sessionId);
+            const history = await replaySession(sessionId, rec.cwd);
+            if (timedOut)
+                return;
             if (isInflight) {
-                // inflight 路径：直接逐个重放内存缓冲事件，前端增量追加。
-                // 内存缓冲只含当前 inflight 轮次（上一轮结束时已 clearSessionBuffer），追加不重复。
-                const memBuf = getSessionBuffer(sessionId);
-                if (memBuf) {
-                    for (const evt of memBuf) {
-                        sendSSE(reply, evt);
+                // 定位当前轮边界：内存缓冲的 user_message 文本 = 当前轮 user 输入。
+                // 从 history 末尾往前找文本相同的 user，它及其后消息都属当前轮，剔除。
+                const memBuf = getSessionBuffer(sessionId) ?? [];
+                const currentTurnText = memBuf.find((e) => e.type === "user_message")?.text;
+                let safeHistory = history;
+                if (currentTurnText) {
+                    for (let i = history.length - 1; i >= 0; i--) {
+                        if (history[i].role !== "user")
+                            continue;
+                        const firstPart = history[i].content[0];
+                        if (firstPart &&
+                            firstPart.type === "text" &&
+                            firstPart.text === currentTurnText) {
+                            safeHistory = history.slice(0, i);
+                        }
+                        // 遇到第一条 user 即停：更早的都属于已结束的历史轮次
+                        break;
                     }
+                }
+                sendSSE(reply, { type: "history", messages: safeHistory });
+                // 内存缓冲只含当前轮（上一轮结束已 clearSessionBuffer），追加不重复
+                for (const evt of memBuf) {
+                    sendSSE(reply, evt);
                 }
             }
             else {
-                // 非 inflight：走磁盘 replay
-                const history = await replaySession(sessionId, rec.cwd);
-                if (timedOut)
-                    return;
-                // 从 history 提取：工具 ID 集合 + 最后一条 assistant 消息文本长度
+                // 非 inflight：发完整 history，去重转发缓冲区（缓冲可能含会话刚结束、
+                // 磁盘转录尚未来得及覆盖的尾巴事件）
                 const historyToolIds = new Set();
                 let lastTextLen = 0;
                 for (let i = history.length - 1; i >= 0; i--) {
@@ -285,8 +307,6 @@ export async function apiRoutes(app) {
                     }
                 }
                 sendSSE(reply, { type: "history", messages: history });
-                // 去重转发缓冲区事件（仅磁盘路径需要——history 来自滞后转录，
-                // buffer 里可能有与之重叠的事件）
                 let textAccum = 0;
                 for (const evt of buffer) {
                     if ((evt.type === "tool_use" || evt.type === "tool_result") &&
