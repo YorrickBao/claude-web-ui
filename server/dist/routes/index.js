@@ -250,11 +250,13 @@ export async function apiRoutes(app) {
         //   flush 了当前轮的 user 甚至部分 assistant（不可预测）。同时内存缓冲完整持有
         //   当前轮事件。若把"含当前轮片段的 history"整体下发、再用 buffer 追加当前轮
         //   全量，append 函数无去重（appendTextToLast/appendThinkingToLast 纯追加），
-        //   当前轮 text/thinking 会重复。因此必须从 history 末尾剔除"当前轮"——以内存
-        //   缓冲里的 user_message 文本定位边界，剔除它及其后的所有消息。这样 history
-        //   只含已结束轮次，buffer 只含当前轮，两者天然不重叠，前端 append 安全。
-        //   已结束轮次用 replay 的稳定磁盘快照（而非依赖前端 GET :id 自行加载），
-        //   契约自洽，刷新运行中会话不再丢历史。
+        //   当前轮 text/thinking 会重复。因此必须从 history 末尾切除"当前轮已 flush 的
+        //   部分"：优先用当前轮的工具调用 id（全局唯一，可靠）定位末尾 assistant；纯
+        //   文本/纯思考轮（无工具调用）用 text/reasoning 前缀兜底。这样 history 只含
+        //   已结束轮次，buffer 只含当前轮，两者天然不重叠，前端 append 安全。已结束
+        //   轮次用 replay 的稳定磁盘快照（而非依赖前端 GET :id 自行加载），契约自洽，
+        //   刷新运行中会话不再丢历史。不用纯 user_message 文本匹配——连续相同输入
+        //   （如两次"继续"）+ 当前轮 user 未 flush 时会误删上一轮。
         // - 非 inflight（历史会话）：磁盘 replay 重建 ChatMessage[]，发 history 整体替换，
         //   再去重转发缓冲区（此时缓冲通常为空，但保留兼容——会话可能刚结束、缓冲未清）。
         try {
@@ -263,26 +265,64 @@ export async function apiRoutes(app) {
             if (timedOut)
                 return;
             if (isInflight) {
-                // 定位当前轮边界：内存缓冲的 user_message 文本 = 当前轮 user 输入。
-                // 从 history 末尾往前找文本相同的 user，它及其后消息都属当前轮，剔除。
+                // 从 history 末尾切除"当前轮已 flush 的部分"。当前轮完整事件在 memBuf；
+                // 磁盘可能滞后 flush 了当前轮的 user / 部分 assistant（不可预测）。
+                // replay 把一个回合合并成一条 assistant + 一条 user，故当前轮最多占末尾两条。
                 const memBuf = getSessionBuffer(sessionId) ?? [];
-                const currentTurnText = memBuf.find((e) => e.type === "user_message")?.text;
-                let safeHistory = history;
-                if (currentTurnText) {
-                    for (let i = history.length - 1; i >= 0; i--) {
-                        if (history[i].role !== "user")
-                            continue;
-                        const firstPart = history[i].content[0];
-                        if (firstPart &&
-                            firstPart.type === "text" &&
-                            firstPart.text === currentTurnText) {
-                            safeHistory = history.slice(0, i);
-                        }
-                        // 遇到第一条 user 即停：更早的都属于已结束的历史轮次
+                // 收集当前轮的工具调用 id（全局唯一）+ assistant 已输出的 text/reasoning
+                const memToolIds = new Set();
+                let memText = "";
+                let memReasoning = "";
+                for (const e of memBuf) {
+                    if (e.type === "tool_use")
+                        memToolIds.add(e.id);
+                    else if (e.type === "text")
+                        memText += e.text;
+                    else if (e.type === "thinking")
+                        memReasoning += e.text;
+                }
+                // 倒序找末尾 assistant，判断是否属于当前轮：
+                //  - 含当前轮 tool-call id → 必属当前轮（id 全局唯一，可靠）
+                //  - 无工具但 text 是当前轮 text 的前缀 → 当前轮纯文本回答的部分 flush
+                //  - 无工具但 reasoning 是当前轮 reasoning 的前缀 → 当前轮纯思考的部分 flush
+                // 若末尾不是 assistant（如当前轮 user 已 flush 但 assistant 还没输出任何
+                // 内容），不切除——memBuf 的 user_message 由前端 appendUserMessage 末尾去重。
+                let cutIdx = history.length;
+                let lastAssistantIdx = -1;
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].role === "assistant") {
+                        lastAssistantIdx = i;
                         break;
                     }
                 }
-                sendSSE(reply, { type: "history", messages: safeHistory });
+                if (lastAssistantIdx >= 0) {
+                    const parts = history[lastAssistantIdx].content;
+                    const hasCurrentTool = parts.some((p) => p.type === "tool-call" && memToolIds.has(p.toolCallId));
+                    const aText = parts
+                        .filter((p) => p.type === "text")
+                        .map((p) => p.text)
+                        .join("");
+                    const aReasoning = parts
+                        .filter((p) => p.type === "reasoning")
+                        .map((p) => p.text)
+                        .join("");
+                    const isCurrentTurn = hasCurrentTool ||
+                        (memText.length > 0 &&
+                            aText.length > 0 &&
+                            memText.startsWith(aText)) ||
+                        (memReasoning.length > 0 &&
+                            aReasoning.length > 0 &&
+                            memReasoning.startsWith(aReasoning));
+                    if (isCurrentTurn) {
+                        cutIdx = lastAssistantIdx;
+                        // 连同其前的当前轮 user（replay 中 user 紧在本回合 assistant 前）切除
+                        if (lastAssistantIdx - 1 >= 0 &&
+                            history[lastAssistantIdx - 1].role === "user") {
+                            cutIdx = lastAssistantIdx - 1;
+                        }
+                    }
+                }
+                sendSSE(reply, { type: "history", messages: history.slice(0, cutIdx) });
                 // 内存缓冲只含当前轮（上一轮结束已 clearSessionBuffer），追加不重复
                 for (const evt of memBuf) {
                     sendSSE(reply, evt);
