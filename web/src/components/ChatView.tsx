@@ -402,6 +402,9 @@ function Header({
   const [editValue, setEditValue] = useState("");
   const [currentTitle, setCurrentTitle] = useState(title ?? "");
   const [subtitlePopup, setSubtitlePopup] = useState(false);
+  const subtitleAnchorRef = useRef<HTMLDivElement>(null);
+  // popover 最大宽度：按锚点左边到视口右边的可用空间计算，既不随锚点宽度，又保证不溢出视口
+  const [subtitleMaxWidth, setSubtitleMaxWidth] = useState<number | undefined>(undefined);
 
   // 进入编辑态时自动聚焦并全选
   useEffect(() => {
@@ -410,6 +413,27 @@ function Header({
       inputRef.current.select();
     }
   }, [isEditing]);
+
+  // 按锚点左边到视口右边的距离计算 popover 可用宽度（不随锚点宽度，且不溢出视口右侧）
+  const measureSubtitleWidth = useCallback(() => {
+    const el = subtitleAnchorRef.current;
+    if (!el) return;
+    const left = el.getBoundingClientRect().left;
+    setSubtitleMaxWidth(Math.max(window.innerWidth - left - 16, 160));
+  }, []);
+
+  // 打开期间监听窗口尺寸变化，保持宽度不溢出视口
+  useEffect(() => {
+    if (!subtitlePopup) return;
+    measureSubtitleWidth();
+    window.addEventListener("resize", measureSubtitleWidth);
+    return () => window.removeEventListener("resize", measureSubtitleWidth);
+  }, [subtitlePopup, measureSubtitleWidth]);
+
+  const toggleSubtitlePopup = useCallback(() => {
+    measureSubtitleWidth();
+    setSubtitlePopup((p) => !p);
+  }, [measureSubtitleWidth]);
 
   function startEdit() {
     if (!sessionId) return; // pending 新会话不可编辑
@@ -513,17 +537,20 @@ function Header({
             </div>
           )}
           {subtitle && (
-            <div className="relative">
+            <div className="relative" ref={subtitleAnchorRef}>
               <div
                 className="truncate text-xs text-muted-foreground cursor-pointer"
                 title={subtitle}
-                onClick={() => setSubtitlePopup(!subtitlePopup)}
+                onClick={toggleSubtitlePopup}
               >
                 {subtitle}
               </div>
               {subtitlePopup && (
-                <div className="absolute left-0 top-full z-50 mt-0.5 max-w-[320px] rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg break-all">
-                  {subtitle}
+                <div
+                  className="absolute left-0 top-full z-50 mt-0.5 w-max overflow-x-auto rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg"
+                  style={subtitleMaxWidth !== undefined ? { maxWidth: subtitleMaxWidth } : undefined}
+                >
+                  <span className="whitespace-nowrap">{subtitle}</span>
                   <div
                     className="fixed inset-0 z-[-1]"
                     onClick={() => setSubtitlePopup(false)}
