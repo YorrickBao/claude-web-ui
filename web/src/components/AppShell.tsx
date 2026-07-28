@@ -224,7 +224,7 @@ function renderShell(children: ReactNode) {
       {/* ── 移动端背景遮罩 ── */}
       {isMobile && mobileSidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-200"
+          className="fixed inset-0 z-30 bg-foreground/40 backdrop-blur-sm animate-in fade-in-0 duration-200"
           onClick={closeSidebar}
           aria-hidden="true"
         />

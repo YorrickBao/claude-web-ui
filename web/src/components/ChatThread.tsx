@@ -838,8 +838,8 @@ function EmptyState() {
   ];
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-      <span className="font-mono text-sm text-muted-foreground/50">
-        $ 开始新的对话
+      <span className="text-sm text-muted-foreground/60">
+        开始新的对话
       </span>
       <div className="flex max-w-md flex-wrap items-center justify-center gap-2">
         {suggestions.map((s) => (

@@ -122,7 +122,7 @@ function ResultView({ result, isError }: { result: unknown; isError?: boolean })
     <div>
       <pre
         className={cn(
-          "max-h-80 overflow-auto rounded-md bg-black/30 p-2 text-xs",
+          "max-h-80 overflow-auto rounded-md bg-muted p-2 text-xs",
           isError ? "text-red-300/90" : "text-muted-foreground",
         )}
       >
@@ -302,7 +302,7 @@ function JsonView({ value }: { value: unknown }) {
     text = String(value);
   }
   return (
-    <pre className="max-h-80 overflow-auto rounded-md bg-black/30 p-2 text-xs text-muted-foreground">
+    <pre className="max-h-80 overflow-auto rounded-md bg-muted p-2 text-xs text-muted-foreground">
       {text}
     </pre>
   );
@@ -457,7 +457,7 @@ function ArgsView({ toolName, args }: { toolName: string; args?: unknown }) {
             <KeyValue rows={rows} mono />
             <div>
               <div className="mb-0.5 text-[11px] text-muted-foreground/60">内容</div>
-              <pre className="max-h-60 overflow-auto rounded-md bg-black/30 p-2 text-xs text-muted-foreground">
+              <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 text-xs text-muted-foreground">
                 {obj.content}
               </pre>
             </div>

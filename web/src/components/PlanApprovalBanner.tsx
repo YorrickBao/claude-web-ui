@@ -65,7 +65,7 @@ export function PlanApprovalBanner({
         <div className="mt-3 rounded-lg border border-border/60 bg-card/60 p-3">
           {isEditing ? (
             <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full min-h-[120px] rounded-md border border-border bg-background px-3 py-2 text-sm leading-relaxed text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-primary/20"
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
             />

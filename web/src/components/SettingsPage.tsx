@@ -653,7 +653,7 @@ function EditView({
                       }))
                     }
                   >
-                    <SelectTrigger className="w-full bg-background/60 font-mono text-sm">
+                    <SelectTrigger className="w-full bg-background/60 text-sm">
                       <SelectValue placeholder={f.placeholder} />
                     </SelectTrigger>
                     <SelectContent>
@@ -676,7 +676,7 @@ function EditView({
                         }))
                       }
                       placeholder={f.placeholder}
-                      className="bg-background/60 pr-9 font-mono text-sm"
+                      className="bg-background/60 pr-9 text-sm"
                     />
                     <button
                       type="button"
@@ -704,7 +704,7 @@ function EditView({
                       }))
                     }
                     placeholder={f.placeholder}
-                    className="bg-background/60 font-mono text-sm"
+                    className="bg-background/60 text-sm"
                   />
                 )}
                 {f.help && (
