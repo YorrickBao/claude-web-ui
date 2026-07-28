@@ -207,3 +207,31 @@ a, button, input, select, textarea, [role="button"] {
     font-family: var(--font-mono);
   }
 }
+
+/* ── 消息正文排版（.cwu-md，由 Markdown 组件的 Streamdown 承载）──
+   精致 chat app 排版：15px 正文（比默认 16px 更紧凑、信息密度高），
+   段落间补足留白（streamdown 默认 <p> 无 margin 会粘连）。
+   用 !important 压过 Tailwind Preflight 的 `p { margin: 0 }` reset
+   （该 reset 在 layer 处理上异常强势，特异性抬到 0-2-1 仍被覆盖）。 */
+.cwu-md {
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+}
+.cwu-md p {
+  margin: 0.6em 0 !important;
+}
+.cwu-md p:first-child {
+  margin-top: 0 !important;
+}
+.cwu-md p:last-child {
+  margin-bottom: 0 !important;
+}
+.cwu-md li {
+  margin: 0.25em 0 !important;
+}
+.cwu-md h1,
+.cwu-md h2,
+.cwu-md h3 {
+  margin: 1em 0 0.5em !important;
+  line-height: 1.3 !important;
+}

@@ -24,6 +24,7 @@ export function Markdown({
 }) {
   return (
     <Streamdown
+      className="cwu-md"
       mode={streaming ? "streaming" : "static"}
       caret={streaming ? "block" : undefined}
     >

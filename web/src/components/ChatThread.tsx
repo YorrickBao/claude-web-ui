@@ -529,10 +529,10 @@ function InterruptEventBar({ id }: { id: string }) {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="group/msg relative mb-4 flex gap-2 md:mb-6 md:gap-3">
-      {/* 去气泡文档化：左侧朱砂淡色细线 + 左 padding，铺开成文档段落。
-          assistant 消息不再用 bg-card 气泡，仅靠左边线与留白建立层次，
-          让正文（Inter）成为视觉重心，朱砂气泡专属用户消息。 */}
-      <div className="min-w-0 flex-1 border-l-2 border-primary/20 pl-3 md:pl-4">
+      {/* assistant 消息无气泡、无左边线——纯靠留白与左对齐建立层次。
+          竖线在白底上像一道疤，去掉后让正文（Inter）成为唯一视觉重心，
+          朱砂气泡专属用户消息。Claude.ai / Cursor 同款做法。 */}
+      <div className="min-w-0 flex-1">
         <AssistantContent />
       </div>
       <AssistantActionBar />
