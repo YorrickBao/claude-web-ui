@@ -557,32 +557,36 @@ function AssistantMessage() {
  */
 function AssistantContent() {
   return (
-    <MessagePrimitive.GroupedParts groupBy={GROUP_BY} indicator="no-text">
-      {({ part, children }) => {
-        switch (part.type) {
-          case "group-work":
-            return (
-              <WorkGroup status={part.status} indices={part.indices}>
-                {children}
-              </WorkGroup>
-            );
-          case "group-tool":
-            return <div className="space-y-0.5">{children}</div>;
-          case "group-reasoning":
-            return <div className="space-y-0.5">{children}</div>;
-          case "text":
-            return <TextLeaf part={part} />;
-          case "reasoning":
-            return <ReasoningLeaf part={part} />;
-          case "tool-call":
-            return <ToolRenderer {...mapPartToToolUI(part)} />;
-          case "indicator":
-            return <RunningCursor />;
-          default:
-            return null;
-        }
-      }}
-    </MessagePrimitive.GroupedParts>
+    // space-y-3：text 段（回答正文）与 group-work 段（工具/思考）之间的垂直留白，
+    // 让"叙述 ↔ 工作过程"有清晰呼吸，而非粘连在一起。
+    <div className="space-y-3">
+      <MessagePrimitive.GroupedParts groupBy={GROUP_BY} indicator="no-text">
+        {({ part, children }) => {
+          switch (part.type) {
+            case "group-work":
+              return (
+                <WorkGroup status={part.status} indices={part.indices}>
+                  {children}
+                </WorkGroup>
+              );
+            case "group-tool":
+              return <div className="space-y-0.5">{children}</div>;
+            case "group-reasoning":
+              return <div className="space-y-0.5">{children}</div>;
+            case "text":
+              return <TextLeaf part={part} />;
+            case "reasoning":
+              return <ReasoningLeaf part={part} />;
+            case "tool-call":
+              return <ToolRenderer {...mapPartToToolUI(part)} />;
+            case "indicator":
+              return <RunningCursor />;
+            default:
+              return null;
+          }
+        }}
+      </MessagePrimitive.GroupedParts>
+    </div>
   );
 }
 
