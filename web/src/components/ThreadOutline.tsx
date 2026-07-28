@@ -1,6 +1,7 @@
 import { useThread } from "@assistant-ui/react";
 import { List } from "lucide-react";
 import { useMemo } from "react";
+import { isInterruptText } from "@/components/ChatThread";
 import { Button } from "@/components/ui/button";
 
 /** 统一消息 DOM 锚点 id，供 UserMessage 挂 id 与大纲定位共用 */
@@ -40,12 +41,18 @@ export function ThreadOutline() {
   const items = useMemo<OutlineItem[]>(() => {
     return messages
       .filter((m) => m.role === "user")
-      .map((m) => ({
-        id: m.id,
-        title: extractTitle(
-          m.content as readonly { type: string; text?: string }[],
-        ),
-      }));
+      .flatMap((m) => {
+        const content = m.content as readonly { type: string; text?: string }[];
+        const text =
+          content
+            ?.filter((p) => p.type === "text")
+            .map((p) => p.text ?? "")
+            .join("") ?? "";
+        // SDK 在用户中断时会写入一条 "[Request interrupted by user]" 的 user 消息，
+        // 它并非真实提问——与 ChatThread 一致地排除，避免污染大纲。
+        if (isInterruptText(text)) return [];
+        return [{ id: m.id, title: extractTitle(content) }];
+      });
   }, [messages]);
 
   function jumpTo(id: string) {

@@ -498,7 +498,7 @@ function TurnDuration() {
  * 检测一条 user 消息文本是否是 SDK 写入的中断标记（非用户真实输入）。
  * 宽松匹配 "[Request interrupted ...]"，兼容 "by user for tool use" 等变体。
  */
-function isInterruptText(text: string): boolean {
+export function isInterruptText(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   return /^\[Request interrupted\b/i.test(t) && t.endsWith("]");
