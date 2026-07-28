@@ -69,8 +69,11 @@ export function SettingsPage() {
   }>({ name: "", env: {} });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  /** Claude Code 版本：undefined=未取到，string=版本号，null=取失败 */
-  const [claudeVersion, setClaudeVersion] = useState<string | null | undefined>(undefined);
+  /** 版本信息：undefined=未取到；{webui, claudeCode} */
+  const [versionInfo, setVersionInfo] = useState<{
+    webui: string;
+    claudeCode: string | null;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -89,10 +92,28 @@ export function SettingsPage() {
     void refresh();
   }, [refresh]);
 
+  // 版本信息：claudeCode 首次可能为 null（后端正在 prime），轮询直到拿到或用尽次数
   useEffect(() => {
-    getVersion()
-      .then((r) => setClaudeVersion(r.claudeCode))
-      .catch(() => setClaudeVersion(null));
+    let cancelled = false;
+    let tries = 0;
+    const poll = async () => {
+      while (tries < 6 && !cancelled) {
+        tries++;
+        try {
+          const r = await getVersion();
+          if (cancelled) return;
+          setVersionInfo(r);
+          if (r.claudeCode) return;
+        } catch {
+          /* 忽略，继续重试 */
+        }
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function startNew() {
@@ -291,7 +312,9 @@ export function SettingsPage() {
         </section>
 
         <footer className="pb-8 pt-2 text-center text-xs text-muted-foreground/50">
-          Claude Code{claudeVersion ? ` v${claudeVersion}` : ""}
+          {versionInfo?.webui && `Claude WebUI ${versionInfo.webui}`}
+          {versionInfo?.webui && versionInfo?.claudeCode ? " · " : ""}
+          Claude Code{versionInfo?.claudeCode ? ` ${versionInfo.claudeCode}` : ""}
         </footer>
       </div>
     </div>

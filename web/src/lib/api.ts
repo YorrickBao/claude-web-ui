@@ -8,11 +8,14 @@ export async function listSessions(): Promise<SessionView[]> {
   return data.sessions;
 }
 
-/** Claude Code 版本信息（设置页"关于"展示） */
-export async function getVersion(): Promise<{ claudeCode: string | null }> {
+/** 版本信息：WebUI 自身版本 + Claude Code 引擎版本（设置页展示） */
+export async function getVersion(): Promise<{
+  webui: string;
+  claudeCode: string | null;
+}> {
   const res = await fetch("api/version");
   if (!res.ok) throw new Error(`getVersion: ${res.status}`);
-  return res.json() as Promise<{ claudeCode: string | null }>;
+  return res.json() as Promise<{ webui: string; claudeCode: string | null }>;
 }
 
 /** 中止进行中的会话 */
