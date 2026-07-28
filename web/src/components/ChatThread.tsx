@@ -505,8 +505,9 @@ function isInterruptText(text: string): boolean {
 }
 
 /**
- * 中断事件条：用居中、细线分隔的低调形态呈现"回答已中断"，
- * 明确表达这是一个对话事件而非用户发言。
+ * 中断事件条：居中分隔线 + 朱砂点，呈现"回答已中断"。
+ * 用细线分隔表达这是对话事件而非用户发言；朱砂点呼应品牌色，
+ * 替代原终端式的实心方块停止符。
  */
 function InterruptEventBar({ id }: { id: string }) {
   return (
@@ -516,8 +517,8 @@ function InterruptEventBar({ id }: { id: string }) {
       className="my-2 flex items-center gap-3 md:my-3"
     >
       <span className="h-px flex-1 bg-border/50" />
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground/70">
-        <Square className="size-2.5 fill-current" />
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <span className="inline-block size-1.5 rounded-full bg-primary" aria-hidden />
         回答已中断
       </span>
       <span className="h-px flex-1 bg-border/50" />
@@ -809,9 +810,17 @@ function ForkFromHereButton() {
   );
 }
 
+/**
+ * 流式生成指示：三点 typing indicator（柔脉冲），替代终端式竖条光标。
+ * 精致 app 感——ChatGPT/Claude.ai 同款"正在输入"形态。
+ */
 function RunningCursor() {
   return (
-    <span className="ml-0.5 inline-block h-4 w-2.5 animate-cursor-blink rounded-sm bg-accent align-middle" />
+    <span className="ml-1 inline-flex items-center gap-0.5 align-middle">
+      <span className="size-1.5 animate-pulse rounded-full bg-primary [animation-delay:0ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-primary [animation-delay:150ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-primary [animation-delay:300ms]" />
+    </span>
   );
 }
 

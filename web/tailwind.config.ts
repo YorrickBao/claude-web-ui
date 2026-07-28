@@ -73,16 +73,6 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
-      keyframes: {
-        // 会话消息中的流式光标：硬切换亮灭，1s 周期（比 animate-pulse 的 2s 柔和脉冲更快、更像终端光标）
-        "cursor-blink": {
-          "0%, 49%": { opacity: "1" },
-          "50%, 100%": { opacity: "0" },
-        },
-      },
-      animation: {
-        "cursor-blink": "cursor-blink 1s infinite",
-      },
     },
   },
   plugins: [
