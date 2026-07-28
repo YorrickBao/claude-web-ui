@@ -166,7 +166,7 @@ export function ChatView({
     });
 
   // 会话累计 token：初始值来自 transcript（GET /:id），每轮 done 事件叠加当轮值。
-  // stats 只承载「最近一轮」的值，不跨轮累计；Badge 显示累计，Ring 用当轮 prompt。
+  // stats 只承载「最近一轮」的值，不跨轮累计；累计值传给底部工具栏的 token 簇展示。
   const accRef = useRef({
     input: initialInputTokens ?? 0,
     output: initialOutputTokens ?? 0,
@@ -371,10 +371,6 @@ export function ChatView({
         sessionId={sessionId}
         title={title}
         subtitle={subtitle}
-        // Header Badge 展示「会话累计消耗」：累加器把 transcript 初始值 + 每轮 done 叠加
-        accInputTokens={accRef.current.input}
-        accOutputTokens={accRef.current.output}
-        accCacheReadTokens={accRef.current.cacheRead}
         error={error}
         statusMessage={statusMessage}
         isRunning={isRunning}
@@ -409,14 +405,17 @@ export function ChatView({
               permissionMode={permissionMode}
               effortLevel={effortLevel}
               isRunning={isRunning}
-              // ContextUsageRing 反映「最近一轮」prompt 实际尺寸：
-              // 流式中用当轮 done 的 input+cache_read+cache_creation；
-              // 无 stats（历史态）回退到 transcript 算好的 lastTurnPromptTokens
+              // token 信号统一收敛到底部工具栏（紧贴输入区，用户最关注处）：
+              //  - contextUsedTokens：最近一轮 prompt 实际尺寸 → Ring 占用比例
+              //  - acc*：会话累计消耗 → Ring 旁的紧凑文本 + 弹窗明细
               contextUsedTokens={
                 stats
                   ? stats.inputTokens + stats.cacheReadTokens + stats.cacheCreationTokens
                   : initialLastTurnPromptTokens
               }
+              accInputTokens={accRef.current.input}
+              accOutputTokens={accRef.current.output}
+              accCacheReadTokens={accRef.current.cacheRead}
               onProfileChange={handleChangeProfile}
               onPermissionModeChange={handleChangePermissionMode}
               onEffortLevelChange={handleChangeEffortLevel}
@@ -433,9 +432,6 @@ function Header({
   sessionId,
   title,
   subtitle,
-  accInputTokens,
-  accOutputTokens,
-  accCacheReadTokens,
   error,
   statusMessage,
   isRunning,
@@ -444,12 +440,6 @@ function Header({
   sessionId: string | null;
   title?: string;
   subtitle?: string;
-  /** 会话累计 input tokens（transcript 初始值 + 每轮 done 叠加） */
-  accInputTokens: number;
-  /** 会话累计 output tokens */
-  accOutputTokens: number;
-  /** 会话累计 cache_read_input_tokens */
-  accCacheReadTokens: number;
   error: string | null;
   statusMessage: string | null;
   isRunning: boolean;
@@ -609,29 +599,16 @@ function Header({
             <GitFork className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
           {error && <Badge variant="destructive">⚠ {error}</Badge>}
           {statusMessage && (
             <Badge variant="secondary" className="h-4 animate-pulse text-[10px]">
               {statusMessage}
             </Badge>
           )}
-          {(accInputTokens > 0 || accOutputTokens > 0) && (
-            <Badge variant="secondary" className="h-4 font-mono text-[10px] tabular-nums">
-              入 {formatTokens(accInputTokens)} · 出 {formatTokens(accOutputTokens)}
-              {accCacheReadTokens > 0 && ` · 缓存 ${formatTokens(accCacheReadTokens)}`}
-            </Badge>
-          )}
         </div>
       </div>
     </div>
   );
-}
-
-/** 格式化 token 数：>=1000 用 k 简写 */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
 }
 

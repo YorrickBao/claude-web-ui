@@ -116,6 +116,12 @@ interface ChatThreadProps {
   isRunning: boolean;
   /** 当前上下文窗口占用 token 数（最近一轮的 input+cache_read+cache_creation） */
   contextUsedTokens?: number;
+  /** 会话累计 input tokens（transcript 初始值 + 每轮 done 叠加） */
+  accInputTokens: number;
+  /** 会话累计 output tokens */
+  accOutputTokens: number;
+  /** 会话累计 cache_read_input_tokens */
+  accCacheReadTokens: number;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
@@ -130,6 +136,9 @@ export function ChatThread({
   effortLevel,
   isRunning,
   contextUsedTokens,
+  accInputTokens,
+  accOutputTokens,
+  accCacheReadTokens,
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
@@ -288,8 +297,23 @@ export function ChatThread({
               </SelectContent>
             </Select>
             <div className="flex-1" />
+            {/* token 簇：紧贴输入区，把「会话累计」和「当前窗口占用」收敛到一起。
+                两者都是 token 维度信号，放一处比散在顶栏/底栏更易扫读。
+                - 左：累计消耗（入/出），无缓存时不显示
+                - 右：上下文占用 Ring，点击展开明细（含缓存命中量） */}
             {contextUsedTokens !== undefined && contextUsedTokens > 0 && (
-              <ContextUsageRing used={contextUsedTokens} max={contextMax} />
+              <div className="flex shrink-0 items-center gap-1.5">
+                {(accInputTokens > 0 || accOutputTokens > 0) && (
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">
+                    入 {formatTokens(accInputTokens)} · 出 {formatTokens(accOutputTokens)}
+                  </span>
+                )}
+                <ContextUsageRing
+                  used={contextUsedTokens}
+                  max={contextMax}
+                  cacheReadTokens={accCacheReadTokens}
+                />
+              </div>
             )}
             <Select
               items={profileItems}
@@ -822,5 +846,12 @@ function EmptyState() {
       </div>
     </div>
   );
+}
+
+/** 格式化 token 数：>=1M 用 m（小写，避免「百万」的惊吓感），>=1k 用 k */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
 }
 
