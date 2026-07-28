@@ -12,7 +12,7 @@ import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
 import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionStarted, emitSessionEnded, onSessionEvent, onSessionEnd, onRelayStatus, onSessionsChanged, onSessionLifecycle, onDeviceChanged, getSessionBuffer, clearSessionBuffer } from "../lib/eventBus.js";
 import { startZombieScanner, finalizeSession, cleanupSession } from "../lib/agentRegistry.js";
-import { getClaudeVersion } from "../lib/version.js";
+import { getClaudeVersion, WEBUI_VERSION, primeClaudeVersion } from "../lib/version.js";
 // 启动僵尸子代理扫描器（全局单例）
 startZombieScanner();
 /** 从 SDK 的 SDKSessionInfo 中解析出显示标题 */
@@ -894,9 +894,16 @@ export async function apiRoutes(app) {
     app.get("/api/relay/devices", async (_req, reply) => {
         return reply.send({ devices: getDevices() });
     });
-    // GET /api/version —— Claude Code CLI 版本号（设置页"关于"展示）
+    // GET /api/version —— WebUI 版本 + Claude Code 引擎版本（设置页"关于"展示）
+    // claudeCode 首次可能为 null：懒触发一个后台 prime（最小 query 捕获 init
+    // 后即中止清理），前端会轮询直到拿到。
     app.get("/api/version", async (_req, reply) => {
-        return reply.send({ claudeCode: getClaudeVersion() });
+        if (!getClaudeVersion())
+            primeClaudeVersion();
+        return reply.send({
+            webui: WEBUI_VERSION,
+            claudeCode: getClaudeVersion(),
+        });
     });
     // relay 隧道状态的实时推送已并入全局总线 GET /api/events/stream（relay_status 事件），
     // 不再单独开 SSE 长连接。
