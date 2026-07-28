@@ -528,7 +528,10 @@ function InterruptEventBar({ id }: { id: string }) {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="group/msg relative mb-6 flex gap-2 md:mb-8 md:gap-3">
+    // pb-7：底部 padding 容纳 absolute 的 ActionBar（高约 21px），
+    // 让 ActionBar 落在 Root 盒子内，鼠标从内容移向按钮时 hover 连续、
+    // 不触发 autohide 卸载。mb 补偿视觉下间距。
+    <MessagePrimitive.Root className="group/msg relative mb-2 flex gap-2 pb-7 md:gap-3">
       {/* assistant 消息无气泡、无左边线——纯靠留白与左对齐建立层次。
           竖线在白底上像一道疤，去掉后让正文（Inter）成为唯一视觉重心，
           朱砂气泡专属用户消息。Claude.ai / Cursor 同款做法。 */}
@@ -747,12 +750,11 @@ function AssistantActionBar() {
   return (
     <>
       <AssistantErrorIfAny />
-      {/* 去气泡后内容无 padding，ActionBar 不能再探入内容区。
-          -bottom-6（24px）让按钮整体落在内容下方，配合消息根 mb-6 的下间距容纳，
-          hover 时按钮顶部与内容底部留出清晰间隙，不再重叠。 */}
+      {/* bottom-0：贴 Root 内底边（Root 有 pb-7 容纳），按钮完全在 hover 区内，
+          鼠标移向按钮不会因跨越"无人区"而触发 autohide 卸载。 */}
       <ActionBarPrimitive.Root
         autohide="always"
-        className="absolute -bottom-7 left-0 flex items-center gap-1 pt-1 md:left-1"
+        className="absolute bottom-0 left-0 flex items-center gap-1 md:left-1"
       >
         <CopyAction />
         <ForkFromHereButton />
