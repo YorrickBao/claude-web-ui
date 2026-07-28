@@ -1027,7 +1027,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // GET /api/version —— Claude Code CLI 版本号（设置页"关于"展示）
   app.get("/api/version", async (_req, reply) => {
-    return reply.send({ claudeCode: await getClaudeVersion() });
+    return reply.send({ claudeCode: getClaudeVersion() });
   });
 
   // relay 隧道状态的实时推送已并入全局总线 GET /api/events/stream（relay_status 事件），

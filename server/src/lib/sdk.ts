@@ -15,6 +15,7 @@ import { registerStart, registerStop } from "./agentRegistry.js";
 import { createPendingPermission } from "./inflight.js";
 import { emitSessionEvent } from "./eventBus.js";
 import { cacheSlashCommands } from "./slashCommands.js";
+import { setClaudeVersion } from "./version.js";
 
 // 重新导出 SDK 会话管理函数供 store 和 routes 使用
 export { listSessions, listSubagents, getSessionInfo, renameSession, forkSession };
@@ -243,6 +244,10 @@ export async function* runQuery(
       case "system": {
         if (msg.subtype === "init") {
           sessionIdRef.current = msg.session_id;
+          // 捕获实际运行的 CLI 版本（CLI 自报，权威），供设置页展示
+          setClaudeVersion(
+            (msg as { claude_code_version?: string }).claude_code_version,
+          );
           yield { type: "session_created", sessionId: msg.session_id };
         } else if (msg.subtype === "session_state_changed") {
           // SDK 会话状态变更：idle / running / requires_action
