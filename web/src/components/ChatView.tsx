@@ -227,7 +227,7 @@ export function ChatView({
     setEffortLevel(initialEffortLevel ?? "default");
   }, [initialEffortLevel]);
 
-  // 已有会话：挂载时载入历史（静止会话）或续流（运行中会话）
+  // 已有会话：挂载时统一先载入历史，运行中会话再额外续流。
   useEffect(() => {
     if (!sessionId) {
       // 回到 pending 态（从运行中会话 A 点新建）：本地断开 A 的实时流，
@@ -237,13 +237,16 @@ export function ChatView({
       loadHistory([]);
       return;
     }
+    // 统一先加载历史：静止会话直接展示；运行中会话也先乐观显示，
+    // 避免 SSE 流建立期间出现空白闪烁。subscribe 的首个 history 帧
+    // （后端已剔除当前轮）到达后会用权威快照整体替换校正。
+    if (initialMessages) {
+      loadHistory(initialMessages);
+    }
     if (initialRunningStatus === "running" || initialRunningStatus === "waiting") {
       // 会话正在运行 / 等待权限审批 → 都是 inflight，订阅实时流续上输出
       // （waiting 也是 inflight，权限批准后会话恢复，需订阅才能收到后续事件）
       void subscribe(sessionId);
-    } else if (initialMessages) {
-      // 静止会话 → 直接加载静态历史
-      loadHistory(initialMessages);
     }
     // 仅在 sessionId 变化（切换会话）时触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
