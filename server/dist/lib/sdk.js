@@ -422,13 +422,22 @@ export async function* runQuery(params) {
                     ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
                 };
                 if (msg.subtype !== "success") {
-                    const e = msg;
-                    // 丰富化错误原因：优先 errors[] 真实文本，其次 terminal_reason 中文映射，
-                    // 兜底 subtype。让用户看到"为何结束"而非裸枚举。
-                    const reason = (Array.isArray(e.errors) && e.errors[0]) ||
-                        TERMINAL_REASON_LABEL[e.terminal_reason ?? ""] ||
-                        `会话结束（${msg.subtype}）`;
-                    yield { type: "error", message: reason };
+                    // 用户主动中止：与 catch 里 AbortError 处理语义对齐，不推 error 给前端。
+                    // 否则会显示 "Claude Code process aborted by user" 错误框，体验很差。
+                    // 两个信号取并集：abortController 已 aborted（最可靠），
+                    // 或 terminal_reason 为 aborted_*（兜底 SDK 自发中止）。
+                    const userAborted = params.abortController?.signal.aborted === true ||
+                        msg.terminal_reason === "aborted_streaming" ||
+                        msg.terminal_reason === "aborted_tools";
+                    if (!userAborted) {
+                        const e = msg;
+                        // 丰富化错误原因：优先 errors[] 真实文本，其次 terminal_reason 中文映射，
+                        // 兜底 subtype。让用户看到"为何结束"而非裸枚举。
+                        const reason = (Array.isArray(e.errors) && e.errors[0]) ||
+                            TERMINAL_REASON_LABEL[e.terminal_reason ?? ""] ||
+                            `会话结束（${msg.subtype}）`;
+                        yield { type: "error", message: reason };
+                    }
                 }
                 break;
             }
