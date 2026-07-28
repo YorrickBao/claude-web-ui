@@ -12,6 +12,7 @@ import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldC
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { cn, formatDuration } from "@/lib/utils";
 
 
 
@@ -22,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useProfiles } from "@/lib/profilesStore";
 import type { EnvProfile } from "@/lib/types";
 import { SlashCommandPopup } from "@/components/SlashCommandPopup";
@@ -51,6 +52,60 @@ import {
 const forkFromMessageRef: { current: ((upToMessageId: string) => void) | null } = {
   current: null,
 };
+
+/**
+ * 当前轮次计时上下文。
+ *
+ * 走字计时器（isRunning 期间每 100ms 更新）独立放在 TurnTimerProvider 的
+ * state 里：它的 100ms 抖动只会触发 Provider 自身与"本轮耗时"标签重渲，
+ * 不会向上冒泡到 ChatView、更不会重渲整条消息流（children 元素引用稳定，
+ * React 会跳过）。ChatView 因此完全不需要随计时器重渲。
+ */
+const TurnTimerContext = createContext<{
+  isRunning: boolean;
+  runningElapsedMs: number;
+  lastDurationMs: number | undefined;
+}>({ isRunning: false, runningElapsedMs: 0, lastDurationMs: undefined });
+
+const useTurnTimer = () => useContext(TurnTimerContext);
+
+export function TurnTimerProvider({
+  isRunning,
+  startedAt,
+  lastDurationMs,
+  children,
+}: {
+  isRunning: boolean;
+  /** 当前进行中轮次的起点（ms）；优先用后端的 currentTurnStartedAt，刷新后能接着走 */
+  startedAt?: number;
+  /** 最近一轮的最终耗时（ms）；运行中作为 done 后的定值展示 */
+  lastDurationMs?: number;
+  children: ReactNode;
+}) {
+  // 后端起点用 ref 收纳、不进 effect 依赖：它是"轮次起点"（生命周期信号），
+  // sessions_changed 在权限往返时会刷新 meta，若进依赖会反复重建 interval 丢精度。
+  const startedAtRef = useRef(startedAt ?? 0);
+  startedAtRef.current = startedAt ?? 0;
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsed(0);
+      return;
+    }
+    // relay 远程访问时浏览器与服务器时钟可能不一致，用 Math.min 兜底，
+    // 后端起点晚于本地现在时退回本地时刻，避免算出负数。
+    const now = Date.now();
+    const start = Math.min(startedAtRef.current > 0 ? startedAtRef.current : now, now);
+    setElapsed(now - start);
+    const id = setInterval(() => setElapsed(Date.now() - start), 100);
+    return () => clearInterval(id);
+  }, [isRunning]);
+  const value = useMemo(
+    () => ({ isRunning, runningElapsedMs: elapsed, lastDurationMs }),
+    [isRunning, elapsed, lastDurationMs],
+  );
+  return <TurnTimerContext.Provider value={value}>{children}</TurnTimerContext.Provider>;
+}
 interface ChatThreadProps {
   /** 当前会话的工作目录，用于获取项目特定的斜杠命令 */
   cwd: string | null;
@@ -355,6 +410,13 @@ export function ChatThread({
 function UserMessage() {
   const msgId = useMessage((s) => s.id);
   const content = useMessage((s) => s.content);
+  // 当前轮次的耗时只挂在"最后一条 user 消息"下方；非最后一条不显示
+  const isLastUserMessage = useThread((s) => {
+    for (let i = s.messages.length - 1; i >= 0; i--) {
+      if (s.messages[i].role === "user") return s.messages[i].id === msgId;
+    }
+    return false;
+  });
   // SDK 在用户中断查询时，会向转录写入一条 "[Request interrupted by user]"
   // 的 user 消息——它不是用户真实输入，渲染成跨栏事件条而非蓝色气泡
   const text = (content as readonly { type: string; text?: string }[] | undefined)
@@ -367,9 +429,9 @@ function UserMessage() {
   return (
     <MessagePrimitive.Root
       id={messageAnchorId(msgId)}
-      className="group/msg mb-4 flex justify-end gap-1 md:mb-6"
+      className="group/msg mb-4 flex flex-col md:mb-6"
     >
-      <div className="min-w-0">
+      <div className="flex min-w-0 justify-end">
         <div className="inline-block max-w-full rounded-2xl rounded-br-md bg-accent px-3 py-2 text-left text-white md:px-4 md:py-2.5">
           <MessagePrimitive.Parts
             components={{
@@ -382,7 +444,28 @@ function UserMessage() {
           />
         </div>
       </div>
+      {isLastUserMessage && <TurnDuration />}
     </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * 最后一条 user 消息下方的"本轮耗时"标签，左对齐。
+ * 运行中显示走字计时（脉冲点），结束后显示 SDK 上报的定值。
+ * 只有它会订阅 TurnTimerContext，因此 100ms 抖动只重渲这一个标签。
+ */
+function TurnDuration() {
+  const { isRunning, runningElapsedMs, lastDurationMs } = useTurnTimer();
+  const ms = isRunning ? runningElapsedMs : lastDurationMs;
+  if (!ms || ms <= 0) return null;
+  return (
+    <div
+      className="mt-1 flex items-center gap-1.5 self-start pl-0.5 text-[11px] text-muted-foreground/70"
+      title={isRunning ? "当前轮次进行中" : "本轮总耗时"}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full bg-current", isRunning && "animate-pulse")} />
+      <span className="font-mono tabular-nums">{formatDuration(ms)}</span>
+    </div>
   );
 }
 

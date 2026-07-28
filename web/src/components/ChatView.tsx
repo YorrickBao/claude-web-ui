@@ -1,6 +1,6 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatSSE, type ThreadMessageLike } from "@/hooks/useChatSSE";
-import { ChatThread } from "@/components/ChatThread";
+import { ChatThread, TurnTimerProvider } from "@/components/ChatThread";
 import { PermissionRequestBanner, type PendingPermission } from "@/components/PermissionRequestBanner";
 import { PlanApprovalBanner, type PendingPlanApproval } from "@/components/PlanApprovalBanner";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { GitFork, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { cn, formatDuration } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export interface ChatViewProps {
   sessionId: string | null;
@@ -327,8 +327,6 @@ export function ChatView({
         stats={stats}
         initialInputTokens={initialInputTokens}
         initialOutputTokens={initialOutputTokens}
-        initialDurationMs={initialDurationMs}
-        initialCurrentTurnStartedAt={initialCurrentTurnStartedAt}
         error={error}
         statusMessage={statusMessage}
         isRunning={isRunning}
@@ -352,18 +350,24 @@ export function ChatView({
               onReject={handlePlanReject}
             />
           )}
-          <ChatThread
-            cwd={cwd}
-            profileId={profileId}
-            permissionMode={permissionMode}
-            effortLevel={effortLevel}
+          <TurnTimerProvider
             isRunning={isRunning}
-            inputTokens={stats?.inputTokens ?? initialInputTokens ?? 0}
-            onProfileChange={handleChangeProfile}
-            onPermissionModeChange={handleChangePermissionMode}
-            onEffortLevelChange={handleChangeEffortLevel}
-            onForkFromMessage={handleForkFromMessage}
-          />
+            startedAt={initialCurrentTurnStartedAt}
+            lastDurationMs={stats?.durationMs ?? initialDurationMs}
+          >
+            <ChatThread
+              cwd={cwd}
+              profileId={profileId}
+              permissionMode={permissionMode}
+              effortLevel={effortLevel}
+              isRunning={isRunning}
+              inputTokens={stats?.inputTokens ?? initialInputTokens ?? 0}
+              onProfileChange={handleChangeProfile}
+              onPermissionModeChange={handleChangePermissionMode}
+              onEffortLevelChange={handleChangeEffortLevel}
+              onForkFromMessage={handleForkFromMessage}
+            />
+          </TurnTimerProvider>
         </AssistantRuntimeProvider>
       </div>
     </div>
@@ -377,8 +381,6 @@ function Header({
   stats,
   initialInputTokens,
   initialOutputTokens,
-  initialDurationMs,
-  initialCurrentTurnStartedAt,
   error,
   statusMessage,
   isRunning,
@@ -390,8 +392,6 @@ function Header({
   stats: { inputTokens: number; outputTokens: number; durationMs: number } | null;
   initialInputTokens?: number;
   initialOutputTokens?: number;
-  initialDurationMs?: number;
-  initialCurrentTurnStartedAt?: number;
   error: string | null;
   statusMessage: string | null;
   isRunning: boolean;
@@ -479,31 +479,6 @@ function Header({
   const canEdit = sessionId !== null;
   const canFork = sessionId !== null && !isRunning;
 
-  // 运行中走字计时器：isRunning 期间每 100ms 更新，填补 done 之前的空窗。
-  // 起点优先用后端的 currentTurnStartedAt（刷新后能接着走，不丢已流逝时间），
-  // 没有则退回本地 Date.now()（本地第一轮发消息）。
-  // 后端起点用 ref 收纳、不进 effect 依赖：它是"轮次起点"（生命周期信号），
-  // sessions_changed 在权限往返时会刷新 meta，若进依赖会反复重建 interval 丢精度。
-  // effect 只在 isRunning 翻转时建/拆，符合"一轮一个计时器"的语义。
-  const startedAtRef = useRef(initialCurrentTurnStartedAt ?? 0);
-  startedAtRef.current = initialCurrentTurnStartedAt ?? 0;
-  const [runningElapsed, setRunningElapsed] = useState(0);
-  useEffect(() => {
-    if (!isRunning) {
-      setRunningElapsed(0);
-      return;
-    }
-    // 后端起点优先；relay 远程访问时浏览器与服务器时钟可能不一致，
-    // 用 Math.min 兜底——后端起点晚于本地现在时退回本地时刻，避免算出负数。
-    const now = Date.now();
-    const start = Math.min(startedAtRef.current > 0 ? startedAtRef.current : now, now);
-    setRunningElapsed(now - start);
-    const id = setInterval(() => {
-      setRunningElapsed(Date.now() - start);
-    }, 100);
-    return () => clearInterval(id);
-  }, [isRunning]);
-
   return (
     <div className="sticky top-0 z-10 flex shrink-0 flex-col gap-1 border-b border-border/60 bg-background/60 px-3 py-2 pl-14 md:pl-4 md:py-2.5 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -583,30 +558,15 @@ function Header({
               {statusMessage}
             </Badge>
           )}
-          {isRunning && (
-            <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="运行中">
-              {formatDuration(runningElapsed)}
+          {stats && (
+            <Badge variant="secondary" className="text-[10px] h-4">
+              入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
             </Badge>
           )}
-          {stats && (
-            <>
-              <Badge variant="secondary" className="text-[10px] h-4">
-                入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
-              </Badge>
-              <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="本轮总耗时">{formatDuration(stats.durationMs)}</Badge>
-            </>
-          )}
           {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
-            <>
-              <Badge variant="secondary" className="text-[10px] h-4">
-                入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
-              </Badge>
-              {initialDurationMs !== undefined && initialDurationMs > 0 && (
-                <Badge variant="secondary" className="text-[10px] h-4 font-mono tabular-nums" title="上一轮总耗时">
-                  {formatDuration(initialDurationMs)}
-                </Badge>
-              )}
-            </>
+            <Badge variant="secondary" className="text-[10px] h-4">
+              入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
+            </Badge>
           )}
         </div>
       </div>
