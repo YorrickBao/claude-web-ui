@@ -224,7 +224,7 @@ export function ChatThread({
 
       <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pt-2 pb-safe md:px-8">
         <div>
-          <div className="rounded-2xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
+          <div className="rounded-xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
               <ComposerPrimitive.Input
                 ref={textareaRef}
@@ -433,7 +433,7 @@ function UserMessage() {
       className="group/msg mb-4 flex flex-col md:mb-6"
     >
       <div className="flex min-w-0 justify-end">
-        <div className="inline-block max-w-full rounded-2xl rounded-br-md bg-accent px-3 py-2 text-left text-white md:px-4 md:py-2.5">
+        <div className="inline-block max-w-full rounded-xl rounded-br-sm bg-accent px-3 py-2 text-left text-primary-foreground md:px-4 md:py-2.5">
           <MessagePrimitive.Parts
             components={{
               Text: ({ text }) => (
@@ -504,10 +504,11 @@ function InterruptEventBar({ id }: { id: string }) {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="group/msg relative mb-4 flex gap-2 md:mb-6 md:gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="inline-block max-w-full rounded-2xl rounded-bl-md bg-card px-3 py-2 text-foreground md:px-4 md:py-3">
-          <AssistantContent />
-        </div>
+      {/* 去气泡文档化：左侧朱砂淡色细线 + 左 padding，铺开成文档段落。
+          assistant 消息不再用 bg-card 气泡，仅靠左边线与留白建立层次，
+          让正文（Inter）成为视觉重心，朱砂气泡专属用户消息。 */}
+      <div className="min-w-0 flex-1 border-l-2 border-primary/20 pl-3 md:pl-4">
+        <AssistantContent />
       </div>
       <AssistantActionBar />
     </MessagePrimitive.Root>
@@ -653,20 +654,20 @@ function WorkGroup({
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="-mx-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
       >
         {open ? (
-          <ChevronDown className="size-3" />
+          <ChevronDown className="size-3.5 shrink-0" />
         ) : (
-          <ChevronRight className="size-3" />
+          <ChevronRight className="size-3.5 shrink-0" />
         )}
-        <span className="font-mono">{label}</span>
+        <span className="font-mono text-foreground">{label}</span>
         {isActive && (
-          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-primary" />
         )}
       </button>
       {open && (
-        <div className="mt-1 space-y-0.5 border-l border-border/40 pl-3">
+        <div className="mt-1 space-y-0.5 border-l-2 border-primary/30 pl-3">
           {children}
         </div>
       )}

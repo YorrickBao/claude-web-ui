@@ -3,6 +3,11 @@ import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import App from "@/App";
+// 字体本地化打包进 dist（@fontsource），不 runtime 从外网加载。
+// Inter Variable 作 UI/正文主字；JetBrains Mono 作代码块/工具名/数据等等宽用字。
+import "@fontsource-variable/inter";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
 import "@/index.css";
 // Streamdown 的逐词淡入动画样式（[data-sd-animate]）。可选但属于 streamdown 体验的一部分。
 import "streamdown/styles.css";

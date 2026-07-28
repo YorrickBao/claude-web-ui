@@ -172,22 +172,22 @@ export function ReasoningBlock({
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="-mx-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
       >
         {open ? (
-          <ChevronDown className="size-3 shrink-0" />
+          <ChevronDown className="size-3.5 shrink-0" />
         ) : (
-          <ChevronRight className="size-3 shrink-0" />
+          <ChevronRight className="size-3.5 shrink-0" />
         )}
-        <span className="font-medium">
+        <span>
           {showCursor ? "思考中…" : "思考过程"}
         </span>
         {isStreaming && (
-          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+          <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-primary" />
         )}
       </button>
       {open && (text || showCursor) && (
-        <div className="mt-1 pl-3.5 text-[13px] leading-relaxed text-muted-foreground/80">
+        <div className="mt-1 border-l-2 border-border/30 pl-3.5 text-[13px] leading-relaxed text-muted-foreground/80">
           {showCursor ? (
             <span className="text-muted-foreground/50">…</span>
           ) : (
@@ -249,18 +249,14 @@ export function ToolCardShell({
         className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm"
       >
         {open ? (
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <span
           className={cn(
             "font-mono text-[13px] font-medium",
-            isError
-              ? "text-red-400"
-              : isRunning
-                ? "text-amber-400"
-                : "text-accent",
+            isError ? "text-red-400" : "text-primary",
           )}
         >
           {name}
@@ -271,8 +267,8 @@ export function ToolCardShell({
           </span>
         )}
         {isRunning && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-amber-400">
-            <span className="inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-primary">
+            <span className="inline-block size-1.5 animate-pulse rounded-full bg-primary" />
             运行中
           </span>
         )}
@@ -416,7 +412,7 @@ function TodosView({ todos }: { todos: unknown }) {
                 done
                   ? "text-emerald-400"
                   : inProg
-                    ? "text-amber-400"
+                    ? "text-primary"
                     : "text-muted-foreground/50",
               )}
             >

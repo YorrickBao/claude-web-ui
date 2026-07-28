@@ -18,15 +18,9 @@ body,
   /* 移动端：使用 dvh 动态视口高度，防止 iOS Safari 地址栏遮挡 */
   height: 100dvh;
   margin: 0;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  /* 引用 :root 下定义的字体变量（Inter Variable 主字）。
+     非层规则优先级高于 @layer base 的 @apply font-sans，统一从这里控制。 */
+  font-family: var(--font-sans);
   /* 防止移动端橡皮筋效果导致页面空白 */
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
@@ -115,23 +109,26 @@ a, button, input, select, textarea, [role="button"] {
 
 
 @layer base {
-  .theme {
-    --font-heading: var(--font-sans);
-    --font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, sans-serif;
-  }
   :root {
+    /* 字体：Inter Variable 作 UI/正文主字，JetBrains Mono 作等宽。
+       非层 font-family 已在 html,body,#root 引用 var(--font-sans)。 */
+    --font-sans:
+      "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+      Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+      "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+      "Liberation Mono", monospace;
+
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
-    /* 亮色主题（默认），低调蓝灰 accent 映射到 primary */
+    /* 亮色主题：朱砂 Cinnabar 品牌色（oklch hue 25），收敛原橘+蓝灰双轨 */
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.48 0.05 255);
+    --primary: oklch(0.55 0.22 25);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
@@ -143,7 +140,7 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.48 0.05 255);
+    --ring: oklch(0.55 0.22 25);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -152,22 +149,22 @@ a, button, input, select, textarea, [role="button"] {
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.48 0.05 255);
+    --sidebar-primary: oklch(0.55 0.22 25);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.48 0.05 255);
+    --sidebar-ring: oklch(0.55 0.22 25);
   }
   .dark {
-    /* 暗色主题，低调蓝灰 accent 映射到 primary */
+    /* 暗色主题：朱砂亮调（提亮以在深底上保持辨识度） */
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.58 0.07 255);
+    --primary: oklch(0.65 0.19 25);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
@@ -179,7 +176,7 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.58 0.07 255);
+    --ring: oklch(0.65 0.19 25);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -187,12 +184,12 @@ a, button, input, select, textarea, [role="button"] {
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.145 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.58 0.07 255);
+    --sidebar-primary: oklch(0.65 0.19 25);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.205 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.58 0.07 255);
+    --sidebar-ring: oklch(0.65 0.19 25);
   }
   * {
     @apply border-border;
@@ -202,5 +199,11 @@ a, button, input, select, textarea, [role="button"] {
   }
   html {
     @apply font-sans;
+  }
+  /* 代码块/行内代码强制 JetBrains Mono——streamdown 的 shiki 容器继承 body，
+     显式兜底确保跨平台一致。 */
+  pre,
+  code {
+    font-family: var(--font-mono);
   }
 }

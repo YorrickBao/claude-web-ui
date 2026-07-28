@@ -13,13 +13,13 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)"],
+        mono: ["var(--font-mono)"],
+      },
       colors: {
-        // 保留自定义 accent 色调（映射到 shadcn primary）
-        accent: {
-          DEFAULT: "#d97757",
-          hover: "#c56544",
-        },
         // shadcn CSS 变量 → Tailwind 颜色映射
+        // accent 原为硬编码橘 #d97757，现收敛到 --primary（朱砂），全局统一品牌色
         background: "var(--background)",
         foreground: "var(--foreground)",
         card: {
@@ -41,6 +41,13 @@ export default {
         muted: {
           DEFAULT: "var(--muted)",
           foreground: "var(--muted-foreground)",
+        },
+        // accent 收敛到 --primary（朱砂品牌色）。
+        // 原 shadcn accent 是中性灰 var(--accent)；项目里 bg-accent 用于用户气泡等
+        // 品牌焦点，统一指向 primary 让全局品牌色一致。CSS 变量 --accent 仍保留作中性色备用。
+        accent: {
+          DEFAULT: "var(--primary)",
+          foreground: "var(--primary-foreground)",
         },
         destructive: {
           DEFAULT: "var(--destructive)",

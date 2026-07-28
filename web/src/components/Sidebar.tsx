@@ -284,10 +284,11 @@ export function Sidebar({
       <div className="flex items-center justify-between px-3 py-3">
         <span
           className={cn(
-            "text-sm font-semibold text-foreground transition-opacity",
+            "flex items-center gap-1.5 text-sm font-semibold tracking-tight text-foreground transition-opacity",
             (!isMobile && isCollapsed) ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
           )}
         >
+          <span className="inline-block size-2 rounded-full bg-primary" aria-hidden />
           Claude WebUI
         </span>
         <div className="flex items-center gap-1">

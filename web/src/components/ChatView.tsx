@@ -562,12 +562,12 @@ function Header({
             </Badge>
           )}
           {stats && (
-            <Badge variant="secondary" className="text-[10px] h-4">
+            <Badge variant="secondary" className="h-4 font-mono text-[10px] tabular-nums">
               入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
             </Badge>
           )}
           {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
-            <Badge variant="secondary" className="text-[10px] h-4">
+            <Badge variant="secondary" className="h-4 font-mono text-[10px] tabular-nums">
               入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
             </Badge>
           )}
