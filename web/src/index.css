@@ -231,7 +231,20 @@ a, button, input, select, textarea, [role="button"] {
 }
 .cwu-md h1,
 .cwu-md h2,
-.cwu-md h3 {
+.cwu-md h3,
+.cwu-md h4,
+.cwu-md h5,
+.cwu-md h6 {
   margin: 1em 0 0.5em !important;
   line-height: 1.3 !important;
 }
+/* 标题字号：压过 Streamdown 内置的 text-3xl/2xl/xl/lg/base/sm 工具类
+   （这些类直接挂在 h1~h6 元素上，font-size 命中元素本体，必须 !important）。
+   用 em 相对正文 15px 自适应，桌面/移动端成比例缩放，
+   避免 chat 消息里 h1=30px / h2=24px 的过大“博客感”。 */
+.cwu-md h1 { font-size: 1.4em  !important; }
+.cwu-md h2 { font-size: 1.25em !important; }
+.cwu-md h3 { font-size: 1.13em !important; }
+.cwu-md h4 { font-size: 1em    !important; }
+.cwu-md h5 { font-size: 0.95em !important; }
+.cwu-md h6 { font-size: 0.85em !important; }
