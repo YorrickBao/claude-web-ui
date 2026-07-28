@@ -185,6 +185,30 @@ export function useChatSSE({
     abortRef.current?.abort();
   }, []);
 
+  /**
+   * 仅本地断流，回到草稿态（pending）。与 stop() 的区别：
+   * - 不调 abortSession：不打断后端正在跑的 SDK 查询，旧会话仍可从侧栏
+   *   重新进入续看实时输出；
+   * - 不设 stoppedByUserRef：这不是"用户主动停止"，只是切换上下文。
+   *
+   * 用于"从运行中会话点新建"等需要丢弃当前实时流、但不该杀掉后端查询的场景。
+   */
+  const detach = useCallback(() => {
+    // 先重置 sessionIdRef：subscribe 循环的下个检查点据此发现 mismatch 而退出，
+    // 退避 delay 期间 abort 不生效，也能在 delay 结束后据此退出，不复活。
+    sessionIdRef.current = null;
+    setActiveSessionId(null);
+    // 中断当前活跃 fetch（POST / subscribe / plan 流共用 abortRef）。
+    // 各流的 catch 对 AbortError 的处理都是"视为停止、不 handoff 到 subscribe"，
+    // 故不会触发 subscribe 复活。
+    abortRef.current?.abort();
+    // 兜底同步重置运行态：abort 的 catch/finally 是异步的，且 subscribe 退避
+    // delay 期间 abort 不生效，这里同步兜底，避免 pending 残留 isRunning=true。
+    // （subscribe 退出后的 finally 也会再设一遍，幂等。）
+    setIsRunning(false);
+    setStatusMessage(null);
+  }, []);
+
   const loadHistory = useCallback((history: ChatMessage[]) => {
     setMessages(history);
     setStats(null);
@@ -222,8 +246,9 @@ export function useChatSSE({
 
     try {
       for (;;) {
-        // 组件卸载 / 会话切换 → 静默退出，不触碰已卸载的状态
-        if (disposedRef.current) break;
+        // 组件卸载，或会话已切走（sessionIdRef 被 detach/新 subscribe 重置）
+        // → 静默退出，不触碰已卸载/已切换的状态
+        if (disposedRef.current || sessionIdRef.current !== targetSessionId) break;
 
         const ctrl = new AbortController();
         abortRef.current = ctrl;
@@ -275,7 +300,7 @@ export function useChatSSE({
           }
         }
 
-        if (disposedRef.current) break;
+        if (disposedRef.current || sessionIdRef.current !== targetSessionId) break;
         if (doneReceived) break; // 会话正常结束
 
         // 意外断开（无 done）：查会话状态决定重连或终结。
@@ -283,7 +308,7 @@ export function useChatSSE({
         //       unknown 查询本身失败（同一次网络抖动波及 listSessions）→
         //       不能贸然终结观察方，按重连处理。
         const status = await querySessionStatus(targetSessionId);
-        if (disposedRef.current) break;
+        if (disposedRef.current || sessionIdRef.current !== targetSessionId) break;
 
         if (status === "running" || status === "unknown") {
           consecutiveFailures++;
@@ -300,8 +325,13 @@ export function useChatSSE({
             break;
           }
           await delay(reconnectDelay);
-          // 退避期间组件卸载 / 用户停止 → 退出
-          if (disposedRef.current || stoppedByUserRef.current) break;
+          // 退避期间组件卸载 / 会话切走 / 用户停止 → 退出
+          if (
+            disposedRef.current ||
+            sessionIdRef.current !== targetSessionId ||
+            stoppedByUserRef.current
+          )
+            break;
           reconnectDelay = Math.min(
             reconnectDelay * SUBSCRIBE_BACKOFF_FACTOR,
             SUBSCRIBE_MAX_DELAY_MS,
@@ -638,6 +668,7 @@ export function useChatSSE({
     statusMessage,
     stats,
     stop,
+    detach,
     loadHistory,
     subscribe,
     sessionId: activeSessionId,

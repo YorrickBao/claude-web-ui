@@ -136,7 +136,7 @@ export function ChatView({
     [],
   );
 
-  const { runtime, error, statusMessage, stats, isRunning, loadHistory, subscribe, sessionId: activeSessionId } =
+  const { runtime, error, statusMessage, stats, isRunning, loadHistory, subscribe, detach, sessionId: activeSessionId } =
     useChatSSE({
       sessionId,
       cwd,
@@ -230,7 +230,10 @@ export function ChatView({
   // 已有会话：挂载时载入历史（静止会话）或续流（运行中会话）
   useEffect(() => {
     if (!sessionId) {
-      // 回到 pending 态（从会话 A 点新建）：清掉 A 的历史，避免错配
+      // 回到 pending 态（从运行中会话 A 点新建）：本地断开 A 的实时流，
+      // 避免残留 running 光标/状态。detach 不打断后端查询，A 仍可在侧栏
+      // 重新进入续看实时输出。
+      detach();
       loadHistory([]);
       return;
     }
