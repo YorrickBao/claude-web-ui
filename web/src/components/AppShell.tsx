@@ -323,13 +323,24 @@ function ChatViewWithMeta({
   pendingState: PendingState;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // 渲染期间追踪上一次 sessionId，区分「pending 创建成功」与「侧栏切换」。
-  // 必须在渲染期间计算（非 effect），否则 Skeleton 会先闪一帧。
+  // 「pending 创建成功」判定（双条件，缺一不可）：
+  //   1. onSessionCreated 的 navigate 带 __pendingCreated 标记（见 ChatView）——
+  //      区分「创建」与「从 pending 点侧栏切到已有会话」（后者 Link 不带此标记）。
+  //   2. prevSessionIdRef === null —— 侧栏在会话间切换（非null→非null）或
+  //      刷新/后退（prev 已是非null）时不误判，即便标记残留也走正常 fetch。
+  // 必须在渲染期间读取（非 effect），否则 Skeleton 会先闪一帧。
   const prevSessionIdRef = useRef<string | null>(sessionId);
-  const isPendingToLive = prevSessionIdRef.current === null && sessionId !== null;
+  const pendingCreatedState = location.state as
+    | { __pendingCreated?: boolean }
+    | null;
+  const isPendingToLive =
+    !!pendingCreatedState?.__pendingCreated &&
+    prevSessionIdRef.current === null &&
+    sessionId !== null;
   prevSessionIdRef.current = sessionId;
 
   // pending 态守卫：无 cwd（直接访问 /pending 无 state）回 /new

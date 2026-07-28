@@ -156,7 +156,13 @@ export function ChatView({
         // 立即 navigate 更新 URL 到 /c/:id。AppShell 用固定 key 的
         // ChatViewWithMeta，路由切换不会 remount ChatView，因此 POST 流不中断、
         // messages state 保留、无骨架屏闪动。
-        navigate(`/c/${id}`, { replace: true });
+        // 带 __pendingCreated 标记：ChatViewWithMeta 据此判定「pending 创建成功」
+        // （跳过 fetch meta+history，靠 POST 流续），区别于「从 pending 点侧栏切到
+        // 已有会话」（同样 null→非null，但需要 fetch 历史）。
+        navigate(`/c/${id}`, {
+          replace: true,
+          state: { __pendingCreated: true },
+        });
         window.dispatchEvent(new CustomEvent("session-list-changed"));
       },
       onPermissionRequest: handlePermissionRequest,
