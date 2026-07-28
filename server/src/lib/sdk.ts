@@ -505,24 +505,21 @@ export async function* runQuery(
         if (stepIndex > 0) {
           yield { type: "step_end", index: stepIndex };
         }
-        if (msg.subtype === "success") {
-          const s = msg;
-          yield {
-            type: "done",
-            inputTokens: s.usage?.input_tokens ?? 0,
-            outputTokens: s.usage?.output_tokens ?? 0,
-            durationMs: msg.duration_ms,
-            ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
-          };
-        } else {
+        // result 消息的 usage 覆盖本轮（顶层 agent loop，不含子代理），
+        // 四个字段都从 SDK 拿：input/output/cache_read/cache_creation。
+        // 会话级累计另由 transcriptTokens.ts 读 jsonl 计算，这里只传当轮值。
+        const u = msg.usage;
+        yield {
+          type: "done",
+          inputTokens: u?.input_tokens ?? 0,
+          outputTokens: u?.output_tokens ?? 0,
+          cacheReadTokens: u?.cache_read_input_tokens ?? 0,
+          cacheCreationTokens: u?.cache_creation_input_tokens ?? 0,
+          durationMs: msg.duration_ms,
+          ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
+        };
+        if (msg.subtype !== "success") {
           const e = msg;
-          yield {
-            type: "done",
-            inputTokens: e.usage?.input_tokens ?? 0,
-            outputTokens: e.usage?.output_tokens ?? 0,
-            durationMs: msg.duration_ms,
-            ...(lastAssistantUuid ? { lastAssistantUuid } : {}),
-          };
           // 丰富化错误原因：优先 errors[] 真实文本，其次 terminal_reason 中文映射，
           // 兜底 subtype。让用户看到"为何结束"而非裸枚举。
           const reason =

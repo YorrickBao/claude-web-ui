@@ -91,6 +91,8 @@ export function useChatSSE({
   const [stats, setStats] = useState<{
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
     durationMs: number;
   } | null>(null);
 
@@ -434,6 +436,8 @@ export function useChatSSE({
         setStats({
           inputTokens: evt.inputTokens,
           outputTokens: evt.outputTokens,
+          cacheReadTokens: evt.cacheReadTokens,
+          cacheCreationTokens: evt.cacheCreationTokens,
           durationMs: evt.durationMs,
         });
         setStatusMessage(null); // 终结：清掉压缩/重试等瞬态提示

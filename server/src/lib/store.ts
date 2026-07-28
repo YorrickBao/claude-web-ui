@@ -241,14 +241,14 @@ export async function setSessionProfile(
 }
 
 /**
- * 累加 token 计数到会话记录中，并记录本轮耗时。
- * 每次 query 完成后调用：token 累加到持久化的累计值上，
- * durationMs 覆盖为「最近一轮」的值（不累加，仅作展示用）。
+ * 记录最近一轮的耗时到会话记录中。
+ * 每次 query 完成后调用：durationMs 覆盖为「最近一轮」的值（不累加，仅作展示用）。
+ *
+ * token 用量不再持久化：按需从 transcript（~/.claude/projects）读取，
+ * 见 transcriptTokens.ts。
  */
-export async function accumulateTokens(
+export async function recordLastDuration(
   sessionId: string,
-  inputTokens: number,
-  outputTokens: number,
   durationMs: number,
 ): Promise<void> {
   const data = await readAllSessions();
@@ -256,8 +256,6 @@ export async function accumulateTokens(
   if (idx < 0) return;
   data.sessions[idx] = {
     ...data.sessions[idx],
-    inputTokens: (data.sessions[idx].inputTokens ?? 0) + inputTokens,
-    outputTokens: (data.sessions[idx].outputTokens ?? 0) + outputTokens,
     lastDurationMs: durationMs,
     lastModified: Date.now(),
   };
@@ -303,8 +301,6 @@ export async function syncAndListSessions(): Promise<SessionRecord[]> {
       profileId: localRec?.profileId ?? null,
       permissionMode: localRec?.permissionMode ?? "default",
       effortLevel: localRec?.effortLevel ?? "default",
-      inputTokens: localRec?.inputTokens ?? 0,
-      outputTokens: localRec?.outputTokens ?? 0,
       lastDurationMs: localRec?.lastDurationMs ?? 0,
     };
 

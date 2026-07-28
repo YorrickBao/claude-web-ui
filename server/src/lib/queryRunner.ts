@@ -8,7 +8,7 @@
 import { runQuery, type RunQueryParams } from "./sdk.js";
 import { emitSessionEvent, emitSessionEnd, emitSessionsChanged, emitSessionEnded, clearSessionBuffer } from "./eventBus.js";
 import { setInflightWaiting, setInflightRunning, clearInflight } from "./inflight.js";
-import { accumulateTokens, getSession } from "./store.js";
+import { recordLastDuration } from "./store.js";
 import { finalizeSession } from "./agentRegistry.js";
 import type { SSEEvent } from "./types.js";
 
@@ -33,25 +33,16 @@ export async function emitEventToBus(
     if (setInflightRunning(sessionId)) emitSessionsChanged();
   }
 
-  // done 事件：先累加 token + 记录本轮 duration，再发送累加后的值
+  // done 事件：记录本轮 duration 后原样透传当轮 token 用量。
+  // 会话级累计由 transcriptTokens 读 jsonl 计算（GET /:id），不在此累加。
   if (evt.type === "done") {
-    await accumulateTokens(sessionId, evt.inputTokens, evt.outputTokens, evt.durationMs).catch(
+    await recordLastDuration(sessionId, evt.durationMs).catch(
       (err: unknown) => {
-        console.warn(`[queryRunner] accumulateTokens failed for ${sessionId}:`, err instanceof Error ? err.message : err);
+        console.warn(`[queryRunner] recordLastDuration failed for ${sessionId}:`, err instanceof Error ? err.message : err);
       },
     );
-    const updated = await getSession(sessionId);
-    const doneEvt: SSEEvent = {
-      type: "done",
-      inputTokens: updated?.inputTokens ?? evt.inputTokens,
-      outputTokens: updated?.outputTokens ?? evt.outputTokens,
-      durationMs: evt.durationMs,
-      // 透传 lastAssistantUuid：供前端"从此处分叉"盖戳当前轮次的 assistant 消息。
-      // 之前重建 doneEvt 时遗漏了这个字段，导致分叉按钮在当前轮次不显示（刷新后才出现）。
-      ...(evt.lastAssistantUuid ? { lastAssistantUuid: evt.lastAssistantUuid } : {}),
-    };
-    emitSessionEvent(sessionId, doneEvt);
-    return doneEvt;
+    emitSessionEvent(sessionId, evt);
+    return evt;
   }
 
   emitSessionEvent(sessionId, evt);

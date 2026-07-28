@@ -114,8 +114,8 @@ interface ChatThreadProps {
   permissionMode: string;
   effortLevel: string;
   isRunning: boolean;
-  /** 当前累计 input tokens（用于上下文占用指示器） */
-  inputTokens?: number;
+  /** 当前上下文窗口占用 token 数（最近一轮的 input+cache_read+cache_creation） */
+  contextUsedTokens?: number;
   onProfileChange: (id: string | null) => void;
   onPermissionModeChange: (mode: string) => void;
   onEffortLevelChange: (level: string) => void;
@@ -129,7 +129,7 @@ export function ChatThread({
   permissionMode,
   effortLevel,
   isRunning,
-  inputTokens,
+  contextUsedTokens,
   onProfileChange,
   onPermissionModeChange,
   onEffortLevelChange,
@@ -288,8 +288,8 @@ export function ChatThread({
               </SelectContent>
             </Select>
             <div className="flex-1" />
-            {inputTokens !== undefined && inputTokens > 0 && (
-              <ContextUsageRing used={inputTokens} max={contextMax} />
+            {contextUsedTokens !== undefined && contextUsedTokens > 0 && (
+              <ContextUsageRing used={contextUsedTokens} max={contextMax} />
             )}
             <Select
               items={profileItems}

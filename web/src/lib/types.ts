@@ -17,8 +17,14 @@ export type SSEEvent =
   | { type: "error"; message: string }
   | {
       type: "done";
+      /** 本轮 input tokens（SDK result.usage） */
       inputTokens: number;
+      /** 本轮 output tokens */
       outputTokens: number;
+      /** 本轮 cache_read_input_tokens */
+      cacheReadTokens: number;
+      /** 本轮 cache_creation_input_tokens */
+      cacheCreationTokens: number;
       durationMs: number;
       /** 本回合最终答案的 assistant message uuid，用作 forkSession 的 upToMessageId */
       lastAssistantUuid?: string;
@@ -92,10 +98,17 @@ export interface SessionView {
   permissionMode: "bypassPermissions" | "default" | "acceptEdits" | "plan" | "dontAsk" | "auto";
   /** 思考级别 */
   effortLevel: "low" | "medium" | "high" | "xhigh" | "max" | "disabled" | "default";
-  /** 累计 input tokens */
-  inputTokens: number;
-  /** 累计 output tokens */
-  outputTokens: number;
+  /** 累计 input tokens（仅详情视图填充；列表不扫盘） */
+  inputTokens?: number;
+  /** 累计 output tokens（仅详情视图填充） */
+  outputTokens?: number;
+  /** 累计 cache_read_input_tokens（仅详情视图填充） */
+  cacheReadTokens?: number;
+  /** 累计 cache_creation_input_tokens（仅详情视图填充） */
+  cacheCreationTokens?: number;
+  /** 最近一轮 prompt 实际尺寸 = input + cache_read + cache_creation（仅详情视图填充）。
+   *  反映当前上下文窗口占用，用于 ContextUsageRing。 */
+  lastTurnPromptTokens?: number;
   /** 最近一轮的耗时（ms） */
   lastDurationMs: number;
   /** 当前进行中轮次的开始时刻（ms）；0 表示无进行中轮次 */

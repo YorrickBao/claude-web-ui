@@ -41,11 +41,8 @@ export interface SessionRecord {
   permissionMode: PermissionMode;
   /** 思考级别（默认深度推理兼容旧数据） */
   effortLevel: EffortLevel;
-  /** 累计 input tokens（跨多轮持久化累加） */
-  inputTokens: number;
-  /** 累计 output tokens（跨多轮持久化累加） */
-  outputTokens: number;
-  /** 最近一轮的耗时（ms）。每轮 done 时覆盖，刷新/重开页面仍可显示 */
+  /** 最近一轮的耗时（ms）。每轮 done 时覆盖，刷新/重开页面仍可显示。
+   *  token 用量不再持久化，按需从 transcript 读取（见 transcriptTokens.ts）。 */
   lastDurationMs: number;
 }
 
@@ -64,10 +61,17 @@ export interface SessionView {
   permissionMode: PermissionMode;
   /** 思考级别 */
   effortLevel: EffortLevel;
-  /** 累计 input tokens */
-  inputTokens: number;
-  /** 累计 output tokens */
-  outputTokens: number;
+  /** 累计 input tokens（仅详情视图填充；列表不扫盘） */
+  inputTokens?: number;
+  /** 累计 output tokens（仅详情视图填充） */
+  outputTokens?: number;
+  /** 累计 cache_read_input_tokens（仅详情视图填充） */
+  cacheReadTokens?: number;
+  /** 累计 cache_creation_input_tokens（仅详情视图填充） */
+  cacheCreationTokens?: number;
+  /** 最近一轮的 prompt 实际尺寸 = input + cache_read + cache_creation（仅详情视图填充）。
+   *  反映当前上下文窗口占用，用于 ContextUsageRing。 */
+  lastTurnPromptTokens?: number;
   /** 最近一轮的耗时（ms） */
   lastDurationMs: number;
   /** 当前正在进行的轮次的开始时刻（ms）；0 表示无进行中轮次 */
@@ -102,10 +106,14 @@ export type SSEEvent =
   | { type: "error"; message: string }
   | {
       type: "done";
-      /** 会话累计 input tokens（含本轮） */
+      /** 本轮 input tokens（SDK result.usage，仅顶层 agent loop） */
       inputTokens: number;
-      /** 会话累计 output tokens（含本轮） */
+      /** 本轮 output tokens */
       outputTokens: number;
+      /** 本轮 cache_read_input_tokens（命中缓存的 prompt token） */
+      cacheReadTokens: number;
+      /** 本轮 cache_creation_input_tokens（写入缓存的 prompt token） */
+      cacheCreationTokens: number;
       /** 本轮耗时（ms） */
       durationMs: number;
       /** 本回合最终答案的 assistant message uuid（transcript uuid），

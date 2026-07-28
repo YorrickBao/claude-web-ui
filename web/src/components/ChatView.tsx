@@ -29,6 +29,12 @@ export interface ChatViewProps {
   initialInputTokens?: number;
   /** 会话累计 output tokens */
   initialOutputTokens?: number;
+  /** 会话累计 cache_read_input_tokens */
+  initialCacheReadTokens?: number;
+  /** 会话累计 cache_creation_input_tokens */
+  initialCacheCreationTokens?: number;
+  /** 最近一轮 prompt 实际尺寸（input+cache_read+cache_creation），用于 ContextUsageRing */
+  initialLastTurnPromptTokens?: number;
   /** 最近一轮耗时 ms（用于首次渲染；后续由 SSE done 事件更新） */
   initialDurationMs?: number;
   /** 当前进行中轮次的开始时刻（ms）；刷新后续流时用来恢复计时，不从 0 重来 */
@@ -47,6 +53,9 @@ export function ChatView({
   initialRunningStatus,
   initialInputTokens,
   initialOutputTokens,
+  initialCacheReadTokens,
+  initialCacheCreationTokens,
+  initialLastTurnPromptTokens,
   initialDurationMs,
   initialCurrentTurnStartedAt,
 }: ChatViewProps) {
@@ -155,6 +164,38 @@ export function ChatView({
       onPlanProposed: handlePlanProposed,
       onModeChanged: handleModeChanged,
     });
+
+  // 会话累计 token：初始值来自 transcript（GET /:id），每轮 done 事件叠加当轮值。
+  // stats 只承载「最近一轮」的值，不跨轮累计；Badge 显示累计，Ring 用当轮 prompt。
+  const accRef = useRef({
+    input: initialInputTokens ?? 0,
+    output: initialOutputTokens ?? 0,
+    cacheRead: initialCacheReadTokens ?? 0,
+    cacheCreation: initialCacheCreationTokens ?? 0,
+  });
+  const [accVersion, setAccVersion] = useState(0);
+  useEffect(() => {
+    // sessionId 变化（切会话）时重置累加器为新的初始值
+    accRef.current = {
+      input: initialInputTokens ?? 0,
+      output: initialOutputTokens ?? 0,
+      cacheRead: initialCacheReadTokens ?? 0,
+      cacheCreation: initialCacheCreationTokens ?? 0,
+    };
+    setAccVersion((v) => v + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+  useEffect(() => {
+    if (!stats) return;
+    accRef.current = {
+      input: accRef.current.input + stats.inputTokens,
+      output: accRef.current.output + stats.outputTokens,
+      cacheRead: accRef.current.cacheRead + stats.cacheReadTokens,
+      cacheCreation: accRef.current.cacheCreation + stats.cacheCreationTokens,
+    };
+    setAccVersion((v) => v + 1);
+  }, [stats]);
+  void accVersion; // 触发重渲染
 
   // 权限审批操作函数（从 Map 中取出 respond 调用）
   async function handlePermissionAllow(
@@ -330,9 +371,10 @@ export function ChatView({
         sessionId={sessionId}
         title={title}
         subtitle={subtitle}
-        stats={stats}
-        initialInputTokens={initialInputTokens}
-        initialOutputTokens={initialOutputTokens}
+        // Header Badge 展示「会话累计消耗」：累加器把 transcript 初始值 + 每轮 done 叠加
+        accInputTokens={accRef.current.input}
+        accOutputTokens={accRef.current.output}
+        accCacheReadTokens={accRef.current.cacheRead}
         error={error}
         statusMessage={statusMessage}
         isRunning={isRunning}
@@ -367,7 +409,14 @@ export function ChatView({
               permissionMode={permissionMode}
               effortLevel={effortLevel}
               isRunning={isRunning}
-              inputTokens={stats?.inputTokens ?? initialInputTokens ?? 0}
+              // ContextUsageRing 反映「最近一轮」prompt 实际尺寸：
+              // 流式中用当轮 done 的 input+cache_read+cache_creation；
+              // 无 stats（历史态）回退到 transcript 算好的 lastTurnPromptTokens
+              contextUsedTokens={
+                stats
+                  ? stats.inputTokens + stats.cacheReadTokens + stats.cacheCreationTokens
+                  : initialLastTurnPromptTokens
+              }
               onProfileChange={handleChangeProfile}
               onPermissionModeChange={handleChangePermissionMode}
               onEffortLevelChange={handleChangeEffortLevel}
@@ -384,9 +433,9 @@ function Header({
   sessionId,
   title,
   subtitle,
-  stats,
-  initialInputTokens,
-  initialOutputTokens,
+  accInputTokens,
+  accOutputTokens,
+  accCacheReadTokens,
   error,
   statusMessage,
   isRunning,
@@ -395,9 +444,12 @@ function Header({
   sessionId: string | null;
   title?: string;
   subtitle?: string;
-  stats: { inputTokens: number; outputTokens: number; durationMs: number } | null;
-  initialInputTokens?: number;
-  initialOutputTokens?: number;
+  /** 会话累计 input tokens（transcript 初始值 + 每轮 done 叠加） */
+  accInputTokens: number;
+  /** 会话累计 output tokens */
+  accOutputTokens: number;
+  /** 会话累计 cache_read_input_tokens */
+  accCacheReadTokens: number;
   error: string | null;
   statusMessage: string | null;
   isRunning: boolean;
@@ -564,14 +616,10 @@ function Header({
               {statusMessage}
             </Badge>
           )}
-          {stats && (
+          {(accInputTokens > 0 || accOutputTokens > 0) && (
             <Badge variant="secondary" className="h-4 font-mono text-[10px] tabular-nums">
-              入 {formatTokens(stats.inputTokens)} · 出 {formatTokens(stats.outputTokens)}
-            </Badge>
-          )}
-          {!stats && (initialInputTokens !== undefined || initialOutputTokens !== undefined) && (
-            <Badge variant="secondary" className="h-4 font-mono text-[10px] tabular-nums">
-              入 {formatTokens(initialInputTokens ?? 0)} · 出 {formatTokens(initialOutputTokens ?? 0)}
+              入 {formatTokens(accInputTokens)} · 出 {formatTokens(accOutputTokens)}
+              {accCacheReadTokens > 0 && ` · 缓存 ${formatTokens(accCacheReadTokens)}`}
             </Badge>
           )}
         </div>

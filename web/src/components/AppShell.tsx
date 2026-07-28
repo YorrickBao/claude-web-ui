@@ -299,6 +299,9 @@ type Meta = {
   runningStatus: "idle" | "running" | "waiting" | "completed";
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  lastTurnPromptTokens: number;
   lastDurationMs: number;
   currentTurnStartedAt: number;
 };
@@ -378,6 +381,9 @@ function ChatViewWithMeta({
           runningStatus: data.runningStatus ?? "idle",
           inputTokens: data.inputTokens ?? 0,
           outputTokens: data.outputTokens ?? 0,
+          cacheReadTokens: data.cacheReadTokens ?? 0,
+          cacheCreationTokens: data.cacheCreationTokens ?? 0,
+          lastTurnPromptTokens: data.lastTurnPromptTokens ?? 0,
           lastDurationMs: data.lastDurationMs ?? 0,
           currentTurnStartedAt: data.currentTurnStartedAt ?? 0,
         });
@@ -414,6 +420,9 @@ function ChatViewWithMeta({
                 runningStatus: data.runningStatus ?? prev.runningStatus,
                 inputTokens: data.inputTokens ?? prev.inputTokens,
                 outputTokens: data.outputTokens ?? prev.outputTokens,
+                cacheReadTokens: data.cacheReadTokens ?? prev.cacheReadTokens,
+                cacheCreationTokens: data.cacheCreationTokens ?? prev.cacheCreationTokens,
+                lastTurnPromptTokens: data.lastTurnPromptTokens ?? prev.lastTurnPromptTokens,
                 lastDurationMs: data.lastDurationMs ?? prev.lastDurationMs,
                 currentTurnStartedAt: data.currentTurnStartedAt ?? prev.currentTurnStartedAt,
               }
@@ -494,6 +503,9 @@ function ChatViewWithMeta({
       initialRunningStatus={meta.runningStatus}
       initialInputTokens={meta.inputTokens}
       initialOutputTokens={meta.outputTokens}
+      initialCacheReadTokens={meta.cacheReadTokens}
+      initialCacheCreationTokens={meta.cacheCreationTokens}
+      initialLastTurnPromptTokens={meta.lastTurnPromptTokens}
       initialDurationMs={meta.lastDurationMs}
       initialCurrentTurnStartedAt={meta.currentTurnStartedAt}
     />
