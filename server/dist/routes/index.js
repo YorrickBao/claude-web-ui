@@ -7,6 +7,7 @@ import { deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { initSSE, sendSSE, endSSE } from "../lib/sse.js";
 import { setInflight, clearInflight, getInflight, getInflightStatus, getInflightStartedAt, takePendingPermission, getPendingPermissions, rememberClientSession, resolveClientSession, } from "../lib/inflight.js";
 import { replaySession } from "../lib/replay.js";
+import { getSessionTokenUsage } from "../lib/transcriptTokens.js";
 import { startRelayTunnel, stopRelayTunnel, getRelayStatus, setLocalBase, mintToken, } from "../channels/relay.js";
 import { getDevices, recordDevice, removeDevice } from "../lib/relayDevices.js";
 import { DATA_DIR } from "../env.js";
@@ -38,13 +39,11 @@ export async function apiRoutes(app) {
                 lastModified: r.lastModified,
                 profileId: r.profileId ?? null,
                 runningStatus: getInflightStatus(r.sessionId) ??
-                    ((r.inputTokens ?? 0) + (r.outputTokens ?? 0) > 0
-                        ? "completed"
-                        : "idle"),
+                    (r.lastDurationMs > 0 ? "completed" : "idle"),
                 permissionMode: r.permissionMode ?? "default",
                 effortLevel: r.effortLevel ?? "default",
-                inputTokens: r.inputTokens ?? 0,
-                outputTokens: r.outputTokens ?? 0,
+                // token 用量不再放列表（避免 N 次扫盘；侧栏本就不展示），
+                // 详情视图 GET /:id 才按需从 transcript 读取
                 lastDurationMs: r.lastDurationMs ?? 0,
                 currentTurnStartedAt: getInflightStartedAt(r.sessionId) ?? 0,
             };
@@ -146,6 +145,28 @@ export async function apiRoutes(app) {
         catch (err) {
             app.log.warn({ err }, `replaySession failed for ${rec.sessionId}`);
         }
+        // token 用量从 transcript jsonl 按需计算（不再持久化）。
+        // 失败不致命 —— 返回全 0，前端照常能用。
+        let tokenUsage = {
+            totals: {
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
+            },
+            lastTurn: null,
+        };
+        try {
+            tokenUsage = await getSessionTokenUsage(rec.sessionId);
+        }
+        catch (err) {
+            app.log.warn({ err }, `getSessionTokenUsage failed for ${rec.sessionId}`);
+        }
+        const lastTurnPromptTokens = tokenUsage.lastTurn
+            ? tokenUsage.lastTurn.inputTokens +
+                tokenUsage.lastTurn.cacheReadTokens +
+                tokenUsage.lastTurn.cacheCreationTokens
+            : 0;
         return reply.send({
             sessionId: rec.sessionId,
             cwd: rec.cwd,
@@ -155,12 +176,15 @@ export async function apiRoutes(app) {
             profileId: rec.profileId ?? null,
             permissionMode: rec.permissionMode ?? "default",
             effortLevel: rec.effortLevel ?? "default",
+            // runningStatus 启发式：跑过的会话用 lastDurationMs>0 判断
+            // （token 已不再持久化，不能再用 input+output>0）
             runningStatus: getInflightStatus(rec.sessionId) ??
-                ((rec.inputTokens ?? 0) + (rec.outputTokens ?? 0) > 0
-                    ? "completed"
-                    : "idle"),
-            inputTokens: rec.inputTokens ?? 0,
-            outputTokens: rec.outputTokens ?? 0,
+                (rec.lastDurationMs > 0 ? "completed" : "idle"),
+            inputTokens: tokenUsage.totals.inputTokens,
+            outputTokens: tokenUsage.totals.outputTokens,
+            cacheReadTokens: tokenUsage.totals.cacheReadTokens,
+            cacheCreationTokens: tokenUsage.totals.cacheCreationTokens,
+            lastTurnPromptTokens,
             lastDurationMs: rec.lastDurationMs ?? 0,
             currentTurnStartedAt: getInflightStartedAt(rec.sessionId) ?? 0,
             messages: history,
@@ -483,8 +507,6 @@ export async function apiRoutes(app) {
                     profileId,
                     permissionMode,
                     effortLevel,
-                    inputTokens: 0,
-                    outputTokens: 0,
                     lastDurationMs: 0,
                 });
                 // 会话已落盘，通知 Sidebar 新增
@@ -667,8 +689,6 @@ export async function apiRoutes(app) {
                     effortLevel: rec.effortLevel,
                     createdAt: Date.now(),
                     lastModified: Date.now(),
-                    inputTokens: 0,
-                    outputTokens: 0,
                     lastDurationMs: 0,
                 });
             }
