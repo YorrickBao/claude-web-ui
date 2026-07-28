@@ -522,10 +522,10 @@ function Header({
               </div>
               {subtitlePopup && (
                 <div
-                  className="absolute left-0 top-full z-50 mt-0.5 w-max overflow-x-auto rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg"
+                  className="absolute left-0 top-full z-50 mt-0.5 w-max rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-foreground shadow-lg"
                   style={subtitleMaxWidth !== undefined ? { maxWidth: subtitleMaxWidth } : undefined}
                 >
-                  <span className="whitespace-nowrap">{subtitle}</span>
+                  <span className="break-all">{subtitle}</span>
                   <div
                     className="fixed inset-0 z-[-1]"
                     onClick={() => setSubtitlePopup(false)}
