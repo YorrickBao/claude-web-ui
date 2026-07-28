@@ -17,6 +17,10 @@ export interface ContextUsageRingProps {
   used: number;
   max?: number;
   cacheReadTokens?: number;
+  /** 会话累计 input tokens（弹窗明细展示） */
+  inputTokens?: number;
+  /** 会话累计 output tokens（弹窗明细展示） */
+  outputTokens?: number;
 }
 
 const DEFAULT_MAX = 200_000;
@@ -60,6 +64,8 @@ export function ContextUsageRing({
   used,
   max = DEFAULT_MAX,
   cacheReadTokens = 0,
+  inputTokens = 0,
+  outputTokens = 0,
 }: ContextUsageRingProps) {
   const [open, setOpen] = useState(false);
   const ratio = Math.min(used / max, 1);
@@ -70,8 +76,10 @@ export function ContextUsageRing({
   const [animDash, setAnimDash] = useState(0);
   const [animGap, setAnimGap] = useState(CIRCUMFERENCE);
   const [animating, setAnimating] = useState(false);
-  const prevUsedRef = useRef(used);
-  const prevMaxRef = useRef(max);
+  // 哨兵用 NaN：NaN !== NaN，首次挂载不命中「值未变」早退，
+  // 保证进度弧首次也能从 0 动画到目标（否则进入会话时环是空的）。
+  const prevUsedRef = useRef(Number.NaN);
+  const prevMaxRef = useRef(Number.NaN);
 
   useEffect(() => {
     const targetDash = CIRCUMFERENCE * Math.min(used / max, 1);
@@ -161,9 +169,14 @@ export function ContextUsageRing({
             <div className="text-muted-foreground tabular-nums">
               {formatTokens(used)} / {formatTokens(max)} tokens
             </div>
-            {cacheReadTokens > 0 && (
-              <div className="mt-1 border-t border-border/60 pt-1 text-muted-foreground tabular-nums">
-                缓存命中 {formatTokens(cacheReadTokens)}
+            {(inputTokens > 0 || outputTokens > 0 || cacheReadTokens > 0) && (
+              <div className="mt-1 space-y-0.5 border-t border-border/60 pt-1 text-muted-foreground tabular-nums">
+                {(inputTokens > 0 || outputTokens > 0) && (
+                  <div>入 {formatTokens(inputTokens)} · 出 {formatTokens(outputTokens)}</div>
+                )}
+                {cacheReadTokens > 0 && (
+                  <div>缓存命中 {formatTokens(cacheReadTokens)}</div>
+                )}
               </div>
             )}
           </div>

@@ -302,18 +302,13 @@ export function ChatThread({
                 - 左：累计消耗（入/出），无缓存时不显示
                 - 右：上下文占用 Ring，点击展开明细（含缓存命中量） */}
             {contextUsedTokens !== undefined && contextUsedTokens > 0 && (
-              <div className="flex shrink-0 items-center gap-1.5">
-                {(accInputTokens > 0 || accOutputTokens > 0) && (
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">
-                    入 {formatTokens(accInputTokens)} · 出 {formatTokens(accOutputTokens)}
-                  </span>
-                )}
-                <ContextUsageRing
-                  used={contextUsedTokens}
-                  max={contextMax}
-                  cacheReadTokens={accCacheReadTokens}
-                />
-              </div>
+              <ContextUsageRing
+                used={contextUsedTokens}
+                max={contextMax}
+                cacheReadTokens={accCacheReadTokens}
+                inputTokens={accInputTokens}
+                outputTokens={accOutputTokens}
+              />
             )}
             <Select
               items={profileItems}
@@ -865,11 +860,3 @@ function EmptyState() {
     </div>
   );
 }
-
-/** 格式化 token 数：>=1M 用 m（小写，避免「百万」的惊吓感），>=1k 用 k */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
