@@ -148,6 +148,10 @@ export async function* runQuery(
   let planTextBuffer = "";
   // plan 模式下累积规划过程只读工具调用摘要，作为计划依据附在 planContent 后
   let planToolsBuffer = "";
+  // agentic 步骤计数：每收到一条主线程 assistant 消息 = 一步。
+  // 0 表示尚未开始。step 事件当前仅作语义标记（前端不消费），
+  // 为未来按步分组/编号预留权威边界。
+  let stepIndex = 0;
 
   // SessionId 的引用对象，供 buildPermissionRequestHook 闭包捕获
   const sessionIdRef = { current: undefined as string | undefined };
@@ -399,6 +403,20 @@ export async function* runQuery(
       }
 
       case "assistant": {
+        // 子代理（subagent）的完整消息：不参与主对话的 step 边界，跳过。
+        if (msg.parent_tool_use_id) break;
+        // step 边界（推断式）：
+        // - stepIndex===0 → 本回合第一条主线程 assistant，发 step_start(1)
+        // - 否则 → 上一步随这条 assistant 结束，发 step_end(prev)+step_start(next)
+        // result 分支会补发最后一步的 step_end，保证收尾闭合。
+        if (stepIndex === 0) {
+          yield { type: "step_start", index: 1 };
+          stepIndex = 1;
+        } else {
+          yield { type: "step_end", index: stepIndex };
+          stepIndex += 1;
+          yield { type: "step_start", index: stepIndex };
+        }
         // 完整 assistant 消息：用于补全 tool_use 参数（流式时 input_json
         // 可能不完整，这里用完整消息保证准确）。text/thinking 已由流式
         // delta 发出，这里不重复发，避免重复。
@@ -406,7 +424,7 @@ export async function* runQuery(
         if (!Array.isArray(content)) break;
         // 记录本回合最后一条主线程 assistant 消息的 uuid（覆盖式），
         // 忽略子代理消息（parent_tool_use_id 非空）。
-        if (!msg.parent_tool_use_id && typeof (msg as { uuid?: string }).uuid === "string") {
+        if (typeof (msg as { uuid?: string }).uuid === "string") {
           lastAssistantUuid = (msg as { uuid: string }).uuid;
         }
         for (const block of content) {
@@ -482,6 +500,11 @@ export async function* runQuery(
       }
 
       case "result": {
+        // 收尾闭合最后一步（若本轮有过 assistant 消息）。
+        // stepIndex>0 表示至少发过 step_start，需补对应 step_end。
+        if (stepIndex > 0) {
+          yield { type: "step_end", index: stepIndex };
+        }
         if (msg.subtype === "success") {
           const s = msg;
           yield {

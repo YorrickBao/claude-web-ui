@@ -23,6 +23,10 @@ export type SSEEvent =
       /** 本回合最终答案的 assistant message uuid，用作 forkSession 的 upToMessageId */
       lastAssistantUuid?: string;
     }
+  /** 一个 agentic 步骤开始（模型开始本轮思考/调用）。index 从 1 起 */
+  | { type: "step_start"; index: number }
+  /** 一个 agentic 步骤结束（模型产出完整 assistant 消息）。index 与对应 step_start 一致 */
+  | { type: "step_end"; index: number }
   | { type: "waiting_for_user" }
   /** 进行中的瞬态状态（压缩 / API 重试 / 限流）。kind: "idle" 为清除信号 */
   | {

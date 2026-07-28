@@ -416,6 +416,15 @@ export function useChatSSE({
         }
         setMessages((prev) => completeLast(prev));
         break;
+      case "step_start":
+        // agentic 步骤开始标记。当前仅作协议层语义边界，不改 messages state：
+        // 分组完全由 ChatThread 的 groupPartByType 按相邻 part 类型 coalesce 实现，
+        // 不依赖 step 事件。保留 case 以通过 TS 联合穷尽性检查，并刷新 lastEventAtRef
+        // （顶部已统一处理，冻结补偿依赖它感知活跃事件）。
+        break;
+      case "step_end":
+        // agentic 步骤结束标记。语义同 step_start，前端不消费。
+        break;
       case "waiting_for_user":
         break;
       case "session_created":

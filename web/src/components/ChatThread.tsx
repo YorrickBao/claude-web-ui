@@ -7,6 +7,7 @@ import {
   useThread,
   useComposerRuntime,
   unstable_useComposerInputHistory,
+  groupPartByType,
 } from "@assistant-ui/react";
 import { ArrowUp, Brain, ChevronDown, ChevronRight, Square, Copy, Check, ShieldCheck, UserCog, GitFork } from "lucide-react";
 import { ThreadOutline, messageAnchorId } from "@/components/ThreadOutline";
@@ -514,104 +515,126 @@ function AssistantMessage() {
 }
 
 /**
- * assistant 消息正文：按时序切成段后渲染。
- * - text 段：常显的叙述/回答正文（Markdown）
- * - 工作段：连续的 reasoning + tool-call。若含工具调用，包成一个可折叠
- *   「工作段」（折叠态头部显示工具名），既让叙述文本与对应工具调用保持
- *   上下文相邻，又能在回合结束后把工作整体收起、自然凸显答案。
- *   纯思考段（无工具）不额外包层，直接渲染思考块。
+ * assistant 消息正文：用 assistant-ui 的 GroupedParts 做分组渲染。
+ *
+ * 分组策略（chain-of-thought 范式）：相邻的 reasoning 与 tool-call 共享
+ * 外层 group-work，被合并成一个可折叠「工作段」；text 不进任何 group，
+ * 作为常显叙述正文直接渲染。与原手写 segmentParts 等价，但分组逻辑下沉
+ * 给库（相邻同前缀自动 coalesce），渲染层只负责 switch 分发。
+ *
+ * - group-work：外层工作段容器（WorkGroup），消费 children 做折叠
+ * - group-tool / group-reasoning：内层容器，仅做间距
+ * - text 叶子：Markdown 渲染；空文本 + running 时用光标占位
+ * - reasoning 叶子：ReasoningBlock（自身已可折叠，故外层不再双层折叠）
+ * - tool-call 叶子：绕开 part.toolUI（项目未注册 registry），直接调 ToolRenderer
+ * - indicator：流式尾部 loading 位（末尾非 text/reasoning 时由库自动注入）
  */
 function AssistantContent() {
-  const status = useMessage((s) => s.status);
-  const content = useMessage((s) => s.content);
-  const isRunning = status?.type === "running";
-  const parts = (content as readonly AnyPart[] | undefined) ?? [];
-
-  const segs = segmentParts(parts);
-  const lastSegIdx = segs.length - 1;
-
-  const rendered = segs.map((seg, si) => {
-    const isLast = si === lastSegIdx;
-    if (seg.kind === "text") {
-      if (!seg.text.trim()) {
-        // 末尾空 text 且运行中：流式刚开始，用光标占位
-        return isRunning && isLast ? <RunningCursor key={si} /> : null;
-      }
-      return (
-        <Markdown key={si} streaming={isRunning && isLast}>
-          {seg.text}
-        </Markdown>
-      );
-    }
-    // 工作段
-    const active = isRunning && isLast;
-    if (seg.parts.some((p) => p.type === "tool-call")) {
-      return <WorkStepGroup key={si} parts={seg.parts} isActive={active} />;
-    }
-    // 纯思考段：不包工作段，直接渲染思考块（避免与思考块自身折叠重复嵌套）
-    return (
-      <div key={si} className="space-y-0.5">
-        {seg.parts.map((p, i) => {
-          if (p.type !== "reasoning") return null;
-          return (
-            <ReasoningBlock
-              key={i}
-              text={typeof p.text === "string" ? p.text : undefined}
-              // 仅"本段是最后一段且运行中"时，末尾思考块视为正在流式
-              isStreaming={active && i === seg.parts.length - 1}
-            />
-          );
-        })}
-      </div>
-    );
-  });
-
-  if (rendered.every((n) => n == null)) {
-    return isRunning ? <RunningCursor /> : null;
-  }
-  return <div className="space-y-2">{rendered}</div>;
-}
-
-type MessageSegment =
-  | { kind: "text"; text: string }
-  | { kind: "work"; parts: AnyPart[] };
-
-/** 把 parts 按时序切段：text 单独成段，连续的 reasoning/tool-call 合并成工作段 */
-function segmentParts(parts: readonly AnyPart[]): MessageSegment[] {
-  const segs: MessageSegment[] = [];
-  let i = 0;
-  while (i < parts.length) {
-    if (parts[i].type === "text") {
-      segs.push({
-        kind: "text",
-        text: typeof parts[i].text === "string" ? (parts[i].text as string) : "",
-      });
-      i++;
-    } else {
-      const run: AnyPart[] = [];
-      while (i < parts.length && parts[i].type !== "text") {
-        run.push(parts[i]);
-        i++;
-      }
-      segs.push({ kind: "work", parts: run });
-    }
-  }
-  return segs;
+  return (
+    <MessagePrimitive.GroupedParts groupBy={GROUP_BY} indicator="no-text">
+      {({ part, children }) => {
+        switch (part.type) {
+          case "group-work":
+            return (
+              <WorkGroup status={part.status} indices={part.indices}>
+                {children}
+              </WorkGroup>
+            );
+          case "group-tool":
+            return <div className="space-y-0.5">{children}</div>;
+          case "group-reasoning":
+            return <div className="space-y-0.5">{children}</div>;
+          case "text":
+            return <TextLeaf part={part} />;
+          case "reasoning":
+            return <ReasoningLeaf part={part} />;
+          case "tool-call":
+            return <ToolRenderer {...mapPartToToolUI(part)} />;
+          case "indicator":
+            return <RunningCursor />;
+          default:
+            return null;
+        }
+      }}
+    </MessagePrimitive.GroupedParts>
+  );
 }
 
 /**
- * 工作段：把一段连续的 reasoning + tool-call 包成可折叠组。
- * - 折叠态头部显示其中的工具名（无工具则「思考过程」），给上下文
- * - 运行中且为本回合最后一段时默认展开、结束后自动收起一次（尊重手动操作）
- * - 展开后内部仍是各自可折叠的思考块 / 工具卡
+ * 分组配置：reasoning 与 tool-call 都收进 group-work，内层再按类型细分。
+ * 用 groupPartByType 构造，自带 memo 指纹，即便每次 render 重建也不破坏树。
  */
-function WorkStepGroup({
-  parts,
-  isActive,
+const GROUP_BY = groupPartByType({
+  reasoning: ["group-work", "group-reasoning"],
+  "tool-call": ["group-work", "group-tool"],
+});
+
+/** text 叶子：空文本 + running 时用光标占位，否则 Markdown 渲染。 */
+function TextLeaf({
+  part,
 }: {
-  parts: readonly AnyPart[];
-  isActive: boolean;
+  part: { type: "text"; text: string; status?: { type: string } };
 }) {
+  const isRunning = part.status?.type === "running";
+  const isEmpty = !part.text.trim();
+  if (isEmpty) {
+    return isRunning ? <RunningCursor /> : null;
+  }
+  return <Markdown streaming={isRunning}>{part.text}</Markdown>;
+}
+
+/** reasoning 叶子：ReasoningBlock，streaming 态由 part.status 推导。 */
+function ReasoningLeaf({
+  part,
+}: {
+  part: { type: "reasoning"; text: string; status?: { type: string } };
+}) {
+  const isRunning = part.status?.type === "running";
+  return (
+    <ReasoningBlock
+      text={typeof part.text === "string" ? part.text : undefined}
+      isStreaming={isRunning}
+    />
+  );
+}
+
+/**
+ * 工作段：把一段连续的 reasoning + tool-call 包成可折叠组（替代原 WorkStepGroup）。
+ *
+ * 设计：分组与叶子渲染交给 GroupedParts（children 已是递归渲染好的子树），
+ * 本组件只负责折叠壳——有工具时折叠展开、纯思考段不折叠直接透传 children。
+ *
+ * - isActive 读 GroupPart 的 status（库镜像组内最后一个 part 的状态），
+ *   不再依赖「父消息 running + 本段是最后一段」的全局判断。
+ * - 工具名 label 从 useMessage(content) 按 indices 切片收集。
+ * - 纯思考段（indices 里无 tool-call）直接返回 children，避免与
+ *   ReasoningBlock 自身折叠重复嵌套。
+ */
+function WorkGroup({
+  status,
+  indices,
+  children,
+}: {
+  status: { type: string };
+  indices: readonly number[];
+  children: ReactNode;
+}) {
+  const content = useMessage((s) => s.content) as readonly AnyPart[] | undefined;
+  const isActive = status.type === "running";
+
+  // 按 indices 从消息 content 切出本组覆盖的 parts，收集工具名做 label
+  const partsInGroup = (indices ?? []).map((idx) => content?.[idx]).filter(Boolean) as AnyPart[];
+  const hasTool = partsInGroup.some((p) => p.type === "tool-call");
+  const toolNames = Array.from(
+    new Set(
+      partsInGroup
+        .filter((p) => p.type === "tool-call")
+        .map((p) => (p.toolName as string) ?? "")
+        .filter(Boolean),
+    ),
+  );
+  const label = toolNames.length > 0 ? toolNames.join(" · ") : "思考过程";
+
   const [open, setOpen] = useState(isActive);
   const wasActiveRef = useRef(isActive);
   useEffect(() => {
@@ -620,16 +643,10 @@ function WorkStepGroup({
     wasActiveRef.current = isActive;
   }, [isActive]);
 
-  const toolNames = Array.from(
-    new Set(
-      parts
-        .filter((p) => p.type === "tool-call")
-        .map((p) => (p.toolName as string) ?? "")
-        .filter(Boolean),
-    ),
-  );
-  const label = toolNames.length > 0 ? toolNames.join(" · ") : "思考过程";
-  const lastIdx = parts.length - 1;
+  // 纯思考段（无工具）：不包折叠壳，直接透传 children（ReasoningBlock 自身已可折叠）
+  if (!hasTool) {
+    return <div className="space-y-0.5">{children}</div>;
+  }
 
   return (
     <div className="text-sm">
@@ -650,21 +667,7 @@ function WorkStepGroup({
       </button>
       {open && (
         <div className="mt-1 space-y-0.5 border-l border-border/40 pl-3">
-          {parts.map((p, i) => {
-            if (p.type === "reasoning") {
-              return (
-                <ReasoningBlock
-                  key={i}
-                  text={typeof p.text === "string" ? p.text : undefined}
-                  isStreaming={isActive && i === lastIdx}
-                />
-              );
-            }
-            if (p.type === "tool-call") {
-              return <ToolRenderer key={i} {...mapToolPart(p, isActive)} />;
-            }
-            return null;
-          })}
+          {children}
         </div>
       )}
     </div>
@@ -673,21 +676,21 @@ function WorkStepGroup({
 
 /**
  * 把 tool-call part 映射成 ToolUIProps。
- * 状态由「result 是否已回填 + running」推导：流式装配 / replay 都不写
- * part.status，旧实现读不存在的 status 会误落到 requires-action。
- * running 由调用方（WorkStepGroup）传入其 isActive——缺 result 的工具只
- * 会出现在活跃段，故 isActive 能正确判定 in-flight。
+ * leaf part 自带 status，直接读 part.status 推导 running/completed；
+ * result 是否已回填决定 complete vs running。
  */
-function mapToolPart(part: AnyPart, running: boolean): ToolUIProps {
+function mapPartToToolUI(part: AnyPart): ToolUIProps {
   const result = (part as { result?: unknown }).result;
   const hasResult = result !== undefined;
+  const partStatus = (part as { status?: { type?: string } }).status;
+  const isRunning = partStatus?.type === "running";
   return {
     toolName: (part.toolName as string) ?? "",
     args: part.args,
     argsText: typeof part.argsText === "string" ? part.argsText : undefined,
     result,
     isError: typeof part.isError === "boolean" ? part.isError : undefined,
-    status: hasResult ? "complete" : running ? "running" : "incomplete",
+    status: hasResult ? "complete" : isRunning ? "running" : "incomplete",
   };
 }
 

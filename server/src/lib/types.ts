@@ -112,6 +112,16 @@ export type SSEEvent =
        *  前端盖到最后一条 assistant 消息上，作为 forkSession 的 upToMessageId */
       lastAssistantUuid?: string;
     }
+  /**
+   * 一个 agentic 步骤开始（模型开始本轮思考/调用）。index 从 1 起。
+   * 仅作语义标记，前端当前不消费；为未来按步分组/编号预留权威边界。
+   */
+  | { type: "step_start"; index: number }
+  /**
+   * 一个 agentic 步骤结束（模型产出完整 assistant 消息）。
+   * index 与对应 step_start 一致。历史回放不产出此事件。
+   */
+  | { type: "step_end"; index: number }
   | { type: "waiting_for_user" }
   /**
    * 进行中的瞬态状态（压缩 / API 重试 / 限流提示）。
