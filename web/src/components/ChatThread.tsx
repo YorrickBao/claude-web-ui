@@ -528,7 +528,7 @@ function InterruptEventBar({ id }: { id: string }) {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="group/msg relative mb-4 flex gap-2 md:mb-6 md:gap-3">
+    <MessagePrimitive.Root className="group/msg relative mb-6 flex gap-2 md:mb-8 md:gap-3">
       {/* assistant 消息无气泡、无左边线——纯靠留白与左对齐建立层次。
           竖线在白底上像一道疤，去掉后让正文（Inter）成为唯一视觉重心，
           朱砂气泡专属用户消息。Claude.ai / Cursor 同款做法。 */}
@@ -747,9 +747,12 @@ function AssistantActionBar() {
   return (
     <>
       <AssistantErrorIfAny />
+      {/* 去气泡后内容无 padding，ActionBar 不能再探入内容区。
+          -bottom-6（24px）让按钮整体落在内容下方，配合消息根 mb-6 的下间距容纳，
+          hover 时按钮顶部与内容底部留出清晰间隙，不再重叠。 */}
       <ActionBarPrimitive.Root
         autohide="always"
-        className="absolute -bottom-2.5 left-2 flex items-center gap-1 md:left-3"
+        className="absolute -bottom-7 left-0 flex items-center gap-1 pt-1 md:left-1"
       >
         <CopyAction />
         <ForkFromHereButton />
