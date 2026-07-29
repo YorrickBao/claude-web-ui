@@ -129,6 +129,9 @@ a, button, input, select, textarea, [role="button"] {
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
     --primary: oklch(0.672 0.131 38.8);
+    /* --ring 锁定 --primary（#D97757 朱砂品牌色），确保焦点环永远跟随品牌色，
+       不会因为单独维护而漂移。 */
+    --ring: var(--primary);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
@@ -140,7 +143,6 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.672 0.131 38.8);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -165,6 +167,7 @@ a, button, input, select, textarea, [role="button"] {
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.752 0.118 38.8);
+    --ring: var(--primary);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
@@ -176,7 +179,6 @@ a, button, input, select, textarea, [role="button"] {
     --destructive-foreground: oklch(0.985 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.752 0.118 38.8);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -193,6 +195,11 @@ a, button, input, select, textarea, [role="button"] {
   }
   * {
     @apply border-border;
+    /* Tailwind v3 无法对裸 CSS 变量色应用 /透明度 修饰符（缺 <alpha-value>），
+       致使 ring-ring/50、ring-primary/20 等工具类不生成，焦点环落回 v3 默认
+       蓝 rgb(59 130 246/.5)。这里把默认环色钉到品牌色 --ring，从源头消除
+       蓝色焦点环，全局统一为品牌色；50% 与原 /50 设计意图一致。 */
+    --tw-ring-color: color-mix(in oklch, var(--ring) 50%, transparent);
   }
   body {
     @apply bg-background text-foreground;
@@ -248,3 +255,46 @@ a, button, input, select, textarea, [role="button"] {
 .cwu-md h4 { font-size: 1em    !important; }
 .cwu-md h5 { font-size: 0.95em !important; }
 .cwu-md h6 { font-size: 0.85em !important; }
+
+/* ── 对话消息纵向节奏（.thread-messages，邻近性法则）──
+   一段对话只用「垂直空白」这一个维度表达一种信息：哪些消息属于同一轮、
+   哪些是新一轮。规则就两条——同作者相邻就收紧（聚成一组），换作者相邻就
+   拉开（标出回合边界）。
+
+   实现上改用 margin-top（由「上一条」的 role 决定），替代原先每条消息自带
+   的 mb-*。原因：mb 模型里「一条消息的下边距」同时服务于其后任意类型的下
+   一条消息，无法区分「回合边界」与「同组续发」；mt + 相邻兄弟选择器可以。
+
+   assistant 的 pb-7 是 ActionBar 的悬浮区（autohide，~21px 工具条 + 缓冲），
+   属于 assistant 自身布局、不是间距——它顺带构成 assistant→user 的间距主体，
+   下面只在其上补一小段，而不是把它当间距值去依赖。
+
+   优先级：相邻兄弟规则（0,3,0）> 默认（0,2,0）；首条规则（0,3,0）只命中
+   无前驱的首条，故不被兄弟规则覆盖。 */
+
+/* 默认：换作者间距（主要命中 user→assistant 交接） */
+.thread-messages > [data-role] {
+  margin-top: 1rem; /* 16px */
+}
+@media (min-width: 768px) {
+  .thread-messages > [data-role] {
+    margin-top: 1.5rem; /* 24px，桌面更舒展 */
+  }
+}
+
+/* assistant → user 回合边界：pb-7(28px) 已是主体，补 8px → 合计 ~36px，
+   保持为整段对话里最大的间隙，清晰断开上一轮回答与新一轮提问。 */
+.thread-messages > [data-role="assistant"] + [data-role="user"] {
+  margin-top: 0.5rem; /* 8px */
+}
+
+/* 同作者连续：收紧成一组（连续提问 / 连续回答段） */
+.thread-messages > [data-role="user"] + [data-role="user"],
+.thread-messages > [data-role="assistant"] + [data-role="assistant"] {
+  margin-top: 0.5rem; /* 8px */
+}
+
+/* 首条消息：容器自身的 pt 已提供顶部留白，不再叠加 */
+.thread-messages > [data-role]:first-child {
+  margin-top: 0;
+}

@@ -211,7 +211,7 @@ export function ChatThread({
           <EmptyState />
         </ThreadPrimitive.Empty>
 
-        <div className="px-4 py-4 md:px-8 md:py-6">
+        <div className="thread-messages px-4 py-4 md:px-8 md:py-6">
           <ThreadPrimitive.Messages
             components={{
               UserMessage: UserMessage,
@@ -233,7 +233,7 @@ export function ChatThread({
 
       <ComposerPrimitive.Root className="sticky bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pt-2 pb-safe md:px-8">
         <div>
-          <div className="rounded-xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
+          <div className="rounded-xl border border-border/60 bg-card shadow-lg shadow-black/5 transition-all duration-200 focus-within:border-ring focus-within:shadow-xl focus-within:shadow-black/10 focus-within:ring-2 focus-within:ring-primary/20 relative">
             <div className="flex items-end gap-1.5 px-2 py-1 md:gap-2 md:px-3 md:py-1.5">
               <ComposerPrimitive.Input
                 ref={textareaRef}
@@ -449,7 +449,8 @@ function UserMessage() {
   return (
     <MessagePrimitive.Root
       id={messageAnchorId(msgId)}
-      className="group/msg mb-4 flex flex-col md:mb-6"
+      data-role="user"
+      className="group/msg flex flex-col"
     >
       <div className="flex min-w-0 justify-end">
         <div className="inline-block max-w-full rounded-xl rounded-br-sm bg-accent px-3 py-2 text-left text-primary-foreground md:px-4 md:py-2.5">
@@ -525,8 +526,12 @@ function AssistantMessage() {
   return (
     // pb-7：底部 padding 容纳 absolute 的 ActionBar（高约 21px），
     // 让 ActionBar 落在 Root 盒子内，鼠标从内容移向按钮时 hover 连续、
-    // 不触发 autohide 卸载。mb 补偿视觉下间距。
-    <MessagePrimitive.Root className="group/msg relative mb-2 flex gap-2 pb-7 md:gap-3">
+    // 不触发 autohide 卸载。消息之间的纵向间距不再用 mb，改由 index.css
+    // 的 .thread-messages 节奏统一管理（邻近性法则：同作者收紧、换作者拉开）。
+    <MessagePrimitive.Root
+      data-role="assistant"
+      className="group/msg relative flex gap-2 pb-7 md:gap-3"
+    >
       {/* assistant 消息无气泡、无左边线——纯靠留白与左对齐建立层次。
           竖线在白底上像一道疤，去掉后让正文（Inter）成为唯一视觉重心，
           朱砂气泡专属用户消息。Claude.ai / Cursor 同款做法。 */}
